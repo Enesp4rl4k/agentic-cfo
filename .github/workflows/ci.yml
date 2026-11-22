@@ -145,6 +145,16 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
+      # Only the restore roundtrip below needs it: /api/v1/ready requires Redis in production.
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     env:
       USE_SQLITE:            "false"
       DATABASE_URL_OVERRIDE: postgresql+asyncpg://aicfo@localhost:5432/aicfo_test
@@ -186,6 +196,21 @@ jobs:
       - name: The chain applies again after a full rollback
         working-directory: backend
         run: alembic upgrade head
+
+      # A backup nobody has restored is a hope. Dump a migrated database, restore it into a fresh one,
+      # check every table and file came back, run the schema preflight on it (and one migration behind),
+      # then the smoke test on an API over the restored database. scripts/restore-roundtrip.sh.
+      - name: PostgreSQL 16 client tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-client-16
+          pg_dump --version
+
+      - name: Backup and restore roundtrip (dump, restore, migrate, preflight, smoke test)
+        env:
+          PGHOST: localhost
+          PGUSER: aicfo
+        run: bash scripts/restore-roundtrip.sh
 
   # ── Optional load baseline (non-blocking artifact) ────────────────────────
   load-baseline:

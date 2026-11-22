@@ -31,7 +31,7 @@ explains the reasons and ratings. "Blocker" lines are the ones the audit rated G
 - [ ] **Blocker:** the nightly backup ran at least three nights and the newest remote archive is under 24 hours old. Evidence: `rclone lsl` ([runbooks/db-restore.md](runbooks/db-restore.md)).
 - [ ] **Blocker:** a restore drill on the host ended `RESULT: OK` with the owner's real key, before real data. Evidence: drill output and date.
 - [ ] The age private key is in the owner's password manager and not on the server. Evidence: the owner confirms.
-- [ ] CI is green on `ops-restore.yml` (the mechanics of dump, restore, migrate, health). Evidence: [workflow](../../.github/workflows/ops-restore.yml).
+- [ ] CI is green on the "Backup and restore roundtrip" step of the `Migrations on Postgres` job (the mechanics of dump, restore, migrate, health). Evidence: [ci.yml](../../.github/workflows/ci.yml).
 
 ## D. Operations
 

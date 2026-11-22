@@ -56,7 +56,7 @@ Related pages: [configuration.md](configuration.md) (every variable) · [pilot-a
 | # | Rating | Finding | Evidence |
 |---|---|---|---|
 | 2.1 | READY | Production preflight with FATAL and WARN rules, wired at import of `main.py`; fatal findings exit 1 naming every cause; outside production they only warn. | PR `core/preflight.py`, `main.py`, 39 tests |
-| 2.2 | READY | The schema is compared with the code's single head: `python -m app.core.preflight --db` (exit 1 on behind/ahead/unknown) and `/api/v1/ready`. Proved on real Postgres: restore, one migration down (refused), back up (accepted). | PR `scripts/restore-roundtrip.sh`, workflow `ops-restore.yml` |
+| 2.2 | READY | The schema is compared with the code's single head: `python -m app.core.preflight --db` (exit 1 on behind/ahead/unknown) and `/api/v1/ready`. Proved on real Postgres: restore, one migration down (refused), back up (accepted). | PR `scripts/restore-roundtrip.sh`, the `Migrations on Postgres` job in `ci.yml` |
 | 2.3 | GAP | The API does not refuse to boot on a stale schema (it reports 503 on `/ready` instead). The staging stack's `migrate` one-shot gates startup, so on that stack the order is enforced by compose. Putting the check in the lifespan would touch the lines #96 and #133 change in `main.py`. | follow-up after those merge |
 | 2.4 | GAP | `/docs`, `/redoc` and `/openapi.json` are public in production (route list, no data). | `api/access.py` `PUBLIC_ROUTES`; hide at Caddy or set `docs_url=None` |
 
@@ -76,7 +76,7 @@ Related pages: [configuration.md](configuration.md) (every variable) · [pilot-a
 | # | Rating | Finding | Evidence |
 |---|---|---|---|
 | 4.1 | GAP, **blocker** | On master there is no backup job or script at all. #96 adds `scripts/backup.sh` (pg_dump -Fc + uploads, age-encrypted, rclone off-host, 14-day retention, nonzero on any failure) and `scripts/restore-drill.sh`. Not yet merged, never run on a real host, and no backup destination exists (owner decision D3). | #96 `scripts/`, `docs/ops/staging.md` §3-4 |
-| 4.2 | READY | Restore procedure proven mechanically on every relevant PR and weekly: dump, restore into a fresh database, all tables and files identical, schema preflight, migrate down/up, API smoke test. | PR `.github/workflows/ops-restore.yml` |
+| 4.2 | READY | Restore procedure proven mechanically on every PR and push (a step of the `Migrations on Postgres` job): dump, restore into a fresh database, all tables and files identical, schema preflight, migrate down/up, API smoke test. | PR `.github/workflows/ci.yml` (job `migrations-postgres`), `scripts/restore-roundtrip.sh` |
 | 4.3 | GAP | Uploads live on one volume (`uploads_data` at `/app/uploads`: uploads, reports, board decks, all under `STORAGE_LOCAL_PATH`). `/app/data` (boardroom memory, created in the Dockerfile) and the LangGraph SQLite checkpoint are in the container filesystem: not on a volume, not in the backup. Both are recomputable, but say so. | `backend/Dockerfile:46`, #96 compose volumes |
 | 4.4 | GAP | A failed backup is only a line in `/var/log/aicfo-backup.log` and a nonzero cron exit. Nobody is told (owner decision D4). | #96 `runbook.md` §3 |
 | 4.5 | UNKNOWN | Whether the encrypted archive restores with the owner's real key: needs the first real drill on the host (#96 `staging.md` step 11). | - |
@@ -187,7 +187,7 @@ Production preflight (`app/core/preflight.py`, 39 tests); `/api/v1/ready` and `/
 (`app/api/ops.py`, 14 tests); outbox-pass heartbeat; log redaction; API CSP; Sentry reads its DSN from the
 environment; `/system/health` no longer returns driver error text; `.env.example` and
 `docs/ops/configuration.md` matched to the code with a test; `scripts/smoke-test.sh`;
-`scripts/restore-roundtrip.sh` with the weekly `ops-restore.yml` workflow; build args for `GIT_SHA` and
+`scripts/restore-roundtrip.sh` run by CI in the `Migrations on Postgres` job; build args for `GIT_SHA` and
 `BUILD_TIME`; this audit, the runbooks and the checklist.
 
 ## Not done on purpose (files of open PRs)

@@ -1,6 +1,6 @@
 # Restore the database
 
-Two cases. The procedure itself is proven by CI (`.github/workflows/ops-restore.yml` runs
+Two cases. The procedure itself is proven by CI (the `Migrations on Postgres` job of `.github/workflows/ci.yml` runs
 `scripts/restore-roundtrip.sh`: dump, restore into a fresh database, same rows and files, schema check,
 migrate down and up, smoke test). What CI cannot prove is your archive, your key and your host: do the
 drill on the host before real data goes in.

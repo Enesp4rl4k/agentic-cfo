@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Backup -> restore -> migrate -> health, on throwaway databases. Proves the procedure, not a backup.
 #
-# CI runs it (.github/workflows/ops-restore.yml) against a Postgres service. It needs no Docker, no
+# CI runs it (the "Migrations on Postgres" job of .github/workflows/ci.yml) against a Postgres service. It needs no Docker, no
 # secrets and no network beyond localhost:
 #
 #   1. migrate an empty database to head and put known rows and files in it (the "source")
