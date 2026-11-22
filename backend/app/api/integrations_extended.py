@@ -156,14 +156,12 @@ async def sync_ecommerce(
     """E-ticaret kanalından siparişleri çek."""
     from app.services.integrations import ShopifyConnector, TrendyolConnector
 
-    orders = []
     if req.channel == "shopify":
         token  = req.credentials.get("access_token") or req.credentials.get("api_key", "")
         domain = req.credentials.get("shop_domain", "")
         if not token or not domain:
             raise HTTPException(400, "Shopify için shop_domain ve access_token gerekli")
-        conn   = ShopifyConnector(domain, token)
-        orders = await conn.get_orders(req.from_date, req.to_date)
+        result = await ShopifyConnector(domain, token).get_orders(req.from_date, req.to_date)
 
     elif req.channel == "trendyol":
         sid    = req.credentials.get("supplier_id", "")
@@ -171,18 +169,33 @@ async def sync_ecommerce(
         secret = req.credentials.get("api_secret", "")
         if not sid or not key:
             raise HTTPException(400, "Trendyol için supplier_id, api_key ve api_secret gerekli")
-        conn   = TrendyolConnector(sid, key, secret)
-        orders = await conn.get_orders(req.from_date, req.to_date)
+        result = await TrendyolConnector(sid, key, secret).get_orders(req.from_date, req.to_date)
 
     else:
         raise HTTPException(400, f"Desteklenmeyen kanal: {req.channel}")
 
+    outcome = result.outcome()
+    if result.failed:
+        # An outage or a refusal is a failed sync, not a shop with no orders.
+        raise HTTPException(502, f"{req.channel} siparişleri alınamadı: {result.failed}")
+
+    # Totals count only the orders whose amount, direction and date the channel stated, per currency
+    # (a lira order and a euro order are not added); the rest are counted and listed, not summed as zero.
+    totals: dict[str, int] = {}
+    for o in result.rows:
+        if not o["feed_flags"]:
+            totals[o["currency"] or ""] = totals.get(o["currency"] or "", 0) + int(o["amount_cents"])
     return {
         "data": {
             "channel":     req.channel,
-            "order_count": len(orders),
-            "total_revenue": sum(o.get("amount_try", 0) for o in orders),
-            "orders":      orders[:200],
+            "order_count": len(result.rows),
+            "sync_status": outcome["status"],
+            "period_covered": outcome["complete"],
+            "reason":      outcome["reason"],
+            "counts":      outcome["counts"],
+            "held_candidates": outcome["held_candidates"],
+            "total_revenue_cents_by_currency": totals,
+            "orders":      result.rows[:200],
         },
         "error": None,
     }

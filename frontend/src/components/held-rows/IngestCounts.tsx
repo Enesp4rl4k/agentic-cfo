@@ -13,7 +13,7 @@ export interface IngestSummary {
   unaccounted?: number;
   reader_fallback?: boolean;
   /** Text (PDF) statements: was the running balance chained? Never presented as reconciled when it was not. */
-  balance_check?: "verified" | "unverified" | null;
+  balance_check?: "verified" | "verified_partial" | "unverified" | null;
 }
 
 /**
@@ -55,6 +55,13 @@ export function IngestCounts({ ingest }: Readonly<{ ingest?: IngestSummary | nul
         </p>
       )}
       {ingest.balance_check === "verified" && <p className="text-xs text-muted-foreground">{copy.ingestBalanceVerified}</p>}
+      {ingest.balance_check === "verified_partial" && (
+        <p className="text-xs text-amber-500">
+          {copy.ingestBalancePartial
+            .replace("{verified}", String(ingest.processed ?? 0))
+            .replace("{held}", String(ingest.held ?? 0))}
+        </p>
+      )}
       {ingest.balance_check === "unverified" && <p className="text-xs text-amber-500">{copy.ingestBalanceUnverified}</p>}
       {ingest.reader_fallback && <p className="text-xs text-muted-foreground">{copy.ingestFallback}</p>}
     </div>

@@ -41,6 +41,7 @@ from typing import Any
 import httpx
 
 from app.config import get_settings
+from app.services.ingest.feed import Feed, FeedResult, iso_date, item_is_blank, rows_for_pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -171,9 +172,13 @@ def _contact_id(item: dict[str, Any]) -> str | None:
 
 
 def islem_from_fatura(
-    item: dict[str, Any], tip: str, kisiler: dict[str, str] | None = None
-) -> dict[str, Any] | None:
-    """A sales invoice (income) or purchase bill (expense) as a transaction; None when it carries no amount or date.
+    item: dict[str, Any], tip: str, kisiler: dict[str, str] | None = None, *, feed: Feed | None = None,
+) -> dict[str, Any]:
+    """A sales invoice (income) or purchase bill (expense) as a transaction row. Never None.
+
+    An invoice with no amount, an unreadable amount ("1.500" with no locale evidence) or no date used to be
+    DROPPED here. It is now a row like any other: the value the source did not state is None, the row carries
+    `feed_flags` and the raw values, and the ingest pipeline holds it for a person.
 
     It keeps what makes it an *invoice*: its number, its counterparty and its due
     date. Without them it is written as cash, and the bank receipt weeks later
@@ -183,27 +188,25 @@ def islem_from_fatura(
     """
     from app.core.invoice_identity import canonical_invoice_id
 
+    feed = feed or Feed("parasut")
     tutar = _attr(item, "gross_total", "net_total", "total_in_currency", "amount")
     tarih = _attr(item, "issue_date", "issued_date", "date")
-    try:
-        kurus = round(abs(float(tutar)) * 100)
-    except (TypeError, ValueError):
-        return None
-    if not kurus or not tarih:
-        return None
     no = _attr(item, "invoice_no", "invoice_number", "invoice_id")
     aciklama = _attr(item, "description") or ("Satış faturası" if tip == "income" else "Gider faturası")
     vade = _attr(item, "due_date", "payment_date")
     cari = _attr(item, "contact_name", "customer_name", "supplier_name") or (kisiler or {}).get(
         _contact_id(item) or ""
     )
-    return {
-        "date": str(tarih)[:10], "amount_cents": kurus, "type": tip,
-        "description": f"{aciklama}{f' #{no}' if no else ''}"[:500], "source_id": str(item.get("id") or ""),
-        "document_id": canonical_invoice_id(None, str(no)) if no else None,
-        "counterparty": str(cari) if cari else None,
-        "due_date": str(vade)[:10] if vade else None,
-    }
+    para = _attr(item, "currency")
+    return feed.add(
+        amount=tutar, direction=tip, date=None if tarih is None else str(tarih)[:10], currency=para,
+        description=f"{aciklama}{f' #{no}' if no else ''}"[:500],
+        evidence={"amount": tutar, "date": tarih, "currency": para, "invoice_no": no, "id": item.get("id")},
+        source_id=str(item.get("id") or ""),
+        document_id=canonical_invoice_id(None, str(no)) if no else None,
+        counterparty=str(cari) if cari else None,
+        due_date=str(vade)[:10] if vade else None,
+    )
 
 
 class ParasutConnector:
@@ -355,8 +358,12 @@ class ParasutConnector:
         await self.db.commit()
         return _coz(integration.access_token_enc)
 
-    async def islemleri_cek(self, integration: Any, gun: int = 90) -> list[dict[str, Any]]:
-        """Sales invoices and purchase bills of the last `gun` days, as transactions. Raises on failure."""
+    async def islemleri_cek(self, integration: Any, gun: int = 90) -> FeedResult:
+        """Sales invoices and purchase bills of the last `gun` days, as transactions. Raises on failure.
+
+        Every invoice the pages hand over is counted and becomes a row (an unreadable one is held, not dropped);
+        reaching the page limit before the window ends is a PARTIAL result, which does not cover the period.
+        """
         from app.models.erp_integration import ERPSyncLog
 
         cfg = _config(integration)
@@ -373,7 +380,7 @@ class ParasutConnector:
             # Newest first, stopping at the first page that reaches past the
             # window: only JSON:API's own `sort` and `page`, no guessed filter syntax.
             ilk = str(datetime.now(UTC).date() - timedelta(days=gun))
-            islemler: list[dict[str, Any]] = []
+            feed = Feed("parasut")
             for yol, tip in (("sales_invoices", "income"), ("purchase_bills", "expense")):
                 sayfa = 1
                 while sayfa <= 200:
@@ -383,23 +390,48 @@ class ParasutConnector:
                     if resp.status_code >= 400:
                         raise ValueError(f"Paraşüt {yol} isteği başarısız ({resp.status_code}).")
                     body = resp.json()
+                    if not isinstance(body, dict):
+                        raise ValueError(f"Paraşüt {yol} yanıtı beklenmeyen biçimde.")
                     data = body.get("data") or []
+                    if not isinstance(data, list):
+                        raise ValueError(f"Paraşüt {yol} yanıtı beklenmeyen biçimde.")
                     kisiler = kisiler_from_included(body)
-                    okunan = [t for t in (islem_from_fatura(d, tip, kisiler) for d in data if isinstance(d, dict)) if t]
-                    islemler += [t for t in okunan if t["date"] >= ilk]
-                    if len(data) < 25 or any(t["date"] < ilk for t in okunan):
+                    gecti = False
+                    for d in feed.each(data):
+                        if item_is_blank(d):
+                            feed.blank()
+                            continue
+                        if not isinstance(d, dict):
+                            feed.add(amount=None, direction=tip, date=None, currency=None, description="",
+                                     evidence={"item": d})
+                            continue
+                        # Older than the window (the API has no date filter): skipped under one named, counted rule that
+                        # needs a READABLE date; an invoice whose date cannot be read stays and is held.
+                        yazili = iso_date(_attr(d, "issue_date", "issued_date", "date"))
+                        if yazili is not None and yazili < ilk:
+                            feed.skip_outside_window()
+                            gecti = True
+                            continue
+                        islem_from_fatura(d, tip, kisiler, feed=feed)
+                    if len(data) < 25 or gecti:
                         break
                     sayfa += 1
-            integration.last_sync_status, integration.last_error = "success", None
-            integration.last_sync_count = len(islemler)
-            log.status, log.transactions_synced = "success", len(islemler)
-            return islemler
+                else:
+                    feed.partial = f"{yol}: sayfa sınırına ulaşıldı (200); faturaların devamı çekilmedi"
+            sonuc = feed.result()
+            durum = sonuc.outcome()["status"]
+            integration.last_sync_status, integration.last_error = durum, (sonuc.partial or None)
+            integration.last_sync_count = len(sonuc.rows)
+            log.status, log.transactions_synced = durum, len(sonuc.rows)
+            return sonuc
         except (ValueError, httpx.HTTPError, KeyError) as exc:
             integration.last_sync_status, integration.last_error = "error", str(exc)[:500]
             log.status, log.error_message = "error", str(exc)[:500]
             raise ValueError(str(exc)) from exc
         finally:
-            integration.last_sync_at = datetime.now(UTC)
+            # A pull that failed did not look at the books: it does not move "last synced" forward.
+            if integration.last_sync_status != "error":
+                integration.last_sync_at = datetime.now(UTC)
             log.finished_at, log.duration_seconds = datetime.now(UTC), int(time.time() - basla)
             await self.db.commit()
 
@@ -416,7 +448,8 @@ class ParasutConnector:
 def islemler_ozeti(islemler: list[dict[str, Any]]) -> str:
     """A fingerprint of a pull: the same invoices give the same value."""
     kanonik = sorted(
-        (t["date"], t["type"], t["amount_cents"], t.get("source_id", ""), t.get("document_id") or "",
+        (t["date"] or "", t["type"] or "", -1 if t["amount_cents"] is None else t["amount_cents"],
+         t.get("source_id", ""), t.get("document_id") or "",
          t.get("counterparty") or "", t.get("due_date") or "")
         for t in islemler
     )
@@ -433,23 +466,29 @@ async def parasut_al(db: Any, integration: Any, sahip: Any, http: httpx.AsyncCli
     """
     from app.services.ingest.ekle import islemleri_ekle
 
-    islemler = await ParasutConnector(db, http).islemleri_cek(integration)
+    cekilen = await ParasutConnector(db, http).islemleri_cek(integration)
+    sonuc_ozeti = cekilen.outcome()
+    islemler = rows_for_pipeline(cekilen.rows)
+    sayilar = {"sync_status": sonuc_ozeti["status"], "period_covered": sonuc_ozeti["complete"],
+               "reason": sonuc_ozeti["reason"], "counts": sonuc_ozeti["counts"],
+               "held_candidates": sonuc_ozeti["held_candidates"]}
     if not islemler:
-        return {"durum": "fatura_yok", "sync_count": 0, "job_id": None,
+        return {"durum": "fatura_yok", "sync_count": 0, "job_id": None, **sayilar,
                 "mesaj": "Son 90 günde fatura bulunamadı."}
     ozet = islemler_ozeti(islemler)
     cfg = _config(integration)
-    if cfg.get("son_ozet") == ozet:
-        return {"durum": "degisiklik_yok", "sync_count": len(islemler), "job_id": cfg.get("son_is"),
+    # "Nothing changed" is only true of a pull that read everything; a partial one proves nothing.
+    if cekilen.complete and cfg.get("son_ozet") == ozet:
+        return {"durum": "degisiklik_yok", "sync_count": len(islemler), "job_id": cfg.get("son_is"), **sayilar,
                 "mesaj": "Son alımdan bu yana yeni ya da değişen fatura yok; son analiz güncel."}
     out = await islemleri_ekle(db, sahip, islemler, "parasut")
-    if out.get("job_id"):
+    if out.get("job_id") and cekilen.complete:
         cfg = _config(integration)
         cfg["son_ozet"], cfg["son_is"] = ozet, out["job_id"]
         _config_yaz(integration, cfg)
         await db.commit()
     karsi_tarafsiz = sum(1 for t in islemler if t.get("document_id") and not t.get("counterparty"))
-    sonuc = {"durum": "analiz_baslatildi", "sync_count": len(islemler), "job_id": out.get("job_id"),
+    sonuc = {"durum": "analiz_baslatildi", "sync_count": len(islemler), "job_id": out.get("job_id"), **sayilar,
              "dosyalar": out.get("dosyalar", [])}
     if karsi_tarafsiz:
         sonuc["uyari"] = (

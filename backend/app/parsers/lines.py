@@ -45,6 +45,10 @@ _CURRENCY_MARKED = re.compile(
 )
 _MONEY_WORDS = re.compile(r"\b(?:bin|milyon|milyar|lira|kuruş|kurus|tl|try|usd|eur|dolar|euro|avro|sterlin)\b", re.IGNORECASE)
 _BIG_INTEGER = re.compile(r"(?<![\d.,])\d{2,}(?!\d)(?![.,]\d)")
+# An id with an amount stuck to its end ("…8413261.250,00": an IBAN whose last digits are followed by 1.250,00 with
+# no space). No other pattern sees a number there (every amount pattern refuses a digit before it), so without this
+# the line has no money token at all.
+_GLUED = re.compile(r"(?<![\d.,])\d{9,}(?:[.,]\d{3})*[.,]\d{1,2}(?!\d)")
 
 # An exemption removes only the exact TOKEN it positively identifies, by a strict, anchored, shape-based pattern.
 # It never removes a line, never anything with a money shape (1.250,00, 1,250.00, 1500,50), and a word such as
@@ -64,13 +68,25 @@ _YEAR_PHRASE = re.compile(r"(?<![\d.,])(?:19|20)\d{2}(?![\d.,]\d)(?=[ ]*(?:yıl�
 _COPYRIGHT_YEAR = re.compile(r"(?:©|\bcopyright\b)[ ]*(?:\(c\)[ ]*)?\d{4}\b", re.IGNORECASE)
 # A tax/customer/branch number, ONLY when the whole line is the label and its number (a header/footer line).
 _LABELLED_LINE = re.compile(
-    r"^(?:vergi|müşteri|musteri|şube|sube|hesap|kart|vkn|tckn|mersis|sicil)[ ]*(?:no|numarası|numarasi|kodu|kimlik no)?"
-    r"[ ]*[.:][ ]*\d[\d\-/]*\d$", re.IGNORECASE,
+    r"^(?:vergi|müşteri|musteri|şube|sube|hesap|kart|vkn|tckn|mersis|ticaret[ ]*sicil|sicil)[ ]*"
+    r"(?:no|numarası|numarasi|kodu|kimlik no)?[ ]*[.:][ ]*\d[\d\-/]*\d(?:[ ]+[^\d]*)?$", re.IGNORECASE,
 )
-# A keyword-led reference exempts its number only if it is long or alphanumeric enough not to be an amount.
+# A keyword-led reference exempts its number only if it is LABELLED as one and long enough not to be an amount: the
+# keyword names itself a number ("fiş no", "fatura no"), or a "no"/":" follows it ("Ref: 12345678", "Referans No 12345678"),
+# or the token is alphanumeric ("AB12345678"). A bare "Ref 12500000" proves nothing: a person wrote 12.500.000 or a
+# reference, and the line is HELD (a number that looks like a round amount is never explained by a word alone).
 _REFERENCE = re.compile(
-    r"\b(?:ref|referans|belge|dekont|ftr|fiş[ ]*no|fis[ ]*no|fatura[ ]*no)\b[ ]*(?:no|nu|numarası)?[ ]*[.:]?[ ]*"
-    r"(?:\d{8,}(?![.,]\d)|(?=[A-Z0-9\-/]*[A-Z])(?=[A-Z0-9\-/]*\d)[A-Z0-9\-/]{6,}(?![.,]\d))", re.IGNORECASE,
+    r"\b(?:fiş[ ]*no|fis[ ]*no|fatura[ ]*no)\b[ ]*[.:]?[ ]*\d{8,}(?![.,]\d)"
+    r"|\b(?:ref|referans|belge|dekont|ftr)\b(?:[ ]*(?:no|nu|numarası)\b[ ]*[.:]?[ ]*|[ ]*[.:][ ]*)\d{8,}(?![.,]\d)"
+    r"|\b(?:ref|referans|belge|dekont|ftr|fiş[ ]*no|fis[ ]*no|fatura[ ]*no)\b[ ]*(?:no|nu|numarası)?[ ]*[.:]?[ ]*"
+    r"(?=[A-Z0-9\-/]*[A-Z])(?=[A-Z0-9\-/]*\d)[A-Z0-9\-/]{6,}(?![.,]\d)", re.IGNORECASE,
+)
+# A branch code is zero-padded ("Şube 0123"): an amount never is, so the token is positively not money.
+_BRANCH = re.compile(r"\b(?:şube|sube)\b[ ]*(?:no|kodu)?[ ]*[.:]?[ ]*0\d{2,5}(?![\d.,])", re.IGNORECASE)
+# "Düzenleme tarihi 01.02.2026" and nothing else: a print/issue date line, with no amount to hold.
+_FOOTER_DATE = re.compile(
+    r"^(?:düzenleme|duzenleme|basım|basim|yazdırma|yazdirma|oluşturma|olusturma|çıktı|cikti|ekstre|rapor)[ ]*"
+    r"(?:tarihi|tarih)?[ ]*[:.]?[ ]*\d{1,2}[./-]\d{1,2}[./-]\d{4}$", re.IGNORECASE,
 )
 
 
@@ -95,7 +111,7 @@ def read_lines(text: str) -> list[str]:
 def strip_explained(line: str) -> str:
     """The line with the tokens a strict pattern identifies as not money blanked out (the rest untouched)."""
     line = _IBAN.sub(_iban_valid, line)
-    for pattern in (_CARD, *_PHONES, _PAGE, _COPYRIGHT_YEAR, _YEAR_PHRASE, _REFERENCE):
+    for pattern in (_CARD, *_PHONES, _PAGE, _COPYRIGHT_YEAR, _YEAR_PHRASE, _REFERENCE, _BRANCH):
         line = pattern.sub(" ", line)
     if _LABELLED_LINE.match(line.strip()) and not DATE_LIKE.search(line) and not _MONEY_SHAPE.search(line):
         return " "
@@ -108,6 +124,7 @@ def money_tokens(line: str) -> list[str]:
     found = [m.group(0) for m in AMOUNT_LIKE.finditer(text)]
     found += [m.group(0) for m in _CURRENCY_MARKED.finditer(text)]
     found += [m.group(0) for m in _BIG_INTEGER.finditer(text)]
+    found += [m.group(0) for m in _GLUED.finditer(text)]
     found += [m.group(0) for m in _MONEY_WORDS.finditer(text)]
     return found
 
@@ -258,6 +275,10 @@ def account_for_lines(text: str, transactions: list[ParsedTransaction]) -> LineA
             continue
         if header_at is not None and i < header_at and not DATE_LIKE.search(line) and not _MONEY_SHAPE.search(line):
             acct.non_row += 1
+            previous_is_row = False
+            continue
+        if _FOOTER_DATE.match(line):
+            acct.non_row += 1       # an issue/print date label and its date, whole line: there is no amount to hold
             previous_is_row = False
             continue
         if is_candidate(line):

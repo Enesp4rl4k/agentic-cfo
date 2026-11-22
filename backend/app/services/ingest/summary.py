@@ -1,6 +1,9 @@
 """What an upload did, in numbers and words a person can read.
 
-"N kayıt işlendi, M kayıt incelemenizi bekliyor". A row whose date could not be
+"N kayıt işlendi, M kayıt incelemenizi bekliyor". A text statement is said to be "verified against its balance chain" only when no row of it waits for a person;
+otherwise the summary names the verified rows and the waiting ones (`balance_check: verified_partial`).
+
+A row whose date could not be
 read is not "processed": it waits among the held rows (reason "tarih okunamadı")
 and is in no total. A currency the document did not state, filled from the
 company's confirmed currency, is marked `currency_assumed`.
@@ -32,7 +35,12 @@ def ingest_summary(
         if held_now:
             parts.append(f"{held_now} kayıt incelemenizi bekliyor (toplamlara dahil değil)")
     check = counts.get("balance_check")
-    if check == "verified":
+    if check == "verified" and held_now:
+        # The chain held for the rows that were booked; rows waiting for a person are not part of that claim, and a
+        # statement with a held row is never said to be reconciled as a whole.
+        check = "verified_partial"
+        parts.append(f"bakiye zinciriyle doğrulanan {len(accepted)} satır; {held_now} satır kararınızı bekliyor")
+    elif check == "verified":
         parts.append("bakiye zinciriyle doğrulandı")
     elif check == "unverified":
         # A text (PDF) statement whose running balance could not be chained is never presented as reconciled.

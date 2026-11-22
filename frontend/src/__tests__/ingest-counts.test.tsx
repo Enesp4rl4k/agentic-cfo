@@ -49,6 +49,12 @@ describe("IngestCounts: balance verification of a text statement", () => {
     expect(screen.queryByText(/Bakiye zinciriyle doğrulandı/)).toBeNull();
   });
 
+  it("never says a statement with held rows was verified as a whole: it names the verified and the waiting rows", () => {
+    renderWithQuery(<IngestCounts ingest={{ ...base, balance_check: "verified_partial" }} />);
+    expect(screen.getByText("Bakiye zinciriyle doğrulanan 5 satır; 1 satır kararınızı bekliyor.")).toBeInTheDocument();
+    expect(screen.queryByText("Bakiye zinciriyle doğrulandı.")).toBeNull();
+  });
+
   it("says when the balance chain verified it", () => {
     renderWithQuery(<IngestCounts ingest={{ ...base, balance_check: "verified" }} />);
     expect(screen.getByText("Bakiye zinciriyle doğrulandı.")).toBeInTheDocument();

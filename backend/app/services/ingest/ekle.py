@@ -339,7 +339,11 @@ def islemler_csv(islemler: list[dict[str, Any]]) -> bytes:
     out = io.StringIO()
     w = csv.writer(out, lineterminator="\n")
     faturali = any(_fatura_mi(t) for t in islemler)
-    w.writerow(["tarih", "açıklama", "tutar", "tip"] + (["fatura no", "cari", "vade"] if faturali else []))
+    # The currency a source stated travels with the row; a source that states none leaves the cell empty (the
+    # pipeline's own rule applies: the document's, else the confirmed base currency marked as assumed, else held).
+    para = any("currency" in t for t in islemler)
+    w.writerow(["tarih", "açıklama", "tutar", "tip"] + (["currency"] if para else [])
+               + (["fatura no", "cari", "vade"] if faturali else []))
     for t in islemler:
         kurus = t.get("amount_cents")
         has_amount = kurus is not None or t.get("amount") is not None
@@ -353,6 +357,8 @@ def islemler_csv(islemler: list[dict[str, Any]]) -> bytes:
             tarih[:10], (t.get("description") or "")[:500],
             ("?" if not has_amount else -tutar if tip == "expense" else tutar), tip,   # "?": no amount to stand behind
         ]
+        if para:
+            satir.append(t.get("currency") or "")
         if faturali:
             satir += [t.get("document_id") or "", t.get("counterparty") or "", t.get("due_date") or ""]
         w.writerow(satir)

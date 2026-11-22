@@ -88,7 +88,7 @@ EXEMPT_PAIRS = [
     ("copyright year", "© 2026"),
     ("year phrase", "2026 yılı"),
     ("labelled id line", "Müşteri No: 4455667"),
-    ("keyword reference (long)", "Ref 20250001234"),
+    ("keyword reference (long, labelled)", "Ref: 20250001234"),
     ("keyword reference (alphanumeric)", "Dekont FTR2025000123"),
 ]
 

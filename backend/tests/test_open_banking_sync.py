@@ -12,6 +12,7 @@ from typing import Any
 import pytest_asyncio
 from sqlalchemy import select
 
+from app.services.ingest.feed import Feed, FeedResult
 from tests.api_helpers import bellek_istemcisi, kullanici
 
 URL = "/api/v1/open-banking/connections/c1/sync"
@@ -23,9 +24,13 @@ class _SahteBanka:
         self.gelen_token: str | None = None
 
     async def get_transactions(self, access_token: str, account_id: str,
-                               start_date: str, end_date: str) -> list[dict[str, Any]]:
+                               start_date: str, end_date: str) -> FeedResult:
         self.gelen_token = access_token
-        return self.satirlar
+        feed = Feed("akbank_open_banking")
+        for s in feed.each(self.satirlar):
+            feed.add(amount=abs(s["amount_cents"]) / 100, direction=s["type"], date=s["date"], currency="TRY",
+                     description=s["description"])
+        return feed.result()
 
 
 @pytest_asyncio.fixture
