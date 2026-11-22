@@ -352,17 +352,17 @@ async def test_shopify_missing_total_is_held_not_zero_and_an_outage_is_failed(mo
               {"id": 3, "order_number": 1003, "total_price": "1.500", "currency": "TRY", "created_at": "2026-01-06"},
               {"id": 4, "order_number": 1004, "total_price": "9.00", "created_at": "garbage"}]
     _patch_httpx(monkeypatch, _shop(orders))
-    result = await ShopifyConnector("shop.example.com", "tok").get_orders("2026-01-01", "2026-01-31")
+    result = await ShopifyConnector("shop.myshopify.com", "tok").get_orders("2026-01-01", "2026-01-31")
     assert [r["amount_cents"] for r in result.rows] == [25000, None, None, 900]
     assert result.rows[3]["date"] is None and result.held_candidates == 3
 
     for handler in (_shop(None, status=500), _shop(None)):
         _patch_httpx(monkeypatch, handler)
-        failed = await ShopifyConnector("shop.example.com", "tok").get_orders("2026-01-01", "2026-01-31")
+        failed = await ShopifyConnector("shop.myshopify.com", "tok").get_orders("2026-01-01", "2026-01-31")
         assert failed.rows == [] and failed.outcome()["status"] == FAILED
 
     _patch_httpx(monkeypatch, _shop(orders[:1], link='<https://shop/orders.json?page_info=x>; rel="next"'))
-    partial = await ShopifyConnector("shop.example.com", "tok").get_orders("2026-01-01", "2026-01-31")
+    partial = await ShopifyConnector("shop.myshopify.com", "tok").get_orders("2026-01-01", "2026-01-31")
     assert partial.outcome()["status"] == PARTIAL
 
 
@@ -390,7 +390,7 @@ async def test_the_ecommerce_route_reports_counts_and_a_failed_channel_is_502(cl
 
     h = await _login(client, "shop@example.com")
     body = {"channel": "shopify", "from_date": "2026-01-01", "to_date": "2026-01-31",
-            "credentials": {"shop_domain": "s.example.com", "access_token": "t"}}
+            "credentials": {"shop_domain": "s.myshopify.com", "access_token": "t"}}
     _patch_httpx(monkeypatch, _shop([{"id": 1, "total_price": "10.00", "currency": "TRY", "created_at": "2026-01-02"},
                                       {"id": 2, "created_at": "2026-01-02"}]))
     ok = (await client.post("/api/v1/integrations/ecommerce/sync", json=body, headers=h)).json()["data"]

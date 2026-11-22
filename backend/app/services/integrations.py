@@ -15,12 +15,16 @@ Her connector:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import re
 from datetime import datetime
 from typing import Any
+from urllib.parse import urlencode
 
 import httpx
 
+from app.core import outbound
 from app.core.dates import istanbul
 from app.services.ingest.feed import (
     Feed,
@@ -162,11 +166,21 @@ class TurkiyeOpenBankingClient:
 # INT-4: E-ticaret kanalları
 # ═══════════════════════════════════════════════════════════════════════════════
 
+_SHOP_MAX_BYTES = 8 * 1024 * 1024
+
+
 class ShopifyConnector:
     """Shopify Admin API — sipariş ve ödeme reconciliation."""
 
+    # The host comes from request credentials: only `<shop>.myshopify.com`, label checked here,
+    # and the request goes through the SSRF guard (app/core/outbound.py).
+    _SHOP_LABEL = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,58}[a-z0-9])?$")
+
     def __init__(self, shop_domain: str, access_token: str) -> None:
-        self.base  = f"https://{shop_domain}/admin/api/2024-01"
+        label = shop_domain.strip().lower().removesuffix(".myshopify.com")
+        if not self._SHOP_LABEL.match(label):
+            raise ValueError("shop_domain <magaza>.myshopify.com biçiminde olmalı")
+        self.base  = f"https://{label}.myshopify.com/admin/api/2024-01"
         self.token = access_token
 
     async def get_orders(self, from_date: str, to_date: str) -> FeedResult:
@@ -178,19 +192,17 @@ class ShopifyConnector:
             "limit":          250,
         }
         try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                resp = await client.get(
-                    f"{self.base}/orders.json",
-                    headers={"X-Shopify-Access-Token": self.token},
-                    params=params,
-                )
+            resp = await outbound.request(
+                "GET", f"{self.base}/orders.json?{urlencode(params)}",
+                headers={"X-Shopify-Access-Token": self.token}, max_bytes=_SHOP_MAX_BYTES, timeout=30,
+            )
             if resp.status_code != 200:
                 raise FeedFailed(f"Shopify {resp.status_code} yanıtı verdi")
-            payload = resp.json()
+            payload = json.loads(resp.body or b"")
             orders = payload.get("orders") if isinstance(payload, dict) else None
             if not isinstance(orders, list):
                 raise FeedFailed("yanıtta orders listesi yok (beklenmeyen biçim)")
-        except (httpx.HTTPError, ValueError, FeedFailed) as exc:
+        except (httpx.HTTPError, ValueError, FeedFailed, outbound.OutboundBlocked) as exc:
             logger.warning("Shopify orders failed: %s", type(exc).__name__)
             return _failed(feed, "Shopify siparişleri alınamadı", exc)
         for o in feed.each(orders):
@@ -222,6 +234,8 @@ class TrendyolConnector:
 
     def __init__(self, supplier_id: str, api_key: str, api_secret: str) -> None:
         self.base        = "https://api.trendyol.com/sapigw"
+        if not supplier_id.isdigit() or len(supplier_id) > 20:  # a path segment of a fixed host
+            raise ValueError("supplier_id sayısal olmalı")
         self.supplier_id = supplier_id
         self.auth        = httpx.BasicAuth(api_key, api_secret)
 

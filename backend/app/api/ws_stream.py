@@ -16,6 +16,7 @@ from starlette.websockets import WebSocketState
 
 from app.api import ws_auth
 from app.api.access import can_access
+from app.core.client_ip import client_ip
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -110,7 +111,7 @@ async def websocket_chat(
     # The socket used to take no token and to ground its answer in whatever
     # job and organisation the client named: another company's figures, on
     # our model bill. Signed-in callers only, and only their own data.
-    user = await ws_auth.websocket_caller(token)
+    user = await ws_auth.websocket_caller(token, client_ip(websocket))
     if user is None:
         await websocket.close(code=ws_auth.REFUSED)
         return
@@ -145,7 +146,7 @@ async def websocket_chat(
             # The token was checked once, at connect. Everything after it is asked again, per message:
             # a removed, deactivated or switched-away person is refused and the socket closed, so the
             # answer is never grounded in a company they no longer act in.
-            user = await ws_auth.websocket_caller(token)
+            user = await ws_auth.websocket_caller(token, client_ip(websocket))
             if user is None or (user.org_id and str(user.org_id) != own_org_id) or (
                 own_org_id is not None and not await ws_auth.still_acting_in(str(user.id), own_org_id)
             ) or (own_org_id is None and user.org_id):

@@ -28,7 +28,7 @@ import os
 import re
 import socket
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -55,6 +55,17 @@ _EXTRA_DENY = tuple(
 )
 
 
+PUBLIC_REASON = "destination_unreachable_or_refused"
+
+
+def public_reason(reason: str) -> str:
+    """What a person sees synchronously, whatever the precise reason (refused, internal, port, DNS).
+
+    One class, so a connection test cannot be used to ask the server what is on its network. The
+    precise reason stays in the admin-only delivery status and the audit log."""
+    return PUBLIC_REASON
+
+
 class OutboundBlocked(Exception):
     """The destination is refused by policy; `reason` is a stable word the screens may show."""
 
@@ -67,6 +78,7 @@ class OutboundBlocked(Exception):
 class OutboundResponse:
     status_code: int
     body: bytes | None  # None unless the caller asked for a capped body
+    headers: dict[str, str] = field(default_factory=dict)  # lower-cased names; never forwarded to a caller
 
     @property
     def ok(self) -> bool:
@@ -142,6 +154,10 @@ def parse_target(url: str, *, allow_http: bool = False) -> Target:
         raise OutboundBlocked("destination_invalid")
     if port == 0 or "%" in hostname:
         raise OutboundBlocked("destination_invalid")
+    # Only the default port: an internal service on a public name would otherwise be probeable by
+    # port. 8443 etc. are not allowed (no documented need); http (allow_http) keeps its own 80.
+    if port is not None and port != (443 if parts.scheme == "https" else 80):
+        raise OutboundBlocked("destination_port_not_allowed")
     try:
         host = hostname.encode("idna").decode("ascii").lower().rstrip(".")
     except UnicodeError:
@@ -185,6 +201,8 @@ async def resolve_public(target: Target) -> list[str]:
     """The addresses to connect to, every one validated; raises when any is not public."""
     if target.literal is not None:
         return [str(target.literal)]
+    if _resolver is None and "PYTEST_CURRENT_TEST" in os.environ:
+        raise RuntimeError("a test reached real DNS: install a resolver with set_test_seams")
     resolver = _resolver or _system_resolve
     try:
         raw = await asyncio.wait_for(resolver(target.host, target.port), timeout=CONNECT_TIMEOUT)
@@ -238,7 +256,7 @@ async def _send(
         response = await client.send(built, stream=True)
         try:
             if max_bytes <= 0:
-                return OutboundResponse(response.status_code, None)
+                return OutboundResponse(response.status_code, None, dict(response.headers))
             declared = response.headers.get("content-length")
             if declared and declared.isdigit() and int(declared) > max_bytes:
                 raise OutboundBlocked("response_too_large")
@@ -249,7 +267,7 @@ async def _send(
                 if size > max_bytes:
                     raise OutboundBlocked("response_too_large")
                 chunks.append(chunk)
-            return OutboundResponse(response.status_code, b"".join(chunks))
+            return OutboundResponse(response.status_code, b"".join(chunks), dict(response.headers))
         finally:
             await response.aclose()
 

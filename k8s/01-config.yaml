@@ -29,3 +29,5 @@ data:
   POSTGRES_USER: "aicfo"
   REDIS_URL: "redis://redis:6379/0"
   FRONTEND_URL: "http://localhost:3000"
+  # Behind the ingress controller: one proxy hop. Without this every client shares one rate-limit bucket.
+  TRUSTED_PROXY_COUNT: "1"

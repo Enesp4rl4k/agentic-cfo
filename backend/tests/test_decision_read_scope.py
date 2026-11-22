@@ -63,7 +63,7 @@ def test_an_unknown_kind_fails_closed() -> None:
 async def test_the_reviewers_reproduction_a_viewer_cannot_read_the_ip_whitelist_record(client):
     owner, org_id, _ = await kullanici(client, "okuma-sahip@example.com")
     assert (await client.put("/api/v1/security/ip-whitelist", headers=owner,
-                             json={"cidrs": ["203.0.113.42/32"], "enabled": True})).status_code == 200
+                             json={"cidrs": ["203.0.113.42/32", "127.0.0.1/32"], "enabled": True})).status_code == 200
     by_object = f"{API}?target_type=organization_ip_whitelist&target_id={org_id}"
     got = (await client.get(by_object, headers=owner)).json()["data"]
     assert [d["kind"] for d in got] == ["security_setting_change"] and "203.0.113.42/32" in str(got)
