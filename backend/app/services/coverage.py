@@ -80,6 +80,13 @@ def apply_period(
     out.update(start_stated=False, end_stated=False)
     if filename and not out.get("filename"):
         out["filename"] = filename
+    if period and period.get("pulled") and period["start"] <= str(extent["start"]) and str(extent["end"]) <= period["end"]:
+        # A sync states exactly what it received: both edges are proven as stated, with no five-day agreement to
+        # check. A pull that stopped short (`partial`) says so, and its edges stay strict: never the tolerance.
+        out.update(start=period["start"], end=period["end"], start_stated=True, end_stated=True)
+        if period["pulled"] == "partial":
+            out["truncated_at"] = period["end"]
+        return out
     if period and period["start"] <= str(extent["start"]) and str(extent["end"]) <= period["end"]:
         mismatch: list[dict[str, str]] = []
         if (_day(extent["start"]) - _day(period["start"])).days <= EDGE_TOLERANCE_DAYS:
@@ -249,6 +256,19 @@ def gaps(series: list[dict[str, Any]]) -> list[tuple[str, str]]:
 
 
 
+_AYLAR = ("Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık")
+
+
+def truncation_note(extents: list[dict[str, Any]], month: str) -> str | None:
+    """"Mart çekimi 27 Mart'ta yarıda kaldı" when a pull stopped short inside `month` (None otherwise)."""
+    for e in extents:
+        at = e.get("truncated_at")
+        if at and str(at)[:7] == month:
+            day, name = int(str(at)[8:10]), _AYLAR[int(month[5:7]) - 1]
+            return f"{name} çekimi {day} {name}'ta yarıda kaldı"
+    return None
+
+
 def annotate_series(
     series: list[dict[str, Any]], rows: list[dict[str, Any]], extents: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
@@ -294,6 +314,8 @@ def annotate_series(
         entry["complete"] = None if flags is None else flags[month]
         if entry["complete"] is False:
             entry["covered"] = covered_days(month, extents)
+            if note := truncation_note(extents, month):
+                entry["pull_truncated"] = note
             if short_accounts(extents, month):
                 entry["short"] = short_accounts(extents, month)
         elif entry["complete"] and assumed_edges(extents, month):

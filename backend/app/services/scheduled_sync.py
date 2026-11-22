@@ -40,6 +40,8 @@ from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Any
 
+from app.services.ingest.feed import FeedFailed, pull_coverage
+
 logger = logging.getLogger(__name__)
 
 
@@ -58,6 +60,9 @@ class SyncStatus(StrEnum):
     SUCCESS   = "success"
     FAILED    = "failed"
     SKIPPED   = "skipped"
+    # The pull finished but rows wait for a person / the pull stopped short. Neither is "success".
+    AWAITING_REVIEW = "awaiting_review"
+    PARTIAL         = "partial"
 
 
 class SyncSourceType(StrEnum):
@@ -85,6 +90,7 @@ class SyncScheduleConfig:
         "enabled",
         "frequency",
         "hour_utc",
+        "last_error",
         "last_run_at",
         "last_status",
         "notify_on_completion",
@@ -107,7 +113,9 @@ class SyncScheduleConfig:
         source_config: dict[str, Any] | None = None,
         auto_analyze: bool = True,
         notify_on_completion: bool = True,
+        last_error: str | None = None,
     ) -> None:
+        self.last_error = last_error
         self.schedule_id = schedule_id
         self.org_id = org_id
         self.source_type = source_type
@@ -136,7 +144,8 @@ class SyncScheduleConfig:
         if self.last_run_at is None:
             return True
 
-        delta = now - self.last_run_at
+        last = self.last_run_at if self.last_run_at.tzinfo else self.last_run_at.replace(tzinfo=UTC)
+        delta = now - last
 
         if self.frequency == SyncFrequency.DAILY:
             return delta >= timedelta(hours=23)
@@ -151,11 +160,14 @@ class SyncScheduleConfig:
 class SyncResult:
     """Result of a single sync run."""
     __slots__ = (
+        "counts",
         "duration_ms",
         "error",
         "health_score",
+        "held_candidates",
         "job_id",
         "org_id",
+        "period_covered",
         "ran_at",
         "row_count",
         "schedule_id",
@@ -175,7 +187,15 @@ class SyncResult:
         error: str | None = None,
         duration_ms: int = 0,
         ran_at: datetime | None = None,
+        counts: dict[str, Any] | None = None,
+        held_candidates: int = 0,
+        period_covered: bool = False,
     ) -> None:
+        self.counts = counts
+        self.held_candidates = held_candidates
+        # True only for a pull that read the whole window and booked or held every row: the one thing a sync
+        # may be believed about. A failed, skipped or partial run never covers its period.
+        self.period_covered = period_covered
         self.schedule_id = schedule_id
         self.org_id = org_id
         self.source_type = source_type
@@ -198,6 +218,9 @@ class SyncResult:
             "health_score": self.health_score,
             "error": self.error,
             "duration_ms": self.duration_ms,
+            "counts": self.counts,
+            "held_candidates": self.held_candidates,
+            "period_covered": self.period_covered,
             "ran_at": self.ran_at.isoformat(),
         }
 
@@ -235,7 +258,7 @@ class ScheduledSyncRunner:
             if schedule.source_type == SyncSourceType.GITHUB_ACTIVITY:
                 return await self._run_github_overlay(schedule, db, t0)
 
-            csv_bytes, filename = await self._pull_data(schedule, settings, db=db)
+            csv_bytes, filename, partial = await self._pull_data(schedule, settings, db=db)
             if not csv_bytes:
                 return SyncResult(
                     schedule_id=schedule.schedule_id,
@@ -291,13 +314,24 @@ class ScheduledSyncRunner:
             )
             from app.services.data_plane.quality_gate_service import score_sync_quality
 
-            canonical_rows = normalize_csv_transactions(
+            normalized = normalize_csv_transactions(
                 csv_bytes=csv_bytes,
                 column_mapping=validation.column_mapping,
+                source=str(schedule.source_type),
             )
+            canonical_rows = normalized.rows
+            # What the pull came to, by the one reconcile the upload pipeline runs: rows fetched = written +
+            # held + skipped by a named rule. A partial pull (the source stopped short) says so.
+            feed_outcome = normalized.outcome()
+            if partial:
+                feed_outcome = {**feed_outcome, "status": SyncStatus.PARTIAL, "reason": partial, "complete": False}
+            elif normalized.held or feed_outcome["unaccounted"]:
+                feed_outcome = {**feed_outcome, "status": SyncStatus.AWAITING_REVIEW}
+            final_status = str(feed_outcome["status"])
+            note = _outcome_note(feed_outcome)
             quality = score_sync_quality(
                 validator_health_score=validation.health_score,
-                canonical_row_count=len(canonical_rows),
+                canonical_row_count=len(canonical_rows) + len(normalized.held),
             )
             if quality.should_block:
                 if sync_run_id:
@@ -412,9 +446,11 @@ class ScheduledSyncRunner:
 
             # Create analysis job (idempotent when fingerprint unchanged)
             job_id: str | None = None
-            if schedule.auto_analyze:
+            # Held rows can only wait for a person inside a job (the review queue is per job), so a pull that holds
+            # rows opens one even when the schedule does not auto-analyse.
+            if schedule.auto_analyze or normalized.held:
                 fingerprint = _canonical_fingerprint(canonical_rows)
-                reused = await self._find_reusable_job(
+                reused = None if normalized.held else await self._find_reusable_job(
                     db=db,
                     org_id=schedule.org_id,
                     fingerprint=fingerprint,
@@ -426,8 +462,13 @@ class ScheduledSyncRunner:
                         job_id,
                     )
                 else:
+                    cfg = schedule.source_config or {}
+                    window = (str(cfg["from_date"])[:10], str(cfg["to_date"])[:10]) if cfg.get("from_date") and cfg.get("to_date") else None
+                    stated = pull_coverage(window, [r["date"] for r in normalized.feed.rows], partial)
                     job_id = await self._create_job(
-                        csv_bytes=csv_bytes,
+                        csv_bytes=normalized.job_csv,
+                        # Out of band: what this pull received is job metadata, never a line inside the file.
+                        feed_meta={"source": str(schedule.source_type), "pull_coverage": stated},
                         filename=filename,
                         org_id=schedule.org_id,
                         column_mapping=validation.column_mapping,
@@ -446,15 +487,16 @@ class ScheduledSyncRunner:
                 await self._finish_sync_run(
                     db=db,
                     sync_run_id=sync_run_id,
-                    status=SyncStatus.SUCCESS,
+                    status=final_status,
                     row_count_canonical=len(canonical_rows),
                     quality_score=quality.quality_score,
                     triggered_job_id=job_id,
+                    error_message=note,
                 )
 
             # Send notification
             if schedule.notify_on_completion:
-                await self._notify(schedule, job_id, validation.row_count, db)
+                await self._notify(schedule, job_id, validation.row_count, db, note=note)
 
             duration = int(time.time() * 1000) - t0
             logger.info(
@@ -467,15 +509,31 @@ class ScheduledSyncRunner:
                 schedule_id=schedule.schedule_id,
                 org_id=schedule.org_id,
                 source_type=schedule.source_type,
-                status=SyncStatus.SUCCESS,
+                status=final_status,
                 job_id=job_id,
                 row_count=validation.row_count,
                 health_score=validation.health_score,
+                error=note,
                 duration_ms=duration,
+                counts=feed_outcome["counts"],
+                held_candidates=int(feed_outcome["held_candidates"]),
+                period_covered=bool(feed_outcome["complete"]) and not feed_outcome["unaccounted"],
             )
 
         except Exception as exc:
-            logger.error("ScheduledSync: error in %s: %s", schedule.schedule_id, exc)
+            logger.error("ScheduledSync: error in %s: %s", schedule.schedule_id, type(exc).__name__)
+            # State-based: a source that cannot pull (dormant, revoked, down) is reported ONCE per distinct reason, not as a
+            # new failed run on every tick; the schedule's own last_status/last_error (persisted by run_due_syncs) say so.
+            repeat = schedule.last_status == SyncStatus.FAILED and (schedule.last_error or "") == str(exc)[:500]
+            if sync_run_id is None and not repeat:
+                # The pull itself failed (before any run was opened): the failure is still a recorded run.
+                try:
+                    sync_run_id = await self._start_sync_run(
+                        db=db, org_id=schedule.org_id, schedule_id=schedule.schedule_id,
+                        provider=schedule.source_type, row_count_raw=0,
+                    )
+                except Exception:   # the failure itself must still be returned
+                    sync_run_id = None
             if sync_run_id:
                 await self._finish_sync_run(
                     db=db,
@@ -577,27 +635,31 @@ class ScheduledSyncRunner:
         schedule: SyncScheduleConfig,
         settings: Any,
         db: Any = None,
-    ) -> tuple[bytes, str]:
-        """Pull data from the configured source."""
+    ) -> tuple[bytes, str, str | None]:
+        """Pull data from the configured source: (csv, filename, partial reason).
+
+        A pull that fails RAISES (`FeedFailed` with the reason): an outage is a failed sync, never an empty file.
+        An empty file means the source answered and had nothing, or is not configured.
+        """
         source = schedule.source_type
         cfg = schedule.source_config
 
         if source == SyncSourceType.ERP_LOGO_TIGER:
-            return await self._pull_logo_tiger(cfg, settings)
+            return (*await self._pull_logo_tiger(cfg, settings), None)
         elif source == SyncSourceType.ERP_PARASUT:
             return await self._pull_parasut(cfg, settings, db=db, org_id=schedule.org_id)
         elif source == SyncSourceType.OPEN_BANKING:
-            return await self._pull_open_banking(cfg, settings)
+            return (*await self._pull_open_banking(cfg, settings), None)
         elif source == SyncSourceType.GIB_EFATURA:
-            return await self._pull_efatura(cfg, settings)
+            return (*await self._pull_efatura(cfg, settings), None)
         elif source == SyncSourceType.BILLING_STRIPE:
             return await self._pull_billing_stripe(schedule.org_id, db=db)
         elif source == SyncSourceType.CRM_EXPORT:
-            return await self._pull_crm_export(cfg)
+            return (*await self._pull_crm_export(cfg), None)
         elif source == SyncSourceType.HR_EXPORT:
-            return await self._pull_hr_export(cfg)
+            return (*await self._pull_hr_export(cfg), None)
         elif source == SyncSourceType.GITHUB_ACTIVITY:
-            return b"", ""
+            return b"", "", None
         else:
             raise ValueError(f"Unsupported source type: {source}")
 
@@ -605,9 +667,9 @@ class ScheduledSyncRunner:
         self,
         org_id: str,
         db: Any = None,
-    ) -> tuple[bytes, str]:
+    ) -> tuple[bytes, str, str | None]:
         if db is None:
-            return b"", ""
+            return b"", "", None
         from app.services.connectors.billing_stripe import pull_stripe_revenue_csv
 
         return await pull_stripe_revenue_csv(org_id, db)
@@ -668,18 +730,11 @@ class ScheduledSyncRunner:
         )
 
     async def _pull_logo_tiger(self, cfg: dict, settings: Any) -> tuple[bytes, str]:
-        try:
-            from app.services.erp.logo_tiger_connector import LogoTigerConnector
-            connector = LogoTigerConnector(settings=settings)
-            transactions = await connector.get_transactions(
-                from_date=cfg.get("from_date"),
-                to_date=cfg.get("to_date"),
-            )
-            csv_bytes = _transactions_to_csv(transactions)
-            return csv_bytes, f"logo_tiger_sync_{_today_str()}.csv"
-        except ImportError:
-            logger.warning("LogoTigerConnector not available")
-            return b"", ""
+        # The connector reads an exported CSV (POST /erp/logo-tiger/sync); it has no API to call on a timer.
+        raise FeedFailed(
+            "Logo Tiger zamanlanmış çekimi desteklenmiyor: bağlayıcı dışa aktarılmış CSV dosyasını okur; "
+            "dosyayı /erp/logo-tiger/sync ile yükleyin."
+        )
 
     async def _pull_parasut(
         self,
@@ -687,7 +742,7 @@ class ScheduledSyncRunner:
         settings: Any,
         db: Any = None,
         org_id: str | None = None,
-    ) -> tuple[bytes, str]:
+    ) -> tuple[bytes, str, str | None]:
         """Pull the schedule's organisation's Paraşüt invoices.
 
         `integration_id` comes from the schedule's own config, which a user
@@ -695,11 +750,14 @@ class ScheduledSyncRunner:
         another organisation's Paraşüt data into this one's analyses. And the
         amounts were guessed: an integer over 1000 was taken for kuruş, anything
         else for lira — the connector's `amount_cents` is always kuruş.
+
+        A missing integration, a refused pull, an outage: all FAILED with the reason (they used to return an
+        empty file, which the run reported as "source empty — skipped"). An invoice the connector could not
+        read is a row with an empty amount / date, never dropped and never 0.
         """
         integration_id = cfg.get("integration_id")
         if not integration_id or db is None or not org_id:
-            logger.warning("Parasut pull skipped: missing integration_id, db or org")
-            return b"", ""
+            raise FeedFailed("Paraşüt çekimi için integration_id, veritabanı ya da kuruluş eksik.")
         from sqlalchemy import select
 
         from app.models.erp_integration import ERPIntegration
@@ -710,52 +768,27 @@ class ScheduledSyncRunner:
         )).scalar_one_or_none()
         if integration is None:
             logger.warning("Parasut pull refused: integration %s is not org %s's", integration_id, org_id)
-            return b"", ""
+            raise FeedFailed("Paraşüt entegrasyonu bu kuruluşa ait değil ya da yok.")
         try:
-            raw_txs = await ParasutConnector(db).islemleri_cek(integration)
+            pulled = await ParasutConnector(db).islemleri_cek(integration)
         except ValueError as e:
-            logger.warning("Parasut pull failed: %s", e)
-            return b"", ""
-        transactions = [
-            {
-                "date": str(tx.get("date") or "")[:10],
-                "amount": (int(tx.get("amount_cents") or 0) / 100) * (1 if tx.get("type") == "income" else -1),
-                "description": tx.get("description") or "",
-                "type": "income" if tx.get("type") == "income" else "expense",
-                "reference": tx.get("source_id") or "",
-            }
-            for tx in raw_txs
-        ]
-        return _transactions_to_csv(transactions), f"parasut_sync_{_today_str()}.csv"
+            raise FeedFailed(f"Paraşüt çekimi başarısız: {e}") from e
+        transactions = [feed_row_for_csv(r) for r in pulled.rows]
+        return _transactions_to_csv(transactions), f"parasut_sync_{_today_str()}.csv", pulled.partial
 
     async def _pull_open_banking(self, cfg: dict, settings: Any) -> tuple[bytes, str]:
-        try:
-            from app.services.integrations import TurkiyeOpenBankingClient
-            bank_name = cfg.get("bank", "akbank")
-            client = TurkiyeOpenBankingClient(bank_name=bank_name, settings=settings)
-            transactions = await client.get_transactions(
-                account_id=cfg.get("account_id", ""),
-                from_date=cfg.get("from_date"),
-                to_date=cfg.get("to_date"),
-            )
-            csv_bytes = _transactions_to_csv(transactions)
-            return csv_bytes, f"open_banking_{bank_name}_{_today_str()}.csv"
-        except Exception as e:
-            logger.warning("OpenBanking pull failed: %s", e)
-            return b"", ""
+        # The platform's own bank credentials plus an account id a user typed into the schedule would read any
+        # account, with no consent of its holder: that is why POST /integrations/open-banking/sync was removed.
+        # A bank is pulled only with the holder's OAuth token, through POST /open-banking/connections/{id}/sync.
+        raise FeedFailed(
+            "Open Banking zamanlanmış çekimi desteklenmiyor: hesap sahibinin rızası (OAuth belirteci) "
+            "olmadan hesap hareketi çekilemez; /open-banking bağlantısı üzerinden eşitleyin."
+        )
 
     async def _pull_efatura(self, cfg: dict, settings: Any) -> tuple[bytes, str]:
-        try:
-            from app.services.gib_efatura import get_efatura_client
-            client = get_efatura_client(sandbox=getattr(settings, "gib_efatura_sandbox", True))
-            if not client:
-                return b"", ""
-            transactions = await client.get_all_transactions()
-            csv_bytes = _transactions_to_csv(transactions)
-            return csv_bytes, f"efatura_sync_{_today_str()}.csv"
-        except Exception as e:
-            logger.warning("eFatura pull failed: %s", e)
-            return b"", ""
+        # The GİB client returns invoices (gross/net/vat), not the date/amount rows this pipeline reads, and the
+        # route that uses them (/efatura/sync) opens no analysis either; scheduled pulls never produced a row.
+        raise FeedFailed("e-Fatura zamanlanmış çekimi desteklenmiyor; /efatura uç noktalarını kullanın.")
 
     async def _create_job(
         self,
@@ -766,6 +799,7 @@ class ScheduledSyncRunner:
         quality_meta: dict[str, Any] | None,
         db: Any,
         settings: Any,
+        feed_meta: dict[str, Any] | None = None,
     ) -> str | None:
         """Create an AnalysisJob from the pulled CSV data."""
         import io
@@ -835,6 +869,8 @@ class ScheduledSyncRunner:
                 if column_mapping:
                     meta["column_mapping"] = column_mapping
                 meta["sync_auto"] = True
+                if feed_meta:
+                    meta["feed"] = feed_meta
                 if quality_meta:
                     meta.update(quality_meta)
                 await db.execute(
@@ -862,6 +898,7 @@ class ScheduledSyncRunner:
         job_id: str | None,
         row_count: int,
         db: Any,
+        note: str | None = None,
     ) -> None:
         """Send in-app notification after sync completion."""
         try:
@@ -874,6 +911,8 @@ class ScheduledSyncRunner:
             )
             if job_id:
                 message += " Analiz başlatıldı."
+            if note:
+                message += f" {note}"
             await svc.send_org_notification(
                 org_id=schedule.org_id,
                 title="Otomatik Sync Tamamlandı",
@@ -915,6 +954,32 @@ async def job_owner_id(db: Any, org_id: str) -> str | None:
         await db.execute(select(User.id).where(User.org_id == str(org_id), User.is_active.is_(True)).limit(1))
     ).scalar_one_or_none()
     return str(legacy) if legacy else None
+
+
+def _outcome_note(outcome: dict[str, Any]) -> str | None:
+    """One sentence for a person when the run is not a plain success (held rows, a pull that stopped short)."""
+    parts: list[str] = []
+    if outcome.get("reason"):
+        parts.append(f"Kaynak eksik döndü: {outcome['reason']}; dönem kapsanmış sayılmaz.")
+    if outcome.get("held_candidates"):
+        parts.append(f"{outcome['held_candidates']} satır kararınızı bekliyor (/bekleyen-kayitlar).")
+    if outcome.get("unaccounted"):
+        parts.append(f"{outcome['unaccounted']} satır hesaba katılamadı.")
+    return " ".join(parts) or None
+
+
+def feed_row_for_csv(row: dict[str, Any]) -> dict[str, Any]:
+    """A pulled row as a CSV line the canonical normalisation reads: a value the source did not state stays EMPTY.
+
+    The amount is the magnitude and the direction is the explicit `type` column; an unknown direction is written "?" (held), an
+    unknown amount, date or currency is an empty cell (held). Nothing is filled in.
+    """
+    cents, kind = row.get("amount_cents"), row.get("type")
+    amount: Any = "" if cents is None else cents / 100       # the magnitude: the direction is the `type` column
+    return {
+        "date": row.get("date") or "", "amount": amount, "description": row.get("description") or "",
+        "type": kind or "?", "currency": row.get("currency") or row.get("currency_raw") or "", "reference": row.get("reference") or "",
+    }
 
 
 def _today_str() -> str:
@@ -1001,8 +1066,25 @@ async def run_due_syncs(db: Any, settings: Any) -> list[SyncResult]:
         if schedule.is_due(now):
             result = await runner.run(schedule, db, settings)
             results.append(result)
+            await _remember_run(db, schedule, result)
 
     return results
+
+
+async def _remember_run(db: Any, schedule: SyncScheduleConfig, result: SyncResult) -> None:
+    """Persist what the run came to on its schedule row: it is what makes a repeated failure a state, not an event."""
+    try:
+        from app.models.sync_schedule import SyncSchedule
+
+        row = await db.get(SyncSchedule, schedule.schedule_id)
+        if row is None:
+            return
+        row.last_run_at, row.last_status = result.ran_at, result.status
+        row.last_error, row.last_job_id = (result.error or None) and str(result.error)[:500], result.job_id
+        row.last_row_count, row.last_health_score = result.row_count, result.health_score
+        await db.commit()
+    except Exception as exc:
+        logger.warning("ScheduledSync: could not persist run state: %s", type(exc).__name__)
 
 
 async def _load_active_schedules(db: Any) -> list[SyncScheduleConfig]:
@@ -1038,6 +1120,7 @@ async def _load_active_schedules(db: Any) -> list[SyncScheduleConfig]:
                     enabled=bool(row.enabled),
                     last_run_at=row.last_run_at,
                     last_status=row.last_status or SyncStatus.IDLE,
+                    last_error=row.last_error,
                     source_config=source_config if isinstance(source_config, dict) else {},
                     auto_analyze=bool(row.auto_analyze),
                     notify_on_completion=bool(row.notify_on_completion),

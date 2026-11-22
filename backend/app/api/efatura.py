@@ -135,6 +135,8 @@ async def list_invoices(
             "direction":       direction,
             "period":          f"{start_date} – {end_date}",
             "invoice_count":   len(invoices),
+            # Invoices that could not be read are listed (flagged) and in no total.
+            "unreadable_count": sum(1 for inv in invoices if inv.get("unreadable")),
             "invoices":        invoices[:50],  # Cap at 50 for API response
             "total_net":       sum(inv.get("net_amount", 0) for inv in invoices),
             "total_vat":       sum(inv.get("vat_amount", 0) for inv in invoices),

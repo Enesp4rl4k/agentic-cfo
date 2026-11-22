@@ -29,8 +29,6 @@ ALLOWED: dict[str, str] = {
     "app/services/ingest/": "the upload path: currency markers read from cells, rows and e-belge fields",
     "app/services/ocr_service.py": "OCR text patterns that detect a currency marker in a scanned document",
     "app/services/csv_validator.py": "strips currency symbols from a pasted amount before parsing it",
-    "app/services/data_plane/normalization_service.py": "ingest normalisation of a raw amount and its stated currency",
-    "app/services/open_banking/": "bank connector payload shapes (the bank's own currency field and fixtures)",
     "app/services/rag/grounding_validator.py": "recognises currency tokens in model output to check them against the data",
     "app/services/reflection_agent.py": "recognises currency tokens in model output to check them",
     # ── Storage schema and the one place that owns the symbols ────────────────────────────────────────
@@ -74,7 +72,6 @@ ALLOWED: dict[str, str] = {
     "app/api/radar_schema.py": "DEBT: `currency: str = \"TRY\"` schema default, always overridden; changing it regenerates the OpenAPI contract",
     "app/services/cash_radar.py": "DEBT: RadarResult.currency default, always set from effective_base_of",
     "app/services/company_view.py": "DEBT: CompanyView.base_currency default, always set by the ledger view",
-    "app/services/integrations.py": "DEBT: connector payloads default a missing currency to TRY (ingest-side)",
     "app/api/muhasebe.py": "DEBT: a journal for a job with no org falls back to TRY",
     "app/services/semantic/": "DEBT: the semantic snapshot defaults a missing currency to USD; needs its own contract change",
 }

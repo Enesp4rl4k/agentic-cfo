@@ -19,6 +19,8 @@ The buckets, and the only code that fills them:
   emitted          rows._try_parse_csv / bank parsers        a transaction row: booked or held by the hold step
   continuation     parsers.lines.account_for_lines           a wrapped description line attached to its row
   non_row_lines    parsers.lines.account_for_lines           page header / footer / address / rule
+  out_of_scope     services.ingest.feed                      a pulled item (not an upload) whose READABLE date is outside the
+                                                             window the sync asked for; an unreadable date is never this
   (text statements: `read` is parsers.lines.read_lines, the physical non-empty lines, independent of every row
   pattern; a money-like line no pattern took is EMITTED as a held "satır okunamadı" row, never dropped)
 """
@@ -31,6 +33,7 @@ MAX_LISTED = 25
 
 SUMMED = (
     "read", "blank", "header_repeats", "emitted", "summary_skipped", "account_skipped", "continuation", "non_row_lines",
+    "out_of_scope",
 )
 
 
@@ -44,6 +47,7 @@ class ReadLedger:
     account_skipped: int = 0
     continuation: int = 0       # a wrapped description attached to the row above it
     non_row_lines: int = 0      # a page header, footer, address or rule of a text statement
+    out_of_scope: int = 0       # a pulled item with a readable date outside the requested window (services.ingest.feed)
     summary_lines: list[dict[str, str]] = field(default_factory=list)
     # The structured reader failed on this file and another reader took over (never silently).
     reader_failed: bool = False

@@ -2716,6 +2716,7 @@ export type MessageTree = {
     ingestLost: string;
     ingestFallback: string;
     ingestBalanceVerified: string;
+    ingestBalancePartial: string;
     ingestBalanceUnverified: string;
   };
   acceptInvite: {
@@ -5823,6 +5824,7 @@ export const en: MessageTree = {
       confidence_unknown: "confidence unknown",
       confidence_low: "low confidence",
       currency_unknown: "currency unknown",
+      currency_unreadable: "currency stated but unreadable",
       direction_unknown: "direction unclear",
       amount_unreadable: "amount unreadable",
       date_unreadable: "date unreadable",
@@ -5877,6 +5879,7 @@ export const en: MessageTree = {
     ingestLost: "{count} rows could not be accounted for; please review the file.",
     ingestFallback: "This file could not be read in the expected format; another reader was used.",
     ingestBalanceVerified: "Verified against the running balance.",
+    ingestBalancePartial: "{verified} rows verified against the running balance; {held} rows wait for your decision.",
     ingestBalanceUnverified: "Not verified against the balance: the rows could not be checked with the running balance.",
   },
   acceptInvite: {

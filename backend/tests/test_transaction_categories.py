@@ -143,7 +143,10 @@ def test_an_unrecognised_response_produces_no_phantom_rows() -> None:
     rows = client._parse_invoice_list(
         [{"someOtherShape": 1}, {"alsoUnknown": "x"}], "inbound"
     )
-    assert rows == []
+    # Not dropped (a real invoice of an unexpected shape would vanish), not booked: flagged, counted, with no
+    # amount, and in no total.
+    assert len(rows) == 2
+    assert all(r["unreadable"] and r["amount_cents"] is None and r["gross_amount"] == 0.0 for r in rows)
 
 
 def test_an_uploaded_category_column_is_checked_against_the_vocabulary() -> None:
