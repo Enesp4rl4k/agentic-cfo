@@ -1137,6 +1137,13 @@ class WorkerSettings:
     # The crons live in this worker type only — never in the maintenance one.
     on_startup = _start_crons
     on_shutdown = _stop_crons
+    # Deploy and `docker stop`: on SIGTERM let running jobs finish (up to a full
+    # job_timeout) before cancelling them. docker-compose.prod.yml's
+    # stop_grace_period must stay above this.
+    job_completion_wait = 600
+    # The health key `arq --check` (container healthcheck) and /api/v1/ready
+    # read; arq's default of 3600 s would report a dead worker for an hour.
+    health_check_interval = 30
 
     @classmethod
     def redis_settings(cls) -> RedisSettings:
@@ -1158,6 +1165,9 @@ class MaintenanceWorkerSettings:
     keep_result = 86400
     retry_jobs = True
     max_tries = 2
+    job_completion_wait = 300       # docker-compose.prod.yml stop_grace_period stays above this
+    health_check_interval = 30      # see WorkerSettings
+
     @classmethod
     def redis_settings(cls) -> RedisSettings:
         settings = get_settings()

@@ -18,6 +18,15 @@
 #   BACKUP_KEEP_LOCAL      keep the newest N encrypted archives locally, default 2
 #   COMPOSE_FILE           default docker-compose.prod.yml
 #
+# Every delete in this script is limited to its own archives: the remote
+# `rclone delete` is filtered to 'aicfo-*.tar.age*' (and --min-age), the local
+# prune is a depth-1 `find` for 'aicfo-*.tar.age' in BACKUP_LOCAL_DIR plus each
+# archive's own .sha256, and the scratch dir is the script's own mktemp -d.
+#
+# On success it writes "$BACKUP_LOCAL_DIR/last-success" (UTC time, archive name)
+# once the off-server copy is verified; monitoring can alert when that file is
+# older than ~26 h (docs/ops/staging.md section 9).
+#
 # Cron (root or the deploy user, in the repo checkout):
 #   15 2 * * * cd /opt/agentic-cfo && ./scripts/backup.sh >> /var/log/aicfo-backup.log 2>&1
 #
@@ -33,7 +42,7 @@ if [[ -f .env ]]; then
   for key in AGE_RECIPIENT BACKUP_RCLONE_REMOTE BACKUP_RETENTION_DAYS \
              BACKUP_LOCAL_DIR BACKUP_KEEP_LOCAL POSTGRES_USER POSTGRES_DB; do
     if [[ -z "${!key:-}" ]]; then
-      line="$(grep -E "^${key}=" .env | tail -n1 || true)"
+      line="$(grep -E "^${key}=" .env | tail -n1 | tr -d '\r' || true)"
       [[ -n "$line" ]] && export "$key=${line#*=}"
     fi
   done
@@ -48,7 +57,12 @@ COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.prod.yml}"
 PGUSER_="${POSTGRES_USER:-aicfo}"
 PGDB_="${POSTGRES_DB:-aicfo}"
 
-for bin in docker age rclone sha256sum tar; do
+[[ "$AGE_RECIPIENT" == age1* ]] || { echo "backup: AGE_RECIPIENT must be an age PUBLIC key (age1...)" >&2; exit 2; }
+[[ "$BACKUP_RCLONE_REMOTE" == *:* ]] || { echo "backup: BACKUP_RCLONE_REMOTE must be remote:path" >&2; exit 2; }
+[[ "$RETENTION_DAYS" =~ ^[0-9]+$ && "$RETENTION_DAYS" -ge 1 ]] || { echo "backup: BACKUP_RETENTION_DAYS must be a whole number >= 1" >&2; exit 2; }
+[[ "$KEEP_LOCAL" =~ ^[0-9]+$ && "$KEEP_LOCAL" -ge 1 ]] || { echo "backup: BACKUP_KEEP_LOCAL must be a whole number >= 1" >&2; exit 2; }
+
+for bin in docker age rclone sha256sum tar flock; do
   command -v "$bin" >/dev/null || { echo "backup: missing '$bin'" >&2; exit 2; }
 done
 
@@ -61,6 +75,10 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$WORK/$NAME" "$LOCAL_DIR"
 chmod 700 "$WORK" "$LOCAL_DIR"
+
+# One run at a time: an overlapping cron run would race on the same files.
+exec 9>"$LOCAL_DIR/.backup.lock"
+flock -n 9 || { echo "backup: another run holds the lock" >&2; exit 1; }
 
 log "start $NAME"
 
@@ -88,7 +106,8 @@ dc exec -T postgres psql -U "$PGUSER_" -d "$PGDB_" -At \
 
 # 3. Uploads (the user's original files — the database points at them).
 dc exec -T backend tar -C /app -czf - uploads > "$WORK/$NAME/uploads.tar.gz"
-tar -tzf "$WORK/$NAME/uploads.tar.gz" | grep -vc '/$' > "$WORK/$NAME/uploads_file_count.txt" || true
+tar -tzf "$WORK/$NAME/uploads.tar.gz" > "$WORK/uploads.list"   # fails loudly on a corrupt archive
+grep -vc '/$' "$WORK/uploads.list" > "$WORK/$NAME/uploads_file_count.txt" || true   # grep -c exits 1 on a count of 0
 
 {
   echo "name=$NAME"
@@ -110,10 +129,17 @@ rclone copy "$ARCHIVE.sha256" "$BACKUP_RCLONE_REMOTE/"
 rclone check --one-way --include "$NAME.tar.age" "$LOCAL_DIR" "$BACKUP_RCLONE_REMOTE/"
 log "uploaded to $BACKUP_RCLONE_REMOTE"
 
+# Success marker: written only after the off-server copy is verified.
+printf '%s %s
+' "$(date -u +%FT%TZ)" "$NAME" > "$LOCAL_DIR/last-success.tmp"
+mv -f -- "$LOCAL_DIR/last-success.tmp" "$LOCAL_DIR/last-success"
+
 # 6. Retention: remote keeps RETENTION_DAYS, local keeps the newest KEEP_LOCAL.
 rclone delete --min-age "${RETENTION_DAYS}d" --include 'aicfo-*.tar.age*' "$BACKUP_RCLONE_REMOTE/"
 mapfile -t old < <(find "$LOCAL_DIR" -maxdepth 1 -name 'aicfo-*.tar.age' -printf '%T@ %p\n' \
   | sort -rn | tail -n +"$((KEEP_LOCAL + 1))" | cut -d' ' -f2-)
-for f in "${old[@]}"; do rm -f -- "$f" "$f.sha256"; done
+if (( ${#old[@]} )); then
+  for f in "${old[@]}"; do rm -f -- "$f" "$f.sha256"; done
+fi
 
 log "done $NAME"

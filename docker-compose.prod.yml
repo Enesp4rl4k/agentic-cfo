@@ -7,17 +7,28 @@
 #   * Only Caddy publishes ports (80, 443, 443/udp). Postgres and Redis sit on
 #     an `internal: true` network — no published port, no route out.
 #   * Secrets come from `.env` on the server (see .env.example, "Staging"
-#     section) and never appear in this file — app containers read `.env`
+#     section) and never appear in this file — backend containers read `.env`
 #     via env_file, Postgres gets its password by name only. Postgres refuses
 #     to initialise without one; required domains use ${VAR:?}.
+#   * The frontend does NOT read `.env` wholesale: it gets only the variables
+#     it uses, so no backend secret (database password, signing key, API keys)
+#     reaches the internet-facing Next.js container.
 #   * Redis has no password: it is reachable only on the `internal` network,
 #     which only the backend containers (holders of every secret anyway) join.
-#   * Migrations run once per deploy in the `migrate` one-shot; the API starts
-#     only after it exits 0.
+#   * APP_ENV is set here (production by default; `APP_ENV=staging` in .env on
+#     a staging box), so the preflight's production rules are FATAL, not WARN.
+#   * Startup order: `migrate` (alembic upgrade head, then the preflight with
+#     --db) -> backend / worker / worker-maintenance, each of which runs the
+#     same preflight again before its server starts and refuses to start on a
+#     FATAL finding or a schema that is not at head.
 #   * APScheduler runs only in `worker` (SCHEDULER_PROCESS=worker); the API
-#     and the maintenance worker never start it.
+#     and the maintenance worker never start it. There is no separate
+#     scheduler container.
+#   * Every service has a memory/CPU cap and rotated logs, sized for a 4 vCPU /
+#     8 GB VPS (docs/ops/staging.md section 2).
 #   * Images are tagged ${IMAGE_TAG} (the git SHA at deploy) so a rollback is
 #     "set IMAGE_TAG to the previous SHA and `up -d`" — see docs/ops/runbook.md.
+#     The same value is the GIT_SHA build arg, shown on /api/v1/version.
 #
 # Kept as a standalone file (not an override of docker-compose.yml) because
 # compose merges `ports:` lists additively: an override cannot take away the
@@ -30,6 +41,8 @@ x-logging: &logging
     max-file: "5"
 
 x-backend-env: &backend-env
+  # production | staging. Both turn the preflight's FATAL rules on.
+  APP_ENV: ${APP_ENV:-production}
   USE_SQLITE: "false"
   POSTGRES_HOST: postgres
   POSTGRES_PORT: "5432"
@@ -39,6 +52,12 @@ x-backend-env: &backend-env
   REDIS_URL: redis://redis:6379/0
   # Crons live in the arq analysis worker only (backend/app/scheduler.py).
   SCHEDULER_PROCESS: worker
+  # One proxy (Caddy) in front: the rightmost X-Forwarded-For entry is the real
+  # client. Without it every client shares one rate-limit bucket (the proxy's
+  # address) and IP allow-lists refuse to enable (PR #132/#134).
+  TRUSTED_PROXY_COUNT: "1"
+  # Commit shown on /api/v1/version and used as the Sentry release.
+  GIT_SHA: ${IMAGE_TAG:-unknown}
   # A worker exists here: an enqueue that cannot reach Redis must fail, not
   # silently run inside the API process and die with it.
   ALLOW_INLINE_JOB_FALLBACK: "false"
@@ -47,13 +66,16 @@ x-backend-env: &backend-env
   BACKEND_CORS_ORIGINS: https://${APP_DOMAIN:?set APP_DOMAIN in .env}
   FRONTEND_URL: https://${APP_DOMAIN}
   BRAND_APP_URL: https://${APP_DOMAIN}
-  PARASUT_REDIRECT_URI: https://${API_DOMAIN:?set API_DOMAIN in .env}/api/v1/erp/parasut/callback
+  # Public API URL; the Paraşüt OAuth callback is built from it.
+  BACKEND_URL: https://${API_DOMAIN:?set API_DOMAIN in .env}
 
 x-backend: &backend
   build:
     context: ./backend
     dockerfile: Dockerfile
     target: runner
+    args:
+      GIT_SHA: ${IMAGE_TAG:-unknown}
   image: agentic-cfo-backend:${IMAGE_TAG:-latest}
   restart: unless-stopped
   env_file:
@@ -63,6 +85,15 @@ x-backend: &backend
   volumes:
     - uploads_data:/app/uploads
   logging: *logging
+
+# `sh -c` wrapper for the long-running backend services: preflight first (a
+# non-zero exit means the container does not start), then `exec` the service's
+# `command:` so it is PID 1 and receives SIGTERM. `$$` is a literal `$` here.
+x-preflight: &preflight
+  - sh
+  - -c
+  - python -m app.core.preflight --db && exec "$$@"
+  - --
 
 services:
   caddy:
@@ -87,12 +118,14 @@ services:
         condition: service_healthy
       frontend:
         condition: service_healthy
+    mem_limit: 256m
+    cpus: 0.5
     logging: *logging
 
   postgres:
     image: pgvector/pgvector:pg16  # pgvector: migration 023 and RagChunk.embedding need it
     restart: unless-stopped
-    # Pool math (backend/app/config.py): (2 uvicorn + 2 arq) × (20 + 10) = 120
+    # Pool math (backend/app/config.py): (2 uvicorn + 2 arq) x (20 + 10) = 120
     # connections at peak, over the image default of 100.
     command: ["postgres", "-c", "max_connections=200", "-c", "shared_buffers=1GB"]
     environment:
@@ -104,6 +137,9 @@ services:
     networks:
       - internal
     shm_size: 256mb
+    stop_grace_period: 60s   # a clean shutdown checkpoint, not crash recovery
+    mem_limit: 2g
+    cpus: 2
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
@@ -128,6 +164,8 @@ services:
       - redis_data:/data
     networks:
       - internal
+    mem_limit: 640m   # maxmemory 512mb + append-only rewrite headroom
+    cpus: 0.5
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -138,15 +176,23 @@ services:
   migrate:
     <<: *backend
     restart: "no"
-    command: ["alembic", "upgrade", "head"]
+    # alembic first, then the preflight (configuration + schema at head): a
+    # deploy with an unsafe configuration stops here, before anything runs.
+    command: ["sh", "-c", "alembic upgrade head && python -m app.core.preflight --db"]
     networks:
       - internal
+    mem_limit: 512m
+    cpus: 1
     depends_on:
       postgres:
         condition: service_healthy
 
   backend:
     <<: *backend
+    entrypoint: *preflight
+    # Same command as backend/Dockerfile's CMD (an entrypoint override drops it).
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000",
+              "--workers", "2", "--log-level", "info"]
     # edge: Caddy reaches it, and it reaches LLM / Paraşüt / SMTP outbound.
     networks:
       - internal
@@ -156,15 +202,20 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+    stop_grace_period: 30s
+    mem_limit: 1280m
+    cpus: 2
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
       timeout: 5s
-      start_period: 30s
+      start_period: 60s
       retries: 5
 
+  # The crons (APScheduler, SCHEDULER_PROCESS=worker) run inside this container.
   worker:
     <<: *backend
+    entrypoint: *preflight
     command: ["arq", "app.worker.WorkerSettings"]
     networks:
       - internal
@@ -172,9 +223,23 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    # WorkerSettings.job_completion_wait = 600 s (= job_timeout): on SIGTERM arq
+    # lets running jobs finish before it cancels them. Grace must exceed it.
+    stop_grace_period: 660s
+    mem_limit: 1280m
+    cpus: 2
+    # arq's own check: exit 0 while this worker's health key exists in Redis
+    # (refreshed every 30 s, WorkerSettings.health_check_interval).
+    healthcheck:
+      test: ["CMD", "arq", "--check", "app.worker.WorkerSettings"]
+      interval: 30s
+      timeout: 20s
+      start_period: 90s
+      retries: 3
 
   worker-maintenance:
     <<: *backend
+    entrypoint: *preflight
     command: ["arq", "app.worker.MaintenanceWorkerSettings"]
     networks:
       - internal
@@ -182,6 +247,15 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    stop_grace_period: 360s   # MaintenanceWorkerSettings.job_completion_wait = 300 s
+    mem_limit: 768m
+    cpus: 1
+    healthcheck:
+      test: ["CMD", "arq", "--check", "app.worker.MaintenanceWorkerSettings"]
+      interval: 30s
+      timeout: 20s
+      start_period: 90s
+      retries: 3
 
   frontend:
     build:
@@ -192,18 +266,22 @@ services:
         # Inlined into the browser bundle at build time (frontend/Dockerfile).
         NEXT_PUBLIC_API_URL: https://${API_DOMAIN:?set API_DOMAIN in .env}
         NEXT_PUBLIC_DEMO_MODE: "false"
+        NEXT_PUBLIC_LEGACY_DASHBOARDS: ${NEXT_PUBLIC_LEGACY_DASHBOARDS:-false}
     image: agentic-cfo-frontend:${IMAGE_TAG:-latest}
     restart: unless-stopped
-    env_file:
-      - .env
+    # No env_file (see the header): only what Next.js reads at runtime
+    # (frontend/src/lib/auth.ts).
     environment:
       NEXT_PUBLIC_API_URL: https://${API_DOMAIN}
       NEXTAUTH_URL: https://${APP_DOMAIN:?set APP_DOMAIN in .env}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?set NEXTAUTH_SECRET in .env}
     networks:
       - edge
     depends_on:
       backend:
         condition: service_healthy
+    mem_limit: 512m
+    cpus: 1
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health > /dev/null 2>&1 || exit 1"]
       interval: 15s

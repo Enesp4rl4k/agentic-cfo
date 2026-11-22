@@ -8,6 +8,8 @@ alias dc='docker compose -f docker-compose.prod.yml'
 
 ## 1. Deploy
 
+Sıralı kontrol listesi (ilk kurulum ve yükseltme): [staging.md §6](staging.md#6-deploy-kontrol-listesi). Aşağıdaki komut bloğu onun özetidir.
+
 ```bash
 git fetch origin && git checkout <sha veya origin/master>
 PREV=$(grep '^IMAGE_TAG=' .env | cut -d= -f2)      # geri alma için not edin
@@ -15,11 +17,15 @@ NEW=$(git rev-parse --short HEAD)
 ./scripts/backup.sh                                 # deploy öncesi yedek — atlamayın
 sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=$NEW/" .env
 dc build
+dc run --rm migrate alembic upgrade head            # hata verirse eski konteynerler çalışmaya devam eder
+dc run --rm migrate python -m app.core.preflight --db   # "PREFLIGHT ok (production)"
 dc up -d                                            # migrate → backend → worker'lar → frontend → caddy
 dc ps                                               # migrate "exited (0)", diğerleri healthy
-curl -fsS https://<API_DOMAIN>/health
+./scripts/smoke-test.sh --api https://<API_DOMAIN> --app https://<APP_DOMAIN> --expect-commit "$NEW"
+curl -fsS https://<API_DOMAIN>/api/v1/ready         # "status": "ready" (ilk 5 dk "degraded" olabilir)
 ```
 
+- backend, worker ve worker-maintenance her başlangıçta `python -m app.core.preflight --db` çalıştırır: `FATAL` bulgu (şablon gizli, localhost bağlantıları, demo modu...) ya da head'de olmayan şema konteyneri **başlatmaz**; `dc logs <servis>` nedeni söyler.
 - `migrate` sıfırdan farklı çıkarsa backend **başlamaz**, eski konteynerler çalışmaya devam eder: `dc logs migrate`.
 - Eski imajlar etikettiyle diskte kalır (geri alma bunlara dayanır). Ayda bir: son 5 etiket dışındakileri `docker image rm` ile silin.
 
@@ -56,6 +62,7 @@ Downgrade bir sütun/tabloyu düşürüyorsa o sütundaki veri gider (CLAUDE.md 
 - İçerik: `pg_dump -Fc` + `uploads/` + `MANIFEST` (sha256'lar, alembic revizyonu, tablo başına satır sayısı, dosya sayısı) → tek tar → `age` ile şifreli → `BACKUP_RCLONE_REMOTE`'a.
 - Saklama: uzakta 14 gün (`BACKUP_RETENTION_DAYS`), sunucuda son 2 arşiv.
 - Şifre çözme anahtarı **sunucuda yoktur**; sahibin parola yöneticisindedir.
+- Başarı işareti: `/var/backups/aicfo/last-success` (uzak kopya doğrulanınca yazılır, [staging.md §9](staging.md#9-yedek-başarısını-izlemek)).
 - Kontrol: `rclone lsl $BACKUP_RCLONE_REMOTE | tail` — en yeni dosya 24 saatten eski olmamalı. Eskiyse logda `backup:` satırlarına bakın; betik herhangi bir hatada sıfırdan farklı çıkar.
 
 ## 4. Geri yükleme tatbikatı
