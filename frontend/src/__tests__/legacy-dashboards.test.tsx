@@ -5,7 +5,7 @@
  * before any of their code runs. With it on, everything is as before.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { renderToString } from "react-dom/server";
+import { render } from "@testing-library/react";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -37,7 +37,10 @@ const OPTIONS = [
 ];
 const hrefsOf = (groups: { items: { href: string }[] }[]) => groups.flatMap((g) => g.items.map((i) => i.href));
 
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
+});
 
 describe("the flag", () => {
   it("is off unless it is exactly \"true\"", () => {
@@ -133,13 +136,14 @@ describe("direct URL", () => {
   });
 
   it("answers not found while off, and the page below it is never rendered", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {}); // React logs the render error it rethrows
     const page = vi.fn(() => <p>placeholder numbers</p>);
     const Page = page;
     for (const href of LEGACY_DASHBOARD_HREFS) {
       const Layout = await load(href);
       let thrown: unknown;
       try {
-        renderToString(<Layout><Page /></Layout>);
+        render(<Layout><Page /></Layout>);
       } catch (error) {
         thrown = error;
       }
@@ -152,7 +156,7 @@ describe("direct URL", () => {
     vi.stubEnv("NEXT_PUBLIC_LEGACY_DASHBOARDS", "true");
     for (const href of LEGACY_DASHBOARD_HREFS) {
       const Layout = await load(href);
-      expect(renderToString(<Layout><p>the page</p></Layout>), href).toContain("the page");
+      expect(render(<Layout><p>the page</p></Layout>).container.textContent, href).toContain("the page");
     }
   });
 
