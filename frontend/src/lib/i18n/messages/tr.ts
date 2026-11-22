@@ -2504,9 +2504,9 @@ export const tr: MessageTree = {
     feedback: {
       summary: "Feedback Özeti ({count} yanıt)",
       npsScore: "NPS Skoru",
-      destekçis: "{count} promoter",
+      promoters: "{count} destekçi",
       passives: "{count} pasif",
-      eleştirmens: "{count} detractor",
+      detractors: "{count} eleştirmen",
       analysisQuality: "Analiz kalitesi",
       accuracy: "Doğruluk",
       usefulness: "Kullanışlılık",

@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 import { detectInitialLocale, getMessages, resolveAppLocale } from "@/lib/i18n";
 
 describe("resolveAppLocale", () => {
-  it("maps tr-* org locales to Turkish and everything else to English", () => {
+  it("maps an explicit en-* locale to English and everything else (including no locale) to Turkish", () => {
     expect(resolveAppLocale("tr-TR")).toBe("tr");
     expect(resolveAppLocale("TR")).toBe("tr");
     expect(resolveAppLocale("en-US")).toBe("en");
-    expect(resolveAppLocale(null)).toBe("en");
-    expect(resolveAppLocale(undefined)).toBe("en");
+    expect(resolveAppLocale("de-DE")).toBe("tr");
+    // no locale known: Turkish is the product default
+    expect(resolveAppLocale(null)).toBe("tr");
+    expect(resolveAppLocale(undefined)).toBe("tr");
   });
 });
 
@@ -18,10 +20,10 @@ describe("detectInitialLocale", () => {
     expect(detectInitialLocale("tr-TR")).toBe("tr");
   });
 
-  it("falls back to the browser language when there is no cache", () => {
+  it("falls back to Turkish (the default) when there is no cache, whatever the browser language", () => {
     expect(detectInitialLocale(null, ["tr-TR", "en-US"])).toBe("tr");
-    expect(detectInitialLocale(null, ["de-DE", "en-US"])).toBe("en");
-    expect(detectInitialLocale(undefined, [])).toBe("en");
+    expect(detectInitialLocale(null, ["de-DE", "en-US"])).toBe("tr");
+    expect(detectInitialLocale(undefined, [])).toBe("tr");
   });
 });
 
@@ -101,6 +103,7 @@ describe("getMessages", () => {
     ["OBSERVE · ORIENT · DECIDE · ACT", "motto, product decision"], ["OBSERVE", "motto"], ["ORIENT", "motto"], ["DECIDE", "motto"], ["ACT", "motto"], ["Carpe diem.", "motto"],
     ["What-If", "term used untranslated in Turkish decks; product decision"],
     // example values in input placeholders
+    ["Slack Webhook URL", "technical term"], ["Slack webhook URL", "technical term"], ["→ CFO", "title as used in Turkish"], ["({size} KB)", "unit"],
     ["ops@company.com", "example e-mail"], ["cfo@sirket.com, ceo@sirket.com", "example e-mails"], ["#finance-alerts", "example channel"],
   ]);
   const SAME_IN_BOTH_PATHS = [
