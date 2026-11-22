@@ -1,6 +1,6 @@
 import { expect, test, type APIRequestContext, type Browser, type Page } from "@playwright/test";
 import { API, API_WITH_MODEL, PASSWORD, acceptInvite, noteSignIns, bearer, login, loginInBrowser, probe, register, type OutboxRow } from "./support/api";
-import { OPENING_BALANCE_TL, bankStatement, bankStatementWithoutCurrency, invoiceList, iso, tr } from "./support/fixtures";
+import { OPENING_BALANCE_TL, bankStatement, bankStatementWithoutCurrency, cashShortStatement, invoiceList, iso, tr } from "./support/fixtures";
 
 /**
  * The pilot's core flow as one story, told in order, in a real browser against the real stack.
@@ -32,6 +32,7 @@ const S: {
   accountantId?: string;
   accountantInviteToken?: string;
   briefingId?: string;
+  para?: { email: string; token: string; jobId: string };
 } = {};
 
 async function inNewContext<T>(browser: Browser, email: string, body: (page: Page) => Promise<T>): Promise<T> {
@@ -129,27 +130,23 @@ test.describe("Pilot flow", () => {
     S.jobs = jobs;
   });
 
-  test("3b. while the statement waits for the owner's approval, the setup page says that, not that the statement has no balance", async ({ page }) => {
-    // The statement (6 rows, balances that chain) is held; the invoice list completes. The radar step
-    // used to say "Ekstrede bakiye sütunu yok ya da satır bakiyeleri birbirini tutmuyor" because one
-    // analysis was complete and no balance was proven yet: wrong, the statement is fine and waits.
+  test("3b. an ordinary statement is not held: the setup page shows its balance with no approval asked", async ({ page }) => {
+    // The statement (6 rows, balances that chain, a negative month in it) used to be held for approval
+    // because the forecast counted its cash from zero and called a company with ₺116.500 in the bank
+    // "one month from running out". The balance is proven; nothing here is a decision for a person.
     await loginInBrowser(page, OWNER);
     await page.goto("/baslangic");
     const main = screen(page);
-    // The page refreshes by itself while an analysis runs, then shows what became of each.
-    await expect(main.getByText("Ekstreniz onayınızı bekliyor")).toBeVisible({ timeout: 150_000 });
-    await expect(main.getByText(/satır bakiyeleri birbirini tutuyor, dosyada eksik yok/)).toBeVisible();
-    await expect(main.getByText("1 analiz onayınızı bekliyor")).toBeVisible();
-    await expect(main.getByText(/En zayıf halka: forecast/)).toBeVisible(); // why it was held, in the run's own words
-    await expect(main.getByText(/bakiye sütunu yok/)).toHaveCount(0);
+    // The page refreshes by itself while the analyses run, then shows what became of each.
+    await expect(main.getByText("Kurulum tamam")).toBeVisible({ timeout: 150_000 });
+    await expect(main.getByText("2 analiz tamamlandı")).toBeVisible();
+    await expect(main.getByText(`${asOf} tarihinde ₺116.500`)).toBeVisible();
+    await expect(main.getByText(/onayınızı bekliyor/)).toHaveCount(0);
+    await expect(main.getByText(/En zayıf halka/)).toHaveCount(0);
     await expect(main.getByText("Kanıtlanmış banka bakiyesi yok")).toHaveCount(0);
-    await expect(main.getByText("Kurulum tamam")).toHaveCount(0);
   });
 
-  test("3c. the analyses finish; the invoice list completes and the statement waits for the owner", async ({ request }) => {
-    // The forecast flags the statement's company as running out of cash within three months (its
-    // net flow is negative; the forecast does not weigh the 116.500 on the account), and a flagged
-    // step holds the whole run. The owner decides on the approvals screen (3d).
+  test("3c. both analyses completed without any decision: nothing waits, and the radar starts from the statement's balance", async ({ page, request }) => {
     const owner = await login(request, OWNER);
     S.ownerToken = owner.token;
     S.ownerId = owner.userId;
@@ -157,49 +154,32 @@ test.describe("Pilot flow", () => {
     const status = async (job: string) =>
       (await (await request.get(`${API}/analysis/${job}`, { headers: bearer(owner.token) })).json()).data.status as string;
     const jobs = S.jobs as string[];
-    await expect.poll(async () => (await Promise.all(jobs.map(status))).every((s) => s === "completed" || s === "awaiting_review"), { timeout: 180_000, intervals: [3_000] }).toBe(true);
-    const held = (await Promise.all(jobs.map(async (job) => ((await status(job)) === "awaiting_review" ? job : null)))).filter(Boolean) as string[];
-    expect(held, "exactly the statement is held").toEqual([S.bankJob]);
-  });
-
-  test("3d. a held analysis is approved on the approvals screen, one click from the setup page", async ({ page, request }) => {
-    // The notice used to say the held analysis waited "in the Command Center", whose queue lists only
-    // agent jobs; the setup page's button showed only when nothing was completed. Now the setup page,
-    // the result page and the menu lead to the approvals screen, which lists every kind of decision.
-    await loginInBrowser(page, OWNER);
-    await page.goto("/baslangic");
-    await expect(screen(page).getByText("1 analiz onayınızı bekliyor")).toBeVisible({ timeout: 60_000 });
-    await screen(page).getByRole("link", { name: "Onay bekleyenleri aç" }).first().click();
-    await page.waitForURL(/\/onay/);
-
-    const main = screen(page);
-    await expect(main.getByText("1 karar sizi bekliyor")).toBeVisible({ timeout: 60_000 });
-    await expect(main.getByRole("heading", { name: "Onayınızı bekleyen 1 analiz" })).toBeVisible();
-    await expect(main.getByText("banka-ekstresi.csv")).toBeVisible();
-    await expect(main.getByText(/En zayıf halka: forecast/)).toBeVisible();
-    await expect(main.getByText(/kapanış bakiyesinden başlar/)).toBeVisible();
-    await main.getByRole("button", { name: "Onayla ve tamamla" }).click();
-    await page.getByRole("button", { name: "Evet, onayla" }).click();
-    await expect(main.getByText("Analiz onaylandı.")).toBeVisible({ timeout: 30_000 });
-    await expect(main.getByText("1 karar sizi bekliyor")).toHaveCount(0, { timeout: 30_000 });
-
-    const owner = { token: S.ownerToken as string };
-    const jobs = S.jobs as string[];
-    const status = async (job: string) =>
-      (await (await request.get(`${API}/analysis/${job}`, { headers: bearer(owner.token) })).json()).data.status as string;
     await expect.poll(async () => (await Promise.all(jobs.map(status))).join(","), { timeout: 180_000, intervals: [3_000] }).toBe("completed,completed");
 
-    // The approval is on record: who, when, and why the run had been held.
-    const records = await request.get(`${API}/decision-records?kind=held_run_release&limit=10`, { headers: bearer(owner.token) });
-    const { data } = await records.json();
-    expect(data).toHaveLength(1);
-    expect(data[0]).toMatchObject({ decided_by: S.ownerId, decided_via: "human", outcome: "approved", target_id: S.bankJob });
+    // No decision is asked for, and the radar needs no approval to know the opening cash.
+    await loginInBrowser(page, OWNER);
+    await page.goto("/onay");
+    await expect(screen(page).getByText("Şu an kararını bekleyen bir analiz, kayıt, eşleşme ya da öneri yok.")).toBeVisible({ timeout: 60_000 });
+    const radar = await (await request.get(`${API}/ledger/cash-radar`, { headers: bearer(owner.token) })).json();
+    expect(radar.data.starting_cash_cents).toBe(11_650_000);
+    expect(radar.data.starting_cash_as_of).toBe(iso(bank.asOf));
+
+    // The forecast starts from that balance and says so, with the months it averaged: a MEASURED runway.
+    // The statement's three whole months (+38.000, -42.000, -12.000) average a 5.333,33 burn against
+    // 116.500: about 21,8 months. It starts on the 2nd of its first month, which the sentence admits.
+    await page.goto(`/forecast?job=${S.bankJob}`);
+    const sentence = new RegExp(
+      `${asOfLong} \\d{4} ekstresindeki bakiyeye göre kasa ₺116\\.500,00; .+ ₺38\\.000,00, .+ -₺42\\.000,00, .+ -₺12\\.000,00 → ` +
+        "ortalama aylık net nakit çıkışı ₺5\\.333,33\\. Bu hızla nakit yaklaşık 21,8 ay yeter\\. " +
+        ".+ ayının ilk 1 günü için işlem yok; ay tam sayıldı \\(varsayım\\)",
+    );
+    await expect(screen(page).getByText(sentence)).toBeVisible({ timeout: 60_000 });
+    await expect(screen(page).getByText(/yalnızca 1 ay/)).toHaveCount(0);
   });
 
-  test("3e. after the owner confirms the currency and approves the held run, the radar starts from the statement's balance", async ({ page, request }) => {
-    // A statement without a currency column is held whole (every row waits). The balances chain, but
-    // the proof was read only from rows already booked (none), so after the owner confirmed TRY and
-    // approved, the setup page said "Kanıtlanmış banka bakiyesi yok" and the radar had no starting cash.
+  test("3d. a statement with a real integrity problem (no currency) is held, and the owner finds it on the approvals screen", async ({ page, request }) => {
+    // A statement without a currency column is held whole (every row waits for a person): that is a
+    // question the owner can answer on this upload, unlike a forecast's opinion of the future.
     const email = `para.${stamp}@example.com`;
     await register(request, email, "Para Sahibi");
     const first = await login(request, email);
@@ -211,13 +191,36 @@ test.describe("Pilot flow", () => {
       multipart: { file: { name: file.name, mimeType: file.mimeType, buffer: file.buffer } },
     });
     const jobId = (await up.json()).data.job_id;
+    S.para = { email, token: owner.token, jobId };
     await expect.poll(async () => (await (await request.get(`${API}/analysis/${jobId}`, { headers: bearer(owner.token) })).json()).data.status, { timeout: 120_000 }).toBe("awaiting_review");
 
     await loginInBrowser(page, email);
     // Before any decision the radar has no start, and the setup page says why in the right words.
     await page.goto("/baslangic");
-    await expect(screen(page).getByText("Ekstreniz onayınızı bekliyor")).toBeVisible({ timeout: 60_000 });
-    await expect(screen(page).getByText(/bakiye sütunu yok/)).toHaveCount(0);
+    const main = screen(page);
+    await expect(main.getByText("Ekstreniz onayınızı bekliyor")).toBeVisible({ timeout: 60_000 });
+    await expect(main.getByText("1 analiz onayınızı bekliyor")).toBeVisible();
+    await expect(main.getByText(/Dosyadaki 6 satırın hepsi bir kişinin kararını bekliyor/)).toBeVisible(); // why, in the run's own facts
+    await expect(main.getByText(/bakiye sütunu yok/)).toHaveCount(0);
+    await expect(main.getByText("Kurulum tamam")).toHaveCount(0);
+
+    // One click from the setup page to the approvals screen, which lists the held analysis.
+    await main.getByRole("link", { name: "Onay bekleyenleri aç" }).first().click();
+    await page.waitForURL(/\/onay/);
+    const approvals = screen(page);
+    // The six rows that wait for the currency are decisions too, so the total is more than the one analysis.
+    await expect(approvals.getByText(/karar sizi bekliyor/)).toBeVisible({ timeout: 60_000 });
+    await expect(approvals.getByRole("heading", { name: "Onayınızı bekleyen 1 analiz" })).toBeVisible();
+    await expect(approvals.getByText("banka-ekstresi-para-birimsiz.csv")).toBeVisible();
+    await expect(approvals.getByText(/kapanış bakiyesinden başlar/)).toBeVisible();
+  });
+
+  test("3e. after the owner confirms the currency and approves the held run, the radar starts from the statement's balance", async ({ page, request }) => {
+    // The balances chain, but the proof was read only from rows already booked (none), so after the
+    // owner confirmed TRY and approved, the setup page said "Kanıtlanmış banka bakiyesi yok" and the
+    // radar had no starting cash.
+    const para = S.para as { email: string; token: string; jobId: string };
+    await loginInBrowser(page, para.email);
 
     // The company currency, on the held-rows screen (which releases the rows that waited only for it).
     await page.goto("/bekleyen-kayitlar");
@@ -231,14 +234,52 @@ test.describe("Pilot flow", () => {
     await screen(page).getByRole("button", { name: "Onayla ve tamamla" }).click();
     await page.getByRole("button", { name: "Evet, onayla" }).click();
     await expect(screen(page).getByText("Analiz onaylandı.")).toBeVisible({ timeout: 30_000 });
+    await expect(screen(page).getByText(/karar sizi bekliyor/)).toHaveCount(0, { timeout: 30_000 });
 
     await page.goto("/nakit-radari");
     await expect(screen(page).getByText("Başlangıç nakdi")).toBeVisible({ timeout: 60_000 });
     await expect(screen(page).getByText(`₺${OPENING_BALANCE_TL.split(",")[0]}`).first()).toBeVisible();
     await expect(screen(page).getByText(asOfLong).first()).toBeVisible();
-    const radar = await (await request.get(`${API}/ledger/cash-radar`, { headers: bearer(owner.token) })).json();
+    const radar = await (await request.get(`${API}/ledger/cash-radar`, { headers: bearer(para.token) })).json();
     expect(radar.data.starting_cash_cents).toBe(11_650_000);
     expect(radar.data.starting_cash_as_of).toBe(iso(bank.asOf));
+
+    // The approval is on record: who, when, and why the run had been held.
+    const records = await request.get(`${API}/decision-records?kind=held_run_release&limit=10`, { headers: bearer(para.token) });
+    const { data } = await records.json();
+    expect(data).toHaveLength(1);
+    expect(data[0]).toMatchObject({ decided_via: "human", outcome: "approved", target_id: para.jobId });
+  });
+
+  test("3f. a company that really is short of cash is told so, with the inputs, and its books are not held", async ({ request }) => {
+    // 100.000 opening, -30.000 a month for three whole months, 9.000 left: a third of a month at that pace.
+    const email = `kisa.${stamp}@example.com`;
+    await register(request, email, "Kısa Nakit Sahibi");
+    const first = await login(request, email);
+    await request.post(`${API}/org/create`, { headers: bearer(first.token), data: { name: "Kısa Nakit A.Ş." } });
+    const owner = await login(request, email);
+    const file = cashShortStatement();
+    const up = await request.post(`${API}/upload`, {
+      headers: bearer(owner.token),
+      multipart: { file: { name: file.name, mimeType: file.mimeType, buffer: file.buffer } },
+    });
+    const jobId = (await up.json()).data.job_id;
+    // Bad news is shown, never a reason to wait for an approval.
+    await expect.poll(async () => (await (await request.get(`${API}/analysis/${jobId}`, { headers: bearer(owner.token) })).json()).data.status, { timeout: 120_000 }).toBe("completed");
+
+    const dashboard = await (await request.get(`${API}/dashboard/${jobId}`, { headers: bearer(owner.token) })).json();
+    const { runway, alerts } = dashboard.data.forecast;
+    expect(runway.status).toBe("computed");
+    expect(runway.level).toBe("critical");
+    expect(runway.opening_cash_cents).toBe(900_000);
+    expect(runway.avg_monthly_net_cents).toBe(-3_000_000);
+    expect(runway.months).toHaveLength(3);
+    const critical = alerts.filter((a: { level: string }) => a.level === "critical");
+    expect(critical).toHaveLength(1);
+    expect(critical[0].message).toContain("₺9.000,00");
+    expect(critical[0].message).toContain("ortalama aylık net nakit çıkışı ₺30.000,00");
+    expect(critical[0].message).toContain("yaklaşık 0,3 ay");
+    expect(critical[0].message).toContain("(varsayım)");
   });
 
   test("4. the setup page now shows the proven opening balance with its date", async ({ page }) => {

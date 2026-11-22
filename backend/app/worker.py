@@ -352,6 +352,13 @@ async def run_cfo_analysis(
             await db.refresh(job)
             await db.commit()
 
+            # The balance the cash radar starts from, loaded here (the nodes hold no session):
+            # the forecast's runway counts down from it, never from zero.
+            from app.services.bank_balance import proven_balance
+
+            opening_cash = await proven_balance(db, org_id_str) if org_id_str else None
+            await db.commit()
+
             result = await run_cfo_pipeline(
                 job_id=job_id,
                 file_path=job.file_path,
@@ -363,6 +370,7 @@ async def run_cfo_analysis(
                 # the rules above) ran as if the job belonged to nobody.
                 org_id=org_id_str,
                 category_rules=category_rules,
+                opening_cash=opening_cash,
             )
 
             # Publish each completed step to SSE clients
@@ -486,6 +494,19 @@ async def run_cfo_analysis(
             )
             if closing is not None:
                 meta["closing_balance"] = closing
+            from app.services.bank_balance import statement_extent
+
+            # The days the statement covers (and the balances it opens and closes on): which
+            # months of the company's cash are complete is read from these later.
+            from app.services.coverage import apply_period
+
+            extent = apply_period(
+                result.get("statement_extent") or statement_extent(list(result.get("transactions") or [])),
+                result.get("statement_period"),
+                job.filename,
+            )
+            if extent is not None:
+                meta["statement_extent"] = extent
             try:
                 if meta.get("analysis_started_at"):
                     t0 = datetime.fromisoformat(meta["analysis_started_at"])

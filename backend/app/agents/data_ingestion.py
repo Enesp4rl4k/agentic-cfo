@@ -234,7 +234,12 @@ async def run_data_ingestion(
             detail=f"Defterden {len(ledger['profit'])} satır okundu.",
         )
 
-    return _uncertain_rows_wait(await _read_all_documents(state, config))
+    sonuc = _uncertain_rows_wait(await _read_all_documents(state, config))
+    if not state.get("ek_belgeler") and sonuc.patch:  # one document: its header may state the period it covers
+        from app.services.stated_period import attach_period
+
+        sonuc.patch = attach_period(sonuc.patch)
+    return sonuc
 
 
 def _counts_reconcile(sonuc: SkillResult, accepted: int, held: int) -> SkillResult:
@@ -270,10 +275,12 @@ def _uncertain_rows_wait(sonuc: SkillResult) -> SkillResult:
         return sonuc
     # Which rows wait for a person does not change what the bank says the account holds:
     # the running balances are proven over the whole file, in file order, before it is split.
-    from app.services.bank_balance import closing_balance
+    from app.services.bank_balance import closing_balance, statement_extent
 
     closing = closing_balance(rows)
     whole = {"statement_closing_balance": closing} if closing is not None else {}
+    if (extent := statement_extent(rows)) is not None:
+        whole["statement_extent"] = extent
     waiting = f"{len(held)} kayıt incelemenizi bekliyor"
     if not accepted:
         return SkillResult(

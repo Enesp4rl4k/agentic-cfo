@@ -71,10 +71,35 @@ export interface CashFlowData {
   other_currencies?: OtherCurrency[];
 }
 
+/** Cash runway from the balance a bank statement proves (backend `app.services.runway`). */
+export interface RunwayBlock {
+  status: "computed" | "not_burning" | "no_balance" | "insufficient_history" | "not_cash_basis" | "coverage_unknown";
+  opening_cash_cents: number | null;
+  as_of: string | null;
+  age_days: number | null;
+  stale: boolean | null;
+  source_filename: string | null;
+  months_needed: number;
+  months_used: number;
+  /** "assumed" when a month counted as whole on the edge tolerance (named in `message`), else "known". */
+  basis?: "known" | "assumed" | null;
+  assumptions?: { month: string; edge: "start" | "end"; days: number }[];
+  /** The complete months the burn averaged, with each month's net (kuruş). */
+  months?: { month: string; net_cents: number }[];
+  avg_monthly_net_cents: number | null;
+  runway_months: number | null;
+  beyond_horizon: boolean;
+  level: "critical" | "warning" | null;
+  /** The sentence the backend writes: the balance and its date, the burn, or why there is no runway. */
+  message: string;
+}
+
 export interface ForecastScenario {
   label: string;
   description: string;
   runway_months: number | null;
+  /** How the scenario's runway is known: absent on older results. */
+  runway_basis?: RunwayBlock["status"];
   twelve_month_net: number;
   months: MonthlyEntry[];
 }
@@ -87,6 +112,7 @@ export interface ForecastData {
   };
   narrative: string;
   alerts: Alert[];
+  runway?: RunwayBlock;
 }
 
 export type AlertLevel = "warning" | "critical" | "info";

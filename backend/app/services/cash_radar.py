@@ -36,7 +36,7 @@ from app.core.currency_totals import (
 )
 from app.models.canonical_transaction import CanonicalTransaction, money_rows
 from app.models.open_item import OpenItem
-from app.services.bank_balance import proven_balance
+from app.services.bank_balance import balance_age, proven_balance
 from app.services.briefing_held import held_line as _held_line
 from app.services.ledger_documents import (
     DOCUMENT,
@@ -213,13 +213,13 @@ def _opening_cash(balance: dict[str, Any] | None, anchor: date) -> OpeningCash |
     if balance is None:
         return None
     as_of = date.fromisoformat(str(balance["date"])[:10])
-    age = max(0, (anchor - as_of).days)
     limit = get_settings().radar_balance_stale_after_days
+    age, stale = balance_age(as_of.isoformat(), anchor, limit)
     return OpeningCash(
         balance_cents=balance["balance_cents"],
         as_of=as_of.isoformat(),
         age_days=age,
-        stale=age > limit,
+        stale=stale,
         stale_after_days=limit,
         source_job_id=balance.get("job_id"),
         source_filename=balance.get("filename"),

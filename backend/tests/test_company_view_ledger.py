@@ -171,8 +171,10 @@ async def test_an_invoice_is_not_cash_and_its_receipt_is_not_revenue_again(ortam
     await _upload(client, org_id, [_bank("EFT GIB2024000000001 ODEME", 285_000_00, "2024-04-16")])
     view = await _view(client, org_id)
     assert view["dashboard"]["pnl"]["revenue"] == 285_000.0
-    assert view["dashboard"]["cashflow"]["monthly_series"] == [
-        {"month": "2024-04", "in": 285_000_00, "out": 0, "net": 285_000_00}]
+    (april,) = view["dashboard"]["cashflow"]["monthly_series"]
+    assert {k: april[k] for k in ("month", "in", "out", "net")} == {
+        "month": "2024-04", "in": 285_000_00, "out": 0, "net": 285_000_00}
+    assert april["complete"] is None  # these uploads carry no statement extent: coverage is unknown, not assumed
 
 
 async def test_the_same_file_again_changes_nothing_and_runs_nothing(ortam):

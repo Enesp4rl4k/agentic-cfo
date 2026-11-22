@@ -1537,6 +1537,7 @@ export const tr: MessageTree = {
       optimisticUpside: "İyimser Yukarı Potansiyel",
       pessimisticDownside: "Kötümser Aşağı Risk",
       vsBase: "baz senaryoya göre",
+      runwayUnknown: "Nakit pisti hesaplanamadı",
     },
     table: {
       heading: "Senaryo Karşılaştırması",
@@ -1548,6 +1549,7 @@ export const tr: MessageTree = {
       monthsShort: "{count} ay",
       stable: "Stabil",
       ariaLabel: "Tahmin senaryoları",
+      unknown: "Hesaplanamadı",
     },
     breakdown: {
       heading: "{label} — Aylık Döküm",
@@ -1560,6 +1562,9 @@ export const tr: MessageTree = {
       heading: "Tahmin verisi yok",
       body: "12 aylık tahmin üretmek için finansal belge yükleyip analiz ettirin.",
       cta: "Belge yükle",
+    },
+    runway: {
+      heading: "Nakit pisti",
     },
   },
   integrations: {
