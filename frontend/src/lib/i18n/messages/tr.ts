@@ -3361,8 +3361,6 @@ export const tr: MessageTree = {
       sent: "Gönderildi",
     },
   },
-    },
-  },
   codes: {
     unknown: "Bilinmeyen durum: {code}",
     category: {

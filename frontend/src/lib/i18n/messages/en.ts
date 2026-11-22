@@ -6673,8 +6673,6 @@ export const en: MessageTree = {
       sent: "Sent",
     },
   },
-    },
-  },
   codes: {
     unknown: "Unknown status: {code}",
     category: {
