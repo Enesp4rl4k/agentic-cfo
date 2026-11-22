@@ -400,6 +400,7 @@ async def resolve_uncommitted(
     resolved = 0
     already = 0
     jobs: set[str] = set()
+    answers: dict[str, list[str]] = {}
     for row in picked:
         if row.id in blocked:
             continue
@@ -418,7 +419,7 @@ async def resolve_uncommitted(
         if release:
             db.add(build_transaction(row.job_id, payload))
             jobs.add(row.job_id)
-        await record_decision(
+        decision = await record_decision(
             db,
             org_id=org_id,
             kind=DecisionKind.HELD_ROW_RESOLUTION,
@@ -432,11 +433,17 @@ async def resolve_uncommitted(
             before=_snapshot(row.payload),
             after=_snapshot(payload) if release else None,
         )
+        answers.setdefault(row.job_id, []).append(decision.id)
         resolved += 1
+    # The answers changed the rows a statement's balance chain is read from: read it again, in this
+    # transaction, so the radar and the runway see what the owner just settled.
+    from app.services.balance_reverify import reverify
+
     return {
         "resolved": resolved,
         "blocked": [{"id": i, "missing": m} for i, m in blocked.items()],
         "already_resolved": already,
+        "balance_proof": await reverify(db, org_id, answers),
     }, jobs
 
 
@@ -495,7 +502,7 @@ async def fill_currency(
     out, jobs = await resolve_uncommitted(
         db, org_id, user_id=user_id, release=True, ids=only_currency, staged=staged,
         note="company currency confirmed",
-    ) if only_currency else ({"resolved": 0, "blocked": [], "already_resolved": 0}, set())
+    ) if only_currency else ({"resolved": 0, "blocked": [], "already_resolved": 0, "balance_proof": []}, set())
     out["still_waiting"] = await pending_count(db, org_id)
     return out, jobs
 

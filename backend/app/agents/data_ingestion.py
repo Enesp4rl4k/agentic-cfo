@@ -269,18 +269,17 @@ def _uncertain_rows_wait(sonuc: SkillResult) -> SkillResult:
     rows = list((sonuc.patch or {}).get("transactions") or [])
     if not sonuc.ok or not rows:
         return sonuc
+    from app.services.balance_reverify import mark_positions, statement_whole
+
+    mark_positions(rows)  # a row's place in the file: what ties a held row to the statement's chain later
     accepted, held = split_uncertain(rows)
     sonuc = _counts_reconcile(sonuc, len(accepted), len(held))
     if not held:
         return sonuc
     # Which rows wait for a person does not change what the bank says the account holds:
     # the running balances are proven over the whole file, in file order, before it is split.
-    from app.services.bank_balance import closing_balance, statement_extent
-
-    closing = closing_balance(rows)
-    whole = {"statement_closing_balance": closing} if closing is not None else {}
-    if (extent := statement_extent(rows)) is not None:
-        whole["statement_extent"] = extent
+    patch = sonuc.patch or {}
+    whole = statement_whole(rows, held, patch.get("ingest_counts"), str(patch.get("raw_text") or ""))
     waiting = f"{len(held)} kayıt incelemenizi bekliyor"
     if not accepted:
         return SkillResult(

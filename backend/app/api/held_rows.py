@@ -4,6 +4,8 @@ GET    /held-rows[?job_id=]                 the caller's organisation's rows tha
 GET    /held-rows/file-questions            files whose direction nobody could place: one question each (any member)
 POST   /held-rows/release                   release as is, or corrected (type, currency, date, amount)
 POST   /held-rows/reject                    discard
+GET    /held-rows/account-questions         statement pairs nothing links: "same bank account?" (any member)
+POST   /held-rows/account-questions/answer  owner or admin: same account / different accounts (a decision)
 POST   /held-rows/file-direction            answer a file's question once; applied to every row of the file
 GET    /held-rows/direction-mappings        the answers remembered for this organisation's statement formats
 DELETE /held-rows/direction-mappings/{id}   forget one: that format is asked again
@@ -24,6 +26,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.access import (
+    DECIDER_ROLES,
     may_set_standing_rules,
     require_decider,
     require_decider_or_smmm,
@@ -35,7 +38,7 @@ from app.database import get_db
 from app.models.decision import DecidedVia, DecisionKind
 from app.models.organization import Organization
 from app.models.user import User
-from app.services import held_direction, held_rows
+from app.services import account_identity, held_direction, held_rows
 from app.services.acting_role import acting_role
 from app.services.decisions import record_decision
 from app.services.ingest.currencies import is_currency_code
@@ -141,6 +144,44 @@ async def answer_file_direction(
     except (held_direction.AnswerError, held_rows.CorrectionError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     out["remember_refused"] = bool(body.remember and not remember)
+    return {"data": out, "error": None}
+
+
+class AccountAnswer(BaseModel):
+    answer: str = Field(max_length=16)  # same | different
+    job_ids_a: list[str] = Field(min_length=1, max_length=200)
+    job_ids_b: list[str] = Field(min_length=1, max_length=200)
+    name_a: str | None = Field(default=None, max_length=80)
+    name_b: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=1000)
+
+
+@router.get("/held-rows/account-questions", dependencies=[Depends(require_member)])
+async def list_account_questions(
+    user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> dict:
+    from app.services.bank_accounts import proven_balances
+
+    found = await proven_balances(db, _org(user))
+    role = await acting_role(db, user)
+    return {"data": {
+        "count": len(found["questions"]), "questions": found["questions"],
+        "can_decide": role in DECIDER_ROLES,
+    }, "error": None}
+
+
+@router.post("/held-rows/account-questions/answer", dependencies=[Depends(require_decider)])
+async def answer_account_question(
+    body: AccountAnswer, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> dict:
+    try:
+        out = await account_identity.answer(
+            db, _org(user), user.id, answer=body.answer, job_ids_a=body.job_ids_a,
+            job_ids_b=body.job_ids_b, name_a=body.name_a, name_b=body.name_b, note=body.note,
+        )
+    except account_identity.AnswerRefused as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    await db.commit()
     return {"data": out, "error": None}
 
 

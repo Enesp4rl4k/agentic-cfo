@@ -220,7 +220,7 @@ async def answer_file(
     result, jobs = await held_rows.resolve_uncommitted(
         db, org_id, user_id=user_id, release=True, ids=releasable, corrections=fixes,
         note=note or f"file direction: {answer}",
-    ) if releasable else ({"resolved": 0, "blocked": [], "already_resolved": 0}, set())
+    ) if releasable else ({"resolved": 0, "blocked": [], "already_resolved": 0, "balance_proof": []}, set())
     can_store = (mark["reason"], answer) in REMEMBERABLE and (
         mark["reason"] not in NEEDS_IDENTITY or bool(mark.get("identity"))
     )
@@ -230,7 +230,9 @@ async def answer_file(
         evidence_refs=[{"type": "analysis_job", "id": job_id}],
         before={"reason": mark["reason"], "rows": len(rows), "signature": mark["signature"]},
         after={"answer": answer, "released": result["resolved"], "still_waiting_rows": len(waiting),
-               "remembered": bool(remember and can_store)},
+               "remembered": bool(remember and can_store),
+               # The statement's balance chain was read again from these answers (a decision of its own).
+               "balance_reverifications": [p["decision_id"] for p in result["balance_proof"]]},
     )
     remembered = None
     if remember and can_store:

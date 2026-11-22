@@ -530,6 +530,8 @@ def settle_rows(
             return hold(NO_SIGNAL, "Tutarların yönünü gösteren bir sütun ya da işaret bulunamadı.")
         for r, d in zip(rows, derived, strict=True):
             r["type"] = d
+            if d is not None:
+                r["direction_from_balance"] = True   # read off the balance itself: not independent evidence of it
         return None
     state = verdict(mags, reads, bals, min_steps=3)
     if state == "inverted":

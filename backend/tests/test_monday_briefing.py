@@ -144,8 +144,9 @@ async def test_anti_hallucination_gate_rejection(client):
     assert "777.000" not in briefing.full_text
     assert (
         briefing.full_text
-        == f"{briefing.sentence_radar} {briefing.sentence_obligation} {briefing.sentence_action}"
+        == f"{briefing.sentence_radar} {briefing.sentence_obligation} {briefing.sentence_action} {briefing.runway_line}"
     )
+    assert "nakit pisti hesaplanamadı" in briefing.runway_line.lower()
 
 
 @pytest.mark.asyncio
@@ -196,7 +197,8 @@ async def test_anti_hallucination_gate_acceptance(client):
         )
 
     assert briefing.fallback_used is False
-    assert briefing.full_text == grounded_narrative
+    # The runway sentence is the template's, never the narrative's: it is appended outside the gate.
+    assert briefing.full_text == f"{grounded_narrative} {briefing.runway_line}"
 
 
 @pytest.mark.asyncio

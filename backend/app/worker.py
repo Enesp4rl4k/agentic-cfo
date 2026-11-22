@@ -354,7 +354,7 @@ async def run_cfo_analysis(
 
             # The balance the cash radar starts from, loaded here (the nodes hold no session):
             # the forecast's runway counts down from it, never from zero.
-            from app.services.bank_balance import proven_balance
+            from app.services.bank_accounts import proven_balance
 
             opening_cash = await proven_balance(db, org_id_str) if org_id_str else None
             await db.commit()
@@ -494,7 +494,17 @@ async def run_cfo_analysis(
             )
             if closing is not None:
                 meta["closing_balance"] = closing
-            from app.services.bank_balance import statement_extent
+            # How far those balances are believed, and why not when they are not (what the radar and
+            # the runway read); for a statement with held rows, the chain a person's answer re-reads.
+            from app.services.bank_balance import assess, statement_extent
+            from app.services.statement_account import account_identity
+
+            meta["balance_proof"] = result.get("balance_proof") or assess(
+                list(result.get("transactions") or []), result.get("ingest_counts"),
+                identity=account_identity(str(result.get("raw_text") or "")) or None,
+            )
+            if result.get("statement_chain"):
+                meta["statement_chain"] = {**result["statement_chain"], "period": result.get("statement_period")}
 
             # The days the statement covers (and the balances it opens and closes on): which
             # months of the company's cash are complete is read from these later.
@@ -558,6 +568,17 @@ async def run_cfo_analysis(
                 )
                 return {"ok": False, "job_id": job_id, "finish_lost": True}
             await db.commit()
+
+            # A re-run asks nothing twice: rows a person already released or rejected come back as they
+            # answered. The proof written above was read before those answers; read it again with them.
+            if org_id_str and meta.get("statement_chain") and (
+                registered["released_again"] or registered["already_rejected"]
+            ):
+                from app.services.balance_reverify import reverify
+
+                await db.refresh(job)
+                await reverify(db, org_id_str, {job_id: []})
+                await db.commit()
 
             # Notify SSE subscribers that the job is done — before the slow
             # follow-ups below: a watcher's completion must not wait on RAG.

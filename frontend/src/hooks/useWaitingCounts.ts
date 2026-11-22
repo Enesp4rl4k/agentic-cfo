@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { getReviewQueue } from "@/lib/api/agentReview";
 import { listHeldAnalyses } from "@/lib/api/heldAnalyses";
+import { listAccountQuestions } from "@/lib/api/accountQuestions";
 import { listHeldRows } from "@/lib/api/heldRows";
 import { getPossibleDuplicates, getProposedSettlements } from "@/lib/api/ledger";
 import { listPlanChanges } from "@/lib/api/planChanges";
@@ -16,6 +17,7 @@ export const WAITING_KEYS = {
   settlements: ["ledger-settlements"],
   plans: ["plan-changes", "pending"],
   agents: ["agent-review-queue"],
+  accounts: ["account-questions"],
 } as const;
 
 /**
@@ -35,6 +37,8 @@ export type WaitingCounts = {
   settlements: number;
   plans: number;
   agents: number;
+  /** Statement pairs nobody has said are one account or two. */
+  accounts: number;
   total: number;
   /** Some kind has not answered yet: "nothing waits" is not yet known. */
   loading: boolean;
@@ -53,6 +57,8 @@ export function useWaitingCounts(enabled = true): WaitingCounts {
   const plans = useQuery({ queryKey: WAITING_KEYS.plans, queryFn: () => listPlanChanges("pending"), ...options });
   const agents = useQuery({ queryKey: WAITING_KEYS.agents, queryFn: getReviewQueue, ...options });
 
+  const accounts = useQuery({ queryKey: WAITING_KEYS.accounts, queryFn: listAccountQuestions, ...options });
+
   const counts = {
     analyses: analyses.data?.length ?? 0,
     rows: rows.data?.length ?? 0,
@@ -60,6 +66,7 @@ export function useWaitingCounts(enabled = true): WaitingCounts {
     settlements: settlements.data?.length ?? 0,
     plans: plans.data?.changes.length ?? 0,
     agents: agents.data?.length ?? 0,
+    accounts: accounts.data?.questions.length ?? 0,
   };
   const loading = [analyses, rows, duplicates, settlements, plans, agents].some((q) => q.isLoading);
   return { ...counts, total: Object.values(counts).reduce((a, b) => a + b, 0), loading };

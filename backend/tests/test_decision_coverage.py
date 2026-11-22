@@ -114,8 +114,8 @@ _SYNCS = [
 
 _BRINGS_DATA_IN = [
     ("POST", "/api/v1/data-quality/validate-and-upload"),
-    ("POST", "/api/v1/datasource/{job_id}/{domain}/{source_type}"),
     ("POST", "/api/v1/upload"),
+    ("POST", "/api/v1/datasource/{job_id}/{domain}/{source_type}"),
     ("POST", "/api/v1/veri/ekle"),
 ]
 
@@ -191,6 +191,11 @@ def test_every_deciding_route_records_the_decision() -> None:
     )
 
 
+def test_the_may_record_routes_are_excused_and_not_deciding_ones() -> None:
+    assert set(MAY_RECORD_ON_REVERIFICATION) <= set(NOT_A_DECISION)
+    assert not set(MAY_RECORD_ON_REVERIFICATION) & set(KNOWN_GAPS)
+
+
 def test_the_lists_name_routes_that_exist_and_do_not_overlap() -> None:
     keys = set(_inventory())
     for name, table in (("NOT_A_DECISION", NOT_A_DECISION), ("KNOWN_GAPS", KNOWN_GAPS)):
@@ -198,10 +203,25 @@ def test_the_lists_name_routes_that_exist_and_do_not_overlap() -> None:
     assert not set(NOT_A_DECISION) & set(KNOWN_GAPS)
 
 
+# Routes that run the ingest worker. An ordinary run decides nothing and records nothing; the worker writes a
+# `balance_reverification` decision only when it is re-reading a statement whose held rows a person already
+# answered (`worker.py`, `services/balance_reverify.py`). Static reachability sees that call, so they are listed
+# apart: still "not a decision", but allowed to reach `record_decision`.
+MAY_RECORD_ON_REVERIFICATION: frozenset[Route] = frozenset({
+    ("POST", "/api/v1/analysis/{job_id}/rerun"),
+    ("POST", "/api/v1/analyze/{job_id}"),
+    ("POST", "/api/v1/data-quality/validate-and-upload"),
+    ("POST", "/api/v1/upload"),
+    ("POST", "/api/v1/efatura/sync"),
+    ("POST", "/api/v1/demo/seed"),
+})
+
+
 def test_a_route_that_records_is_not_excused() -> None:
     inventory = _inventory()
     excused_but_recording = [
-        f"{m} {p}" for (m, p) in (*NOT_A_DECISION, *KNOWN_GAPS) if _records(inventory[(m, p)])
+        f"{m} {p}" for (m, p) in (*NOT_A_DECISION, *KNOWN_GAPS)
+        if _records(inventory[(m, p)]) and (m, p) not in MAY_RECORD_ON_REVERIFICATION
     ]
     assert not excused_but_recording, (
         "zaten kayıt yazan rota istisna listesinde; listeden çıkarın: " + ", ".join(excused_but_recording)
