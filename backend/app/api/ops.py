@@ -24,7 +24,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
-from sqlalchemy import func, select, text
+from sqlalchemy import func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -66,7 +66,7 @@ async def _bounded(awaitable: Awaitable[dict[str, Any]], *, required: bool, name
 
 
 async def _database(db: AsyncSession) -> dict[str, Any]:
-    await db.execute(text("SELECT 1"))
+    await db.execute(select(literal(1)))
     return _check(True, required=True, code="ok")
 
 
