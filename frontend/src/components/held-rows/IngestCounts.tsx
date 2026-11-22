@@ -14,6 +14,8 @@ export interface IngestSummary {
   reader_fallback?: boolean;
   /** Text (PDF) statements: was the running balance chained? Never presented as reconciled when it was not. */
   balance_check?: "verified" | "verified_partial" | "unverified" | null;
+  /** Rows with no balance in a statement whose other rows have one: held, not vouched for by the chain. */
+  outside_chain?: number;
 }
 
 /**
@@ -54,7 +56,7 @@ export function IngestCounts({ ingest }: Readonly<{ ingest?: IngestSummary | nul
           {copy.ingestLost.replace("{count}", String(ingest.unaccounted))}
         </p>
       )}
-      {ingest.balance_check === "verified" && <p className="text-xs text-muted-foreground">{copy.ingestBalanceVerified}</p>}
+      {ingest.balance_check === "verified" && !ingest.outside_chain && <p className="text-xs text-muted-foreground">{copy.ingestBalanceVerified}</p>}
       {ingest.balance_check === "verified_partial" && (
         <p className="text-xs text-amber-500">
           {copy.ingestBalancePartial
@@ -63,6 +65,9 @@ export function IngestCounts({ ingest }: Readonly<{ ingest?: IngestSummary | nul
         </p>
       )}
       {ingest.balance_check === "unverified" && <p className="text-xs text-amber-500">{copy.ingestBalanceUnverified}</p>}
+      {(ingest.outside_chain ?? 0) > 0 && (
+        <p className="text-xs text-amber-500">{copy.ingestOutsideChain.replace("{count}", String(ingest.outside_chain))}</p>
+      )}
       {ingest.reader_fallback && <p className="text-xs text-muted-foreground">{copy.ingestFallback}</p>}
     </div>
   );

@@ -138,8 +138,8 @@ export default function BekleyenKayitlarPage() {
           file={file}
           pending={fileAnswer.isPending}
           canRemember={canRemember}
-          onAnswer={(answer, remember) =>
-            fileAnswer.mutate({ job_id: file.job_id, file_key: file.file_key, answer, remember })
+          onAnswer={(answer, remember, standing) =>
+            fileAnswer.mutate({ job_id: file.job_id, file_key: file.file_key, answer, remember, ...(standing ? { standing } : {}) })
           }
         />
       ))}

@@ -5,7 +5,7 @@ import re
 from datetime import UTC, datetime
 
 from app.parsers.base import BankParser, ParsedStatement, ParsedTransaction
-from app.parsers.direction import sign_is_informative, signed_money
+from app.parsers.direction import signed_money
 
 
 class ZiraatParser(BankParser):
@@ -79,7 +79,7 @@ class ZiraatParser(BankParser):
             re.MULTILINE,
         )
         found = list(one_col.finditer(text))
-        signed = sign_is_informative([m.group(3).startswith("-") for m in found])   # all-positive says nothing
+        signed = bool(found)   # the sign is a reading marked `direction_basis="sign"`, not evidence (direction.settle_rows)
         for m in found:
             date = self.parse_turkish_date(m.group(1))
             estimated = date is None
@@ -93,6 +93,7 @@ class ZiraatParser(BankParser):
                 date=date, description=description,
                 amount_cents=amount,
                 tx_type=("expense" if negative else "income") if signed else "",
+                direction_basis="sign" if signed else "",
                 balance_cents=signed_money(m.group(4)),
                 raw_row=m.group(0), date_estimated=estimated,
             ))

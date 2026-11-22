@@ -32,7 +32,6 @@ import re
 
 from app.core.turkish import fold
 from app.parsers.base import BankParser, ParsedStatement, ParsedTransaction
-from app.parsers.direction import sign_is_informative
 
 # Paraşüt işlem tipi → tx_type mapping
 _TYPE_MAP: dict[str, str] = {
@@ -66,11 +65,11 @@ def _map_type(raw: str) -> str | None:
 
 
 def _sign_decides(transactions: list[ParsedTransaction], signs: dict[int, bool]) -> None:
-    """Direction from the sign of an amount column, but only if the file's signs are informative (both signs, a
-    real share): an all-positive export says nothing and its rows stay without a direction (held)."""
-    if signs and sign_is_informative(list(signs.values())):
-        for index, negative in signs.items():
-            transactions[index].tx_type = "expense" if negative else "income"
+    """Direction from the sign of an amount column: a reading marked `direction_basis="sign"`, not evidence. It books
+    only with a verifying balance chain or a remembered answer; otherwise the file is asked (direction.settle_rows)."""
+    for index, negative in signs.items():
+        transactions[index].tx_type = "expense" if negative else "income"
+        transactions[index].direction_basis = "sign"
 
 
 class ParasutParser(BankParser):

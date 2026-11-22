@@ -103,12 +103,12 @@ async def _finansal_ekle(
         # bank's title rows, one signed amount, ISO dates, no totals row.
         tablo = await asyncio.to_thread(tabloyu_sec, veri, dosya_adi, S.BANKA_EKSTRESI)
         if tablo is not None:
-            from app.parsers.direction import statement_identity
+            from app.services.statement_account import header_identity
 
             csv_text = standart_csv(tablo, S.BANKA_EKSTRESI)[0]
             # The bank's title rows say which account this is; the normalised table has no room for them,
             # so the account travels as a first line the table reader skips as a title row.
-            if statement_identity(tablo.ust_metin):
+            if header_identity(tablo.ust_metin):
                 csv_text = '"' + tablo.ust_metin[:400].replace('"', "") + '"' + chr(10) + csv_text
             veri, uzanti = csv_text.encode("utf-8"), "csv"
     try:

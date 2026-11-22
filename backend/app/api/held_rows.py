@@ -70,6 +70,8 @@ class FileDirectionAnswer(BaseModel):
     file_key: str = Field(max_length=32)
     answer: str = Field(max_length=16)
     remember: bool = True
+    # "Files with these headers and no account named are always answered so": an explicit standing rule, never inferred.
+    standing: bool = False
     note: str | None = Field(default=None, max_length=1000)
 
 
@@ -137,7 +139,7 @@ async def answer_file_direction(
     try:
         out = await held_direction.answer_file(
             db, _org(user), user.id, body.job_id, body.file_key, body.answer,
-            remember=remember, note=body.note,
+            remember=remember, note=body.note, standing=body.standing,
         )
     except held_rows.UnknownRows as exc:
         raise _not_found() from exc
