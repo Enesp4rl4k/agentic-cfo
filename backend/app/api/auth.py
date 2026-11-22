@@ -20,7 +20,7 @@ import time
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
@@ -114,7 +114,20 @@ class RefreshRequest(BaseModel):
 
 # ── Dependency: get current user ──────────────────────────────────────────────
 
+async def _refuse_outside_allow_list(request: Request, db: AsyncSession, user: User) -> None:
+    """The organisation the user acts in may limit the addresses it can be acted in from."""
+    from app.core.client_ip import client_ip
+    from app.services import ip_allowlist
+
+    if not user.org_id or ip_allowlist.exempt(request.url.path):
+        return
+    refusal = await ip_allowlist.org_refusal(db, str(user.org_id), client_ip(request))
+    if refusal:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=refusal)
+
+
 async def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
     x_api_key: str | None = Header(default=None),
     db: AsyncSession = Depends(get_db),
@@ -155,6 +168,7 @@ async def get_current_user(
             raise credentials_exception
         if not email_verification.is_verified(user):
             raise unverified_exception
+        await _refuse_outside_allow_list(request, db, user)
 
         # Detached, so every caller gets the same kind of object (reads work; endpoints
         # that change the user re-load it through their own session, see `create_org`).
@@ -175,6 +189,7 @@ async def get_current_user(
             raise credentials_exception
         if not email_verification.is_verified(user):
             raise unverified_exception
+        await _refuse_outside_allow_list(request, db, user)
         return user
 
     raise credentials_exception

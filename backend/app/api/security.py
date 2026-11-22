@@ -15,17 +15,17 @@ from __future__ import annotations
 
 import csv
 import io
-import ipaddress
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import require_platform_operator
 from app.api.auth import get_current_user
 from app.core.http_headers import content_disposition
 from app.database import get_db
@@ -222,43 +222,27 @@ class IPWhitelistUpdate(BaseModel):
     # ["10.0.0.0/8", "203.0.113.42/32"]. Bounded: the decision record keeps the whole list before and after.
     cidrs:   list[str] = Field(max_length=50)
     enabled: bool = True
+    # The caller's own address is not in the list: refused (409) unless the owner says they mean it.
+    confirm_lockout: bool = False
 
 
 def _validate_cidrs(cidrs: list[str]) -> list[str]:
-    """Validate and normalize CIDR notations."""
-    valid = []
-    for cidr in cidrs:
-        cidr = cidr.strip()
-        if not cidr:
-            continue
-        try:
-            network = ipaddress.ip_network(cidr, strict=False)
-            valid.append(str(network))
-        except ValueError:
-            # Single IP without prefix?
-            try:
-                addr = ipaddress.ip_address(cidr)
-                valid.append(str(ipaddress.ip_network(f"{addr}/32")))
-            except ValueError:
-                raise HTTPException(400, f"Geçersiz CIDR formatı: '{cidr}'")
-    return valid
+    """Strict CIDR parsing (app.services.ip_allowlist): IPv4/IPv6, no host bits, no catch-all."""
+    from app.services import ip_allowlist
+
+    try:
+        return ip_allowlist.normalise(cidrs)
+    except ip_allowlist.AllowListError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 def check_ip_in_whitelist(ip: str, whitelist: str) -> bool:
     """Check if an IP is in a comma-separated CIDR whitelist."""
+    from app.services import ip_allowlist
+
     if not whitelist:
         return True  # No whitelist = allow all
-    try:
-        client_ip = ipaddress.ip_address(ip)
-        for cidr in whitelist.split(","):
-            cidr = cidr.strip()
-            if not cidr:
-                continue
-            if client_ip in ipaddress.ip_network(cidr, strict=False):
-                return True
-        return False
-    except Exception:
-        return True  # On parse error, be permissive
+    return ip_allowlist.allows(whitelist, ip)  # an unparseable address is outside the list, not inside
 
 
 @router.get("/security/ip-whitelist")
@@ -293,16 +277,39 @@ async def get_ip_whitelist(
     }
 
 
+async def _check_activation(req: IPWhitelistUpdate, request: Request, valid_cidrs: list[str]) -> None:
+    from app.config import get_settings
+    from app.core.client_ip import client_ip
+    from app.services import ip_allowlist
+
+    settings = get_settings()
+    if not valid_cidrs:
+        raise HTTPException(400, "Etkin bir izin listesi en az bir adres içermeli; kapatmak için enabled=false gönderin.")
+    ip = client_ip(request)
+    configured = bool(settings.trusted_proxy_count > 0 or settings.trusted_proxy_cidrs.strip())
+    problem = ip_allowlist.activation_problem(request.headers, ip=ip, proxy_configured=configured)
+    if problem:
+        raise HTTPException(409, problem)
+    if not ip_allowlist.allows(",".join(valid_cidrs), ip) and not req.confirm_lockout:
+        raise HTTPException(
+            409,
+            f"Listede şu anki adresiniz ({ip}) yok: kaydederseniz siz de dahil herkes bu adres dışında "
+            "erişemez. Yine de kaydetmek için confirm_lockout=true gönderin.",
+        )
+
+
 @router.put("/security/ip-whitelist")
 async def update_ip_whitelist(
     req:          IPWhitelistUpdate,
+    request:      Request,
     current_user: User = Depends(get_current_user),
     db:           AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    """
-    Update IP whitelist for the org.
-    WARNING: Wrong config can lock out all users. Always include your own IP.
-    """
+    """Update the organisation's IP allow-list. It IS enforced (api/auth.get_current_user, WebSockets).
+
+    Refused (409) when: the caller's own address is not in the list and `confirm_lockout` is not set;
+    the client address cannot be trusted (a proxy header and no TRUSTED_PROXY_* setting). Enabled needs
+    at least one entry. Break-glass if everyone is locked out: a platform operator clears it."""
     role = await acting_role(db, current_user)
     if role not in ("owner", "admin"):
         raise HTTPException(status_code=403, detail="Sadece admin ve owner erişebilir")
@@ -312,6 +319,8 @@ async def update_ip_whitelist(
         raise HTTPException(status_code=400, detail="Org bağlamı gerekli")
 
     valid_cidrs = _validate_cidrs(req.cidrs)
+    if req.enabled:
+        await _check_activation(req, request, valid_cidrs)
 
     from app.models.organization import Organization
     result = await db.execute(select(Organization).where(Organization.id == str(org_id)))
@@ -349,6 +358,36 @@ async def update_ip_whitelist(
         },
         "error": None,
     }
+
+
+@router.delete("/platform/orgs/{org_id}/ip-whitelist")
+async def clear_ip_whitelist_break_glass(
+    org_id: str,
+    operator: User = Depends(require_platform_operator),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Break-glass: a platform operator clears an organisation's IP allow-list (everyone locked out).
+
+    Recorded as a security-setting decision by the operator, with before and after."""
+    from app.models.organization import Organization
+
+    org = (await db.execute(select(Organization).where(Organization.id == org_id))).scalar_one_or_none()
+    if org is None:
+        raise HTTPException(status_code=404, detail="Organizasyon bulunamadı")
+    before = {
+        "enabled": bool(org.ip_whitelist_enabled),
+        "cidrs": [c.strip() for c in (org.ip_whitelist or "").split(",") if c.strip()],
+    }
+    org.ip_whitelist = ""
+    org.ip_whitelist_enabled = False
+    await record_decision(
+        db, org_id=str(org.id), kind=DecisionKind.SECURITY_SETTING_CHANGE, target_type="organization_ip_whitelist",
+        target_id=str(org.id), outcome="disabled", decided_via=DecidedVia.HUMAN, decided_by=str(operator.id),
+        before=before, after={"enabled": False, "cidrs": [], "acting_role": "platform_operator", "break_glass": True},
+    )
+    await db.commit()
+    logger.warning("IP allow-list cleared by platform operator: org=%s operator=%s", org.id, operator.id)
+    return {"data": {"enabled": False, "cidrs": [], "message": "IP izin listesi temizlendi"}, "error": None}
 
 
 @router.post("/security/ip-whitelist/test")

@@ -72,7 +72,7 @@ async def still_acting_in(user_id: str, org_id: str) -> bool:
         return has_row is not None or has_any is None
 
 
-async def websocket_caller(token: str | None) -> User | None:
+async def websocket_caller(token: str | None, ip: str | None = None) -> User | None:
     """`user_for_token` on a short-lived session.
 
     Not a `Depends(get_db)`: a dependency's session would stay open for as long
@@ -82,6 +82,12 @@ async def websocket_caller(token: str | None) -> User | None:
         return None
     async with session_factory()() as db:
         user = await user_for_token(db, token)
+        if user is not None and ip is not None and user.org_id:
+            from app.services import ip_allowlist
+
+            # The organisation's IP allow-list applies to its live feeds too (connect and every message).
+            if await ip_allowlist.org_refusal(db, str(user.org_id), ip):
+                return None
         if user is not None:
             db.expunge(user)
         return user

@@ -162,7 +162,11 @@ async def sync_ecommerce(
         domain = req.credentials.get("shop_domain", "")
         if not token or not domain:
             raise HTTPException(400, "Shopify için shop_domain ve access_token gerekli")
-        result = await ShopifyConnector(domain, token).get_orders(req.from_date, req.to_date)
+        try:
+            connector = ShopifyConnector(domain, token)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        result = await connector.get_orders(req.from_date, req.to_date)
 
     elif req.channel == "trendyol":
         sid    = req.credentials.get("supplier_id", "")
@@ -170,7 +174,11 @@ async def sync_ecommerce(
         secret = req.credentials.get("api_secret", "")
         if not sid or not key:
             raise HTTPException(400, "Trendyol için supplier_id, api_key ve api_secret gerekli")
-        result = await TrendyolConnector(sid, key, secret).get_orders(req.from_date, req.to_date)
+        try:
+            trendyol = TrendyolConnector(sid, key, secret)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        result = await trendyol.get_orders(req.from_date, req.to_date)
 
     else:
         raise HTTPException(400, f"Desteklenmeyen kanal: {req.channel}")
@@ -302,7 +310,10 @@ async def test_webhook(
             destination=req.target,
         )
     except outbox_immediate.ImmediateKindRefused as exc:
-        raise HTTPException(400, f"Hedef kullanılamaz: {exc}") from exc
+        message = await outbox_immediate.record_test_refusal(
+            db, org_id=str(current_user.org_id), user_id=str(current_user.id), channel=channel, reason=str(exc),
+        )
+        raise HTTPException(400, message) from exc
     await db.commit()
     outbox.kick()
     success = False  # queued, not delivered: the outbox row records what happened

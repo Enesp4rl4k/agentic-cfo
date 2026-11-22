@@ -30,6 +30,7 @@ from app.database import get_db
 from app.models.alert_preference import AlertPreference
 from app.models.in_app_notification import InAppNotification
 from app.models.user import User
+from app.services.acting_role import acting_role
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -284,6 +285,24 @@ async def update_preferences(
     return {"data": _pref_dict(pref), "error": None}
 
 
+# ── Delivery status (owner / admin) ───────────────────────────────────────────
+
+@router.get("/notifications/delivery-status")
+async def delivery_status(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Per configured destination: last success, last failure and why (tr/en words).
+
+    Owner and admin only. No URL, no response body: the destination is shown by its host."""
+    org_id = _require_org(current_user)
+    if await acting_role(db, current_user) not in ("owner", "admin"):
+        raise HTTPException(status_code=403, detail="Sadece admin ve owner erişebilir")
+    from app.services.delivery_status import destination_status
+
+    return {"data": {"destinations": await destination_status(db, org_id)}, "error": None}
+
+
 # ── Test endpoint ─────────────────────────────────────────────────────────────
 
 @router.post("/notifications/test-slack", dependencies=[Depends(require_writer)])
@@ -314,7 +333,10 @@ async def test_slack(
             db, test_id=uuid.uuid4().hex, org_id=org_id, channel="slack", destination=webhook_url
         )
     except outbox_immediate.ImmediateKindRefused as exc:
-        raise HTTPException(400, detail=f"Slack webhook adresi kullanılamaz: {exc}") from exc
+        message = await outbox_immediate.record_test_refusal(
+            db, org_id=org_id, user_id=str(current_user.id), channel="slack", reason=str(exc),
+        )
+        raise HTTPException(400, detail=message) from exc
     await db.commit()
     outbox.kick()
     # Queued, not delivered: the outbox sender posts it and records sent or failed on the row.

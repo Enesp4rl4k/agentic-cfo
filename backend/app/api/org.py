@@ -18,7 +18,7 @@ import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import delete, select, update
@@ -782,6 +782,7 @@ async def list_memberships(
 @router.post("/org/switch")
 async def switch_org(
     body: SwitchOrgRequest,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
@@ -813,6 +814,14 @@ async def switch_org(
     if target is None:
         raise HTTPException(status_code=404, detail="Organizasyon bulunamadı.")
     membership, org = target
+
+    # Moving INTO an organisation that limits its addresses: refused from outside them (moving out is not).
+    from app.core.client_ip import client_ip
+    from app.services import ip_allowlist
+
+    refusal = await ip_allowlist.org_refusal(db, str(org.id), client_ip(request))
+    if refusal:
+        raise HTTPException(status_code=403, detail=refusal)
 
     # Leaving an organisation the user was in before memberships existed must
     # stay reversible: record it before switching away.

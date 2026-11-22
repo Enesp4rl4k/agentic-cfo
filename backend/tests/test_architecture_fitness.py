@@ -342,6 +342,62 @@ _FIXED_HOST_HTTP_CLIENTS = frozenset({
 })
 
 
+def _variable_host_urls(tree: ast.AST) -> list[int]:
+    """Line numbers of URL strings whose HOST is not a literal constant.
+
+    `f"https://{x}/..."`, `f"https://{x}.example.com/..."` is a variable label, `"https://" + x`.
+    A literal host followed by a variable path (`f"https://api.example.com/{id}"`) is fine."""
+    found: list[int] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.JoinedStr) and node.values:
+            first = node.values[0]
+            if isinstance(first, ast.Constant) and isinstance(first.value, str) and first.value.startswith(
+                ("https://", "http://")
+            ):
+                literal = first.value.split("://", 1)[1]
+                if "/" in literal:
+                    continue  # the host is complete in the literal prefix
+                found.append(node.lineno)
+        if (
+            isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add)
+            and isinstance(node.left, ast.Constant) and isinstance(node.left.value, str)
+            and node.left.value.startswith(("https://", "http://")) and "/" not in node.left.value.split("://", 1)[1]
+        ):
+            found.append(node.lineno)
+    return found
+
+
+# A variable host label is allowed only on a literal registrable suffix and with a strict check.
+_VALIDATED_LABEL_HOSTS: dict[str, str] = {
+    "app.services.integrations": ".myshopify.com",  # ShopifyConnector._SHOP_LABEL
+}
+
+
+def test_f3_fixed_host_modules_really_have_literal_hosts() -> None:
+    """"Fixed host" is checked, not declared: no module builds a URL with a variable host unless it is
+    listed with the literal suffix it keeps and the strict label check that goes with it."""
+    offenders: dict[str, list[int]] = {}
+    for name, path in _modules().items():
+        text = path.read_text(encoding="utf-8", errors="replace")
+        lines = _variable_host_urls(ast.parse(text))
+        if lines and name not in _VALIDATED_LABEL_HOSTS:
+            offenders[name] = lines
+    assert not offenders, (
+        f"URL with a variable host in {offenders}. A host from input must go through app.core.outbound "
+        "and a strict pattern; list it in _VALIDATED_LABEL_HOSTS only with both."
+    )
+    for name, suffix in _VALIDATED_LABEL_HOSTS.items():
+        text = _modules()[name].read_text(encoding="utf-8")
+        assert suffix in text and "_SHOP_LABEL" in text and "outbound.request" in text, name
+        assert f'"https://{{label}}{suffix}' in text, "the literal suffix must follow the variable label"
+
+
+def test_f3_the_host_check_sees_a_variable_host() -> None:
+    bad = ast.parse('u = f"https://{shop}/admin"; v = "https://" + shop; w = f"https://{s}.x.com/a"')
+    good = ast.parse('u = f"https://api.x.com/{i}"')
+    assert len(_variable_host_urls(bad)) == 3 and _variable_host_urls(good) == []
+
+
 def test_f3_user_supplied_urls_never_reach_a_raw_http_client() -> None:
     """A new module that imports httpx must be classified: fixed host, or use app.core.outbound."""
     modules = _modules()

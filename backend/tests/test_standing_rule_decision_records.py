@@ -124,17 +124,17 @@ async def test_an_invalid_or_foreign_trigger_change_and_a_failed_record_leave_no
 async def test_the_ip_allow_list_records_before_and_after_and_who(client):
     headers, org_id, user_id = await kullanici(client, "ip@example.com", role="admin")
     res = await client.put(f"{API}/security/ip-whitelist", headers=headers,
-                           json={"cidrs": ["203.0.113.42", "10.0.0.0/8"], "enabled": True})
+                           json={"cidrs": ["203.0.113.42", "10.0.0.0/8", "127.0.0.1"], "enabled": True})
     assert res.status_code == 200, res.text
     (d,) = await decisions_of(client, org_id, kind="security_setting_change")
     assert (d.target_type, d.target_id, d.outcome, d.decided_by) == ("organization_ip_whitelist", org_id, "enabled", user_id)
     assert d.before == {"enabled": False, "cidrs": []}
-    assert d.after == {"enabled": True, "cidrs": ["203.0.113.42/32", "10.0.0.0/8"], "acting_role": "admin"}
+    assert d.after == {"enabled": True, "cidrs": ["203.0.113.42/32", "10.0.0.0/8", "127.0.0.1/32"], "acting_role": "admin"}
 
     off = await client.put(f"{API}/security/ip-whitelist", headers=headers, json={"cidrs": [], "enabled": False})
     assert off.status_code == 200
     second = (await decisions_of(client, org_id, kind="security_setting_change"))[-1]
-    assert second.outcome == "disabled" and second.before["cidrs"] == ["203.0.113.42/32", "10.0.0.0/8"]
+    assert second.outcome == "disabled" and second.before["cidrs"] == ["203.0.113.42/32", "10.0.0.0/8", "127.0.0.1/32"]
 
 
 async def test_a_bad_list_a_non_decider_and_a_failed_record_do_not_change_the_list(client, monkeypatch):
@@ -148,7 +148,7 @@ async def test_a_bad_list_a_non_decider_and_a_failed_record_do_not_change_the_li
 
     record_fails(monkeypatch, "app.api.security")
     with pytest.raises(DecisionError):
-        await client.put(url, headers=headers, json={"cidrs": ["1.1.1.1"], "enabled": True})
+        await client.put(url, headers=headers, json={"cidrs": ["1.1.1.1", "127.0.0.1"], "enabled": True})
     monkeypatch.undo()
     async with client._maker() as db:
         org = await db.get(Organization, org_id)

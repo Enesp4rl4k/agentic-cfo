@@ -84,3 +84,52 @@ name (DNS rebinding); no redirects; no proxy from the environment; 5 s connect, 
 | `api/org.py` `logo_url` | org settings | stored only, never fetched by the server |
 | Teams / custom webhook URLs in `api/integrations_extended.py` | settings | stored/previewed only, no request made |
 | ERP (Paraşüt), banks, SSO providers, GIB, TCMB, GitHub, WhatsApp/Slack bot APIs, LLM base URL, MCP client | code constants or operator environment | not user URLs; listed in `_FIXED_HOST_HTTP_CLIENTS` of `tests/test_architecture_fitness.py`, which fails for any new httpx module not classified |
+
+## 5. Follow-ups (second security PR)
+
+**Shopify / hosts from input.** `ShopifyConnector` builds its host from request credentials: only
+`<shop>.myshopify.com` (label `[a-z0-9-]`, 1-60 characters), through `app.core.outbound`. Trendyol's
+`supplier_id` is a path segment of a fixed host and must be numeric. The architecture test no
+longer takes "fixed host" on trust: it scans every module for a URL whose host is not a literal,
+and only `integrations.py` (literal `.myshopify.com` suffix, strict label) is allowed one.
+
+**Ports.** Outbound destinations may use port 443 only (80 with the explicit `allow_http`
+exception). No documented need for 8443; a service on another port is refused as
+`destination_port_not_allowed`.
+
+**One public reason.** A refused connection test (`POST /integrations/webhook/test`,
+`/notifications/test-slack`) answers one sentence for every cause (internal address, unresolvable
+name, port, not https, recipient not allowed): "Hedefe ulaşılamadı veya izin verilmiyor." The precise
+reason is in the audit log (`integrations.connection_test_refused`) and, for deliveries, in the
+owner/admin-only `GET /api/v1/notifications/delivery-status`: per destination host, last success,
+last failure and why in tr/en, no URL, no body. A destination that starts failing raises ONE in-app
+notification (again only after a success in between). The notification table is organisation-wide
+(no per-user target), so every member sees it; its text names the host and the reason, never the URL.
+There is no screen for the status yet (API only).
+
+**Behind a reverse proxy.** Set `TRUSTED_PROXY_COUNT=1` (or `TRUSTED_PROXY_CIDRS`), see
+`.env.example`, `docker-compose.yml`, `k8s/01-config.yaml` (already `1`: the ingress). Without it
+every client shares one rate-limit bucket (login 5/min: a self-inflicted lockout) and the audit log
+records the proxy. In production the app logs an ERROR line, once, after 20 requests that all came
+from private/loopback peers with neither setting present. It does not fail.
+
+## 6. IP allow-list (enforced)
+
+`PUT /api/v1/security/ip-whitelist` `{cidrs, enabled, confirm_lockout}`; owner/admin; API only (no
+screen yet). Enforced when it is enabled and non-empty, at the point an organisation is acted in:
+`get_current_user` (every HTTP request, JWT or API key) and `websocket_caller` (WebSocket connect and
+every message), using `client_ip()`.
+
+* Not org-scoped, never refused: login, `GET /org/memberships`, `POST /org/switch` (out of an
+  organisation), `GET /auth/me`. Switching INTO an organisation whose list excludes the caller is
+  refused. A user with two organisations can always reach the other.
+* Strict parsing: IPv4/IPv6 addresses or networks, no host bits (`10.0.0.5/8` is refused), no `/0`,
+  no `::ffff:` form, at most 50 entries. An enabled list needs at least one entry.
+* Never lock the owner out: a list that excludes the caller's current address is refused (409)
+  unless `confirm_lockout: true`. Enabling is refused (409) behind a reverse proxy with no
+  `TRUSTED_PROXY_*` setting (a forwarding header arrives): the "client" would be the proxy.
+* Break-glass: a platform operator (`PLATFORM_OPERATOR_EMAILS`) calls
+  `DELETE /api/v1/platform/orgs/{org_id}/ip-whitelist`; the list is cleared and a
+  `security_setting_change` decision records who, before and after (`break_glass: true`).
+* Short-lived stream tickets (`stream_ticket_user`) are issued by a request that passed the check and
+  are not re-checked against the list.

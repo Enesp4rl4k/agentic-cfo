@@ -363,6 +363,10 @@ async def deliver_pending(db: AsyncSession, *, limit: int = BATCH) -> dict[str, 
             else:
                 counts["retry"] += 1
         await db.flush()
+        if row.status == FAILED:
+            from app.services.delivery_status import notify_if_newly_failing
+
+            await notify_if_newly_failing(db, row)  # once per outage, no URL in the text
     if any(counts.values()):
         logger.info("outbox delivery: %s", counts)
     return counts
