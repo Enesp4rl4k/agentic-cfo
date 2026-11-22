@@ -5,10 +5,11 @@ GET /decision-records   the caller's organisation's decisions, newest first
 Filters: `kind`, `target_type`, `target_id`, `decided_by`, `since`, `until` (an aware or UTC datetime; `until` exclusive), `current_only`; paged by `limit`/`offset`.
 There is deliberately no write route: decisions are recorded by the endpoints that
 make them, inside their own transaction (`app.services.decisions.record_decision`).
-Who may read what: the history of ONE object (`target_type` and `target_id` both given) is open to any member
-who can see that object, so a viewer can open "Karar geçmişi" on a settlement. The company-wide log (anything
-else) is for owner, admin, cfo and smmm (`WRITER_ROLES`): it holds who was invited or removed, the authority
-policy and security settings. Another organisation's decisions never appear: the query is scoped to the caller's
+Who may read what: by KIND, in one table (`models/decision.py` `DECISION_READ`, guards in `api/access.py`):
+a decision is readable only by the roles that may see the thing it is about, whatever path asks (the object id
+of a settlement opens settlement decisions to a viewer; the organisation's id opens no security record).
+Kinds the caller may not read are left out, never an error. On top of that the company-wide log (no object
+named) is for owner, admin, cfo and smmm (`WRITER_ROLES`). An unknown kind is the deciders' (fail closed). Another organisation's decisions never appear: the query is scoped to the caller's
 organisation, and a caller without one is refused.
 """
 from __future__ import annotations
@@ -20,7 +21,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.access import WRITER_ROLES
+from app.api.access import WRITER_ROLES, may_read_decision_kind, readable_decision_kinds
 from app.api.auth import get_current_user
 from app.api.contract import Envelope
 from app.database import get_db
@@ -100,11 +101,16 @@ async def list_decision_records(
         raise HTTPException(400, "Bu işlem için bir organizasyon gerekli.")
     org_id = str(user.org_id)
     since, until = (d if d is None or d.tzinfo else d.replace(tzinfo=UTC) for d in (since, until))
+    role = await acting_role(db, user)
     one_object = target_type is not None and target_id is not None
-    if not one_object and await acting_role(db, user) not in WRITER_ROLES:
+    if not one_object and role not in WRITER_ROLES:
         raise HTTPException(403, "Şirket genelindeki karar günlüğü için owner, admin, cfo veya smmm rolü gerekir.")
+    # Whatever the path, a decision is readable only by the roles that may see the thing it is about
+    # (`DECISION_READ`): naming an object id opens nothing the kind's guard does not.
+    if kind is not None and not may_read_decision_kind(role, kind):
+        raise HTTPException(403, "Bu türdeki karar kayıtlarını görme yetkiniz yok.")
     rows, total = await svc.list_decisions(
-        db, org_id, kind=kind, target_type=target_type, target_id=target_id,
+        db, org_id, kind=kind, target_type=target_type, target_id=target_id, kinds=readable_decision_kinds(role),
         current_only=current_only, limit=limit, offset=offset, decided_by=decided_by, since=since, until=until,
     )
     replaced = await svc.superseded_ids(db, org_id, [r.id for r in rows])
