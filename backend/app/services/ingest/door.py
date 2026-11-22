@@ -53,7 +53,7 @@ def read_text_statement(
     ledger.absorb(account)
     rows = _statement_to_transactions(statement)
     ledger.emitted = len(rows)
-    ledger.balance_check = _pdf_yonu(rows, bank_name or parser.bank_display_name, text, ambiguous)
+    ledger.balance_check = _pdf_yonu(rows, bank_name or parser.bank_display_name, text, ambiguous, ledger)
     return DoorRead(statement, rows, ledger, ledger.balance_check or "unverified")
 
 

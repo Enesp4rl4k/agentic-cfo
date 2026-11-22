@@ -27,6 +27,9 @@ export function DirectionMappings({
               <span className="text-muted-foreground">{m.columns || m.signature}</span>
               {" — "}
               {options[m.answer] ?? m.answer}
+              {m.account && <span className="text-muted-foreground">{` (${m.account})`}</span>}
+              {m.standing && <span className="text-muted-foreground">{` · ${copy.mappingStanding}`}</span>}
+              {m.flagged_at && <span className="block text-xs text-amber-500">{`${copy.mappingFlagged}: ${m.flagged_note ?? ""}`}</span>}
             </span>
             {canRevoke && (
               <Button variant="outline" disabled={pending} onClick={() => onRevoke(m.id)}>

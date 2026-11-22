@@ -130,10 +130,17 @@ def _csv(text: str):
     return _try_parse_csv(text) or []
 
 
-def test_csv_direction_comes_from_the_sign_when_the_file_has_both():
-    rows = _csv(NL.join(["Tarih,Açıklama,Tutar", "01.03.2026,Satış,1.000,00", "02.03.2026,Kira,-500,00"]).replace("1.000,00", '"1.000,00"').replace("-500,00", '"-500,00"'))
-    assert [r["type"] for r in rows] == ["income", "expense"]
+def test_csv_direction_comes_from_the_sign_when_a_balance_chain_verifies_it():
+    rows = _csv(NL.join(["Tarih,Açıklama,Tutar,Bakiye", '01.03.2026,Satış,"1.000,00","11.000,00"',
+                         '02.03.2026,Kira,"-500,00","10.500,00"', '03.03.2026,Gaz,"-200,00","10.300,00"']))
+    assert [r["type"] for r in rows] == ["income", "expense", "expense"]
     assert all(r["confidence"] == 0.95 for r in rows)      # derived by a rule: not certain
+
+
+def test_csv_sign_without_a_balance_chain_is_asked_not_assumed():
+    rows = _csv(NL.join(["Tarih,Açıklama,Tutar", '01.03.2026,Satış,"1.000,00"', '02.03.2026,Kira,"-500,00"']))
+    assert [r["type"] for r in rows] == [None, None]
+    assert {r["direction_file"]["reason"] for r in rows} == {"sign_unconfirmed"}
 
 
 def test_csv_with_unambiguous_debit_and_credit_columns_reads_the_column():
@@ -150,7 +157,7 @@ def test_csv_with_borc_alacak_and_no_balance_is_asked_not_booked_as_the_customer
 def test_csv_with_one_unsigned_column_cannot_tell_and_says_so():
     rows = _csv(NL.join(["Tarih,Açıklama,Tutar", "01.03.2026,Bir,100", "02.03.2026,İki,200"]))
     assert [r["type"] for r in rows] == [None, None]       # never income by default
-    assert all(r["direction_file"]["reason"] == "no_signal" for r in rows)
+    assert all(r["direction_file"]["reason"] == "sign_unconfirmed" for r in rows)
     accepted, held = split_uncertain([{**r, "currency": "TRY"} for r in rows])
     assert not accepted and held[0]["hold_reasons"] == ["direction_file_unknown"]
 

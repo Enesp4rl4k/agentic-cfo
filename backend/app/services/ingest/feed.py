@@ -188,12 +188,18 @@ def evidence_text(evidence: dict[str, Any]) -> str:
     return mask_secrets("; ".join(parts))
 
 
-def pull_coverage(window: tuple[str, str] | None, row_dates: list[str | None], partial: str | None) -> dict[str, Any] | None:
+def pull_coverage(
+    window: tuple[str, str] | None, row_dates: list[str | None], partial: str | None, opened_on: str | None = None,
+) -> dict[str, Any] | None:
     """What a pull received, as STRUCTURED data for the job it becomes (never text inside the file).
 
-    A completed pull states the window it asked for and fully received; a partial pull states only the span of the
-    rows it received, with `covered_until` its last day. No window and no rows: nothing is stated. It travels on the
-    job as `result_metadata["feed"]` (set by the feed layer, see `ekle._finansal_ekle`); `services.pull_coverage` reads
+    A completed pull states the window it asked for and fully received, but never from before the account
+    existed: a window wider than the account's history must not turn the months before it into "covered, empty
+    months" (which would pull the burn towards zero and the runway towards optimism). Coverage starts at the
+    provider-reported opening date (`opened_on`) when there is one, else at the first transaction received; with
+    neither there is no evidence the account existed in the window and nothing is stated. A partial pull states
+    only the span of the rows it received, with `covered_until` its last day. It travels on the job as
+    `result_metadata["feed"]` (set by the feed layer, see `ekle._finansal_ekle`); `services.pull_coverage` reads
     it back. Content of an uploaded file can never state it."""
     days = sorted(str(d)[:10] for d in row_dates if d)
     if partial:
@@ -202,8 +208,14 @@ def pull_coverage(window: tuple[str, str] | None, row_dates: list[str | None], p
         return {"complete": False, "requested_from": window[0] if window else None,
                 "requested_to": window[1] if window else None, "covered_from": days[0], "covered_until": days[-1]}
     if window:
+        existed = (str(opened_on)[:10] if opened_on else None) or (days[0] if days else None)
+        if existed is None:
+            return None
+        start = max(window[0], existed)
+        if start > window[1]:
+            return None
         return {"complete": True, "requested_from": window[0], "requested_to": window[1],
-                "covered_from": window[0], "covered_until": window[1]}
+                "covered_from": start, "covered_until": window[1], "account_from": existed}
     return None
 
 
@@ -216,12 +228,13 @@ class FeedResult:
     partial: str | None = None         # some of it was fetched; what is missing
     ignored: dict[str, int] = field(default_factory=dict)    # items the source marks as not (yet) money, by named rule
     window: tuple[str, str] | None = None                    # the days the pull asked for (ISO), when it asked for a range
+    opened_on: str | None = None                             # the account's opening date, when the PROVIDER reports one
 
     def feed_meta(self) -> dict[str, Any] | None:
         """The provenance the job of this pull carries (`result_metadata["feed"]`): its source and what it received."""
         if self.failed:
             return None
-        return {"source": self.source, "pull_coverage": pull_coverage(self.window, [r.get("date") for r in self.rows], self.partial)}
+        return {"source": self.source, "pull_coverage": pull_coverage(self.window, [r.get("date") for r in self.rows], self.partial, self.opened_on)}
 
     @property
     def held_candidates(self) -> int:
@@ -263,6 +276,7 @@ class Feed:
         self.partial: str | None = None
         self.ignored: dict[str, int] = {}
         self.window: tuple[str, str] | None = None
+        self.opened_on: str | None = None
 
     def each(self, items: Iterable[Any]) -> Iterator[Any]:
         """Iterate the fetched items, counting every one (`read`) before the caller looks at it."""
@@ -316,7 +330,8 @@ class Feed:
         return self.result()
 
     def result(self) -> FeedResult:
-        return FeedResult(self.rows, self.ledger, self.source, self.failed, self.partial, self.ignored, self.window)
+        return FeedResult(self.rows, self.ledger, self.source, self.failed, self.partial, self.ignored, self.window,
+                          self.opened_on)
 
 
 def item_is_blank(item: Any) -> bool:

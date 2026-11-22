@@ -195,6 +195,7 @@ class OpenBankingClient:
         account_id: str,
         start_date: str,   # YYYY-MM-DD
         end_date: str,     # YYYY-MM-DD
+        opened_on: str | None = None,   # the account's opening date, only when the PROVIDER reported one
     ) -> FeedResult:
         """
         Fetch the transactions of an account, every page, and say how it went.
@@ -208,6 +209,7 @@ class OpenBankingClient:
         """
         feed = Feed(f"{self.config.bank_id}_open_banking")
         feed.window = (start_date, end_date)
+        feed.opened_on = opened_on
         first_url = self.config.transactions_url.format(account_id=account_id)
         url: str | None = first_url
         params: dict[str, str] | None = {"startDate": start_date, "endDate": end_date}

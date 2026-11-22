@@ -63,6 +63,11 @@ async def test_successful_call_records_cost_and_tokens(monkeypatch):
         return "cevap metni", None, 1000, 500
 
     monkeypatch.setattr(mg, "_raw_chat", _raw)
+    # Cost needs a configured price (an unpriced model costs null, see test_llm_model_config).
+    from app.config import get_settings
+
+    s = get_settings()
+    monkeypatch.setattr(s, "llm_model_prices", {s.llm_model: (0.0025, 0.01)})
 
     res = await complete(task="deep_analysis", prompt="analiz", org_id="org-1")
 

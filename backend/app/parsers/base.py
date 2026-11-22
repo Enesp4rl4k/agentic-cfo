@@ -43,6 +43,9 @@ class ParsedTransaction:
     date_estimated: bool = False
     # True when the line looked like money but no row pattern took it: held as a raw line (app.parsers.lines).
     unread: bool = False
+    # "sign" when `tx_type` is only the sign of one amount column (a reading, not evidence: `direction.settle_rows`
+    # lets it book only with a verifying balance chain or a remembered answer).
+    direction_basis: str = ""
     # True when the matched line has a money-like token that is neither the amount nor the balance: held, not booked.
     amount_uncertain: bool = False
 
