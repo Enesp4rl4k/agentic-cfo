@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { Search, X, Download, ChevronLeft, ChevronRight } from "lucide-react";
 import { useTransactions } from "@/hooks/useCFO";
 import { RuleRerunBanner, UserRuleBadge } from "@/components/transactions/RuleFeedback";
+import { DecisionHistoryToggle } from "@/components/decisions/DecisionHistoryToggle";
 import {
   CATEGORIES, CategoryEditor, EmptyState, SortTh, buildRows, exportCsv,
   type SortDir, type SortKey,
@@ -373,6 +374,12 @@ export default function TransactionsPage() {
                       />
                       <UserRuleBadge source={tx.category_source} />
                     </div>
+                    {/* A hand correction is a recorded decision: who changed it, from what, when (read-only). */}
+                    {tx.category_source === "user_edit" && (
+                      <div className="mt-1.5 min-w-[240px] whitespace-normal">
+                        <DecisionHistoryToggle targetType="transaction" targetId={tx.id} />
+                      </div>
+                    )}
                   </td>
                   <td
                     className={cn(

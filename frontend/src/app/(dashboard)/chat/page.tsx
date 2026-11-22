@@ -13,6 +13,7 @@ import { ChatEvidenceChips } from "@/components/ui/chat-evidence-chips";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/hooks/useI18n";
 import { useWSChat } from "@/hooks/useWSChat";
+import { LiveRefusalNotice } from "@/components/ui/live-refusal-notice";
 import { useSSEChat } from "@/hooks/useSSEChat";
 import { useCompanyContextStore } from "@/store/companyContext";
 import { apiClient } from "@/lib/api/client";
@@ -679,6 +680,8 @@ export default function ChatPage() {
 
       {/* Input area */}
       <div className="border-t border-border bg-background/95 px-4 py-3 backdrop-blur sm:px-6">
+        {/* The server closed the live connection as "not allowed" (IP allow-list, removed membership): say why. */}
+        <div className="mb-2 empty:hidden"><LiveRefusalNotice refusal={ws.refusal} /></div>
         {/* Simulation hint */}
         {input && isSimulationQuestion(input) && (
           <div className="mb-2 flex items-center gap-1.5 rounded-md border border-blue-500/20 bg-blue-500/5 px-3 py-1.5 text-xs text-blue-400">

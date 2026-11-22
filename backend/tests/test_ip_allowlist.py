@@ -103,6 +103,13 @@ async def test_requests_from_outside_the_list_are_refused_and_inside_pass(client
     # a spoofed first X-Forwarded-For value does not help: the proxy-appended hop decides
     assert (await client.get(URL, headers=via("127.0.0.1, 198.51.100.7", headers))).status_code == 403
 
+async def test_the_owner_reads_the_address_the_server_sees_for_them(client, monkeypatch):
+    headers, _, _ = await kullanici(client, "own@example.com")
+    assert (await client.get(URL, headers=headers)).json()["data"]["caller_ip"] == "127.0.0.1"
+    trust_one_proxy(monkeypatch)
+    seen = (await client.get(URL, headers=via("198.51.100.7", headers))).json()["data"]
+    assert seen["caller_ip"] == "198.51.100.7" and seen["enabled"] is False and seen["cidrs"] == []
+
 
 async def test_an_api_key_is_held_to_the_list_too(client, monkeypatch):
     headers, _, _ = await kullanici(client, "own@example.com")

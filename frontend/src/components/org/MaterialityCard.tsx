@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useCentsFormat } from "@/hooks/useCurrencyFormat";
 import { useI18n } from "@/hooks/useI18n";
 import { acknowledgeMateriality, getMateriality, setMateriality, type Materiality } from "@/lib/api/scale";
@@ -21,14 +22,23 @@ export function MaterialityCard() {
   const { t } = useI18n();
   const m = t.scale.materiality;
   const qc = useQueryClient();
-  const { data } = useQuery({ queryKey: KEY, queryFn: getMateriality, retry: false });
+  const { data, isLoading, isError } = useQuery({ queryKey: KEY, queryFn: getMateriality, retry: false });
   const cents = useCentsFormat(data?.current.currency);
   const [own, setOwn] = useState(false);
   const [lira, setLira] = useState("");
   const [reason, setReason] = useState("");
   const [notice, setNotice] = useState<"saved" | "stale" | "error" | null>(null);
 
-  if (!data) return null;
+  if (isLoading) return <Skeleton aria-label={m.loading} className="h-24 w-full" />;
+  if (isError || !data) {
+    // Never a silent blank: the card says it could not read the threshold.
+    return (
+      <Card className="space-y-2 p-4">
+        <h2 className="tc-display m-0 text-[20px]">{m.title}</h2>
+        <p role="alert" className="m-0 text-sm text-destructive">{m.loadFailed}</p>
+      </Card>
+    );
+  }
   const { current, proposal, history, rule } = data;
   const owner = data.can_change;
 
