@@ -182,7 +182,7 @@ def compute_attrition_risk_score(
 
     # ── 3. Department risk ────────────────────────────────────────────────────
     dept = str(employee.get("department", employee.get("dept", ""))).lower()
-    dept_rate = dept_attrition_rates.get(dept, 0.15)  # Default 15% annual
+    dept_rate = dept_attrition_rates.get(dept, 0.0)  # no history for this department: no uplift, no guess
     dept_multiplier = 1 + dept_rate
     score *= dept_multiplier
     if dept_rate > 0.20:

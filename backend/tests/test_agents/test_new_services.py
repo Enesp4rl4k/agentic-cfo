@@ -30,6 +30,7 @@ class TestCascadeSimulator:
             "cash_balance": 6_000_000_00,       # 6M TL
             "monthly_burn": 500_000_00,          # 500K TL
             "monthly_revenue": 1_000_000_00,
+            "monthly_opex": 1_500_000_00,
             "gross_margin": 0.60,
         }
         defaults.update(kwargs)
@@ -68,7 +69,7 @@ class TestCascadeSimulator:
     def test_market_shock_trigger(self):
         from app.services.cascade_simulator import TriggerType
         sim = self._make_simulator()
-        result = sim.simulate(TriggerType.MARKET_SHOCK, shock_type="fx_crisis", severity=0.4)
+        result = sim.simulate(TriggerType.MARKET_SHOCK, usd_try_increase_pct=40.0, inflation_pct=50.0)
         assert result is not None
 
     def test_high_runway_means_low_severity(self):
@@ -97,7 +98,12 @@ class TestCascadeSimulator:
         from app.services.cascade_simulator import get_cascade_simulator
         s1 = get_cascade_simulator()
         s2 = get_cascade_simulator()
-        assert s1 is s2  # Same instance
+        assert s1 is not s2  # no shared default instance: an empty simulator has every input missing
+        import pytest
+
+        from app.services.cascade_simulator import CascadeInputsMissing, TriggerType
+        with pytest.raises(CascadeInputsMissing):
+            s1.simulate(TriggerType.CASH_CRISIS, runway_months=2.0)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

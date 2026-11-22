@@ -30,6 +30,7 @@ from app.agents.chat_money import (
 )
 from app.core.currency_totals import fmt_amount
 from app.core.turkish import fold
+from app.services.runway_display import PROMPT_RULE, view_from_fin
 
 logger = logging.getLogger(__name__)
 
@@ -275,7 +276,8 @@ def _build_executive_context(
                 f"Revenue: {amount(fin_summary.get('revenue_cents', 0)/100, cur)}",
                 f"Net Income: {amount(fin_summary.get('net_income_cents', 0)/100, cur)}"
                 f" ({fin_summary.get('net_margin', 0)*100:.1f}% margin)",
-                f"Cash Runway: {fin_summary.get('cash_runway_months', 'N/A')} months",
+                f"Cash Runway: {view_from_fin(fin_summary).text()}",
+                PROMPT_RULE,
             ]
 
         if tech_summary:

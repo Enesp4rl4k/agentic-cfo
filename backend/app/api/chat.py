@@ -25,6 +25,7 @@ from app.models.report import Report, ReportFormat
 from app.models.transaction import Transaction
 from app.models.user import User
 from app.platform.model_gateway import LLMUnavailable, is_placeholder_key
+from app.services.runway_display import PROMPT_RULE, runway_for_display
 
 router = APIRouter()
 
@@ -491,9 +492,10 @@ def _build_agent_system_prompt(
             f"FAVÖK: {amount(pnl.get('ebitda', 0), cur)} ({pnl.get('ebitda_margin', 0)*100:.1f}%)",
             f"Nakit Akışı (İşletme): {amount(cashflow.get('operating', 0), cur)}",
         ]
-        base_fc = (forecast.get("scenarios") or {}).get("base", {})
-        if base_fc.get("runway_months"):
-            lines.append(f"Nakit Runway: {base_fc['runway_months']} ay")
+        view = runway_for_display(forecast)
+        lines.append(f"Nakit Runway: {view.text()}")
+        if not view.proven:
+            lines.append(PROMPT_RULE)
         alerts = cfo.get("alerts", [])
         if alerts:
             lines.append(f"Aktif Uyarılar: {len(alerts)} adet")

@@ -159,6 +159,10 @@ async def get_alert_history(
             query += " AND severity = :severity"
             params["severity"] = severity
 
+        # "Skipped: missing <inputs>" scan records are for the people who can fix the data.
+        if str(getattr(current_user.role, "value", current_user.role)) not in ("owner", "admin"):
+            query += " AND trigger != 'scan_skipped'"
+
         query += " ORDER BY created_at DESC LIMIT :limit"
         params["limit"] = limit
 

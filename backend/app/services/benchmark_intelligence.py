@@ -25,6 +25,8 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+from app.services.runway_display import runway_for_display
+
 logger = logging.getLogger(__name__)
 
 
@@ -298,9 +300,10 @@ class BenchmarkIntelligenceService:
             if item: items.append(item)
 
         # Nakit ömrü
-        base_sc = ((forecast or {}).get("scenarios") or {}).get("base") or {}
-        if (rwm := base_sc.get("runway_months")) is not None:
-            item = self._compare_metric("saas_runway_months", rwm)
+        # An unproven runway is not benchmarked as if it were measured.
+        runway_view = runway_for_display(forecast)
+        if runway_view.proven and runway_view.months is not None:
+            item = self._compare_metric("saas_runway_months", runway_view.months)
             if item: items.append(item)
 
         return self._build_report(items, sector, company_name)

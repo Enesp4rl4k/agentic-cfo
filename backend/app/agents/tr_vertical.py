@@ -24,6 +24,7 @@ from typing import Any
 
 from app.agents.orchestrator import run_cfo_pipeline
 from app.agents.state import AgentRunConfig, CFOState
+from app.services.runway_display import runway_for_display
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +86,8 @@ def _board_deck_from(
     pnl = cfo.get("pnl") or {}
     forecast = cfo.get("forecast") or {}
     anomalies = cfo.get("anomalies") or []
-    runway = (forecast.get("scenarios", {}).get("base", {}) or {}).get("runway_months")
+    runway_view = runway_for_display(forecast)
+    runway = runway_view.months
 
     net_margin = pnl.get("net_margin", 0) or 0
     health = 50
@@ -134,7 +136,7 @@ def _board_deck_from(
             if isinstance(a, dict) and a.get("action")
         ][:4],
         "insights": insights,
-        "cfo_data": {"pnl": pnl, "runway_months": runway},
+        "cfo_data": {"pnl": pnl, "runway_months": runway, "runway_basis": runway_view.text()},
         "kri_posture": {
             "kri_score": round(cfo.get("min_confidence", 1.0) * 10, 1),
             "counts": {

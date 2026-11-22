@@ -28,6 +28,29 @@ from app.models.user import User, UserRole
 from app.services.demo_template import clone_demo_workspace
 
 router = APIRouter(tags=["demo"])
+
+
+async def _require_guest_org(db: AsyncSession, user: User) -> str:
+    """The caller's org id, only when it is a demo guest workspace minted by /demo/guest.
+
+    Seeding puts the sample company's rows in the org's ledger and reset deletes the org's whole ledger:
+    on a real organisation the first mixes sample figures into its books and the second wipes them, so
+    neither is ever allowed there, whatever the demo flag says.
+    """
+    from sqlalchemy import select
+
+    from app.models.organization import Organization
+    from app.services.demo_template import is_guest_org
+
+    org = (
+        await db.execute(select(Organization).where(Organization.id == str(user.org_id)))
+    ).scalar_one_or_none() if user.org_id else None
+    if org is None or not is_guest_org(org):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Demo yalnızca konuk demo çalışma alanında kullanılabilir; gerçek bir şirkette kapalıdır.",
+        )
+    return str(org.id)
 logger = logging.getLogger(__name__)
 
 # Path to bundled demo CSV (relative to repo root):
@@ -109,6 +132,7 @@ async def create_demo_guest(db: AsyncSession = Depends(get_db)) -> dict[str, Any
         name=settings.demo_company_name,
         slug=f"demo-{suffix}",
         description=GUEST_DESCRIPTION,
+        is_demo_guest=True,
         **_regional_defaults("TR"),
     )
     db.add(org)
@@ -196,7 +220,9 @@ async def seed_demo(
     from app.worker import enqueue_analysis
 
     settings = get_settings()
-    org_id = str(current_user.org_id) if current_user.org_id else str(current_user.id)
+    if not settings.demo_mode:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Demo modu kapalı.")
+    org_id = await _require_guest_org(db, current_user)
 
     # ── Idempotency check: existing recent demo job ───────────────────────────
     cutoff = datetime.now(UTC) - timedelta(hours=24)
@@ -313,6 +339,8 @@ async def reset_demo(
             status_code=status.HTTP_409_CONFLICT,
             detail="Golden demo şablonu sıfırlanamaz — tüm klonlar onu besler.",
         )
+    # Reset deletes the org's whole ledger: only ever a guest workspace, never a real company.
+    await _require_guest_org(db, current_user)
 
     counts = await purge_demo_workspace(db, org_id)
     logger.info("Demo reset: org=%s by user=%s counts=%s", org_id, current_user.email, counts)
@@ -352,8 +380,15 @@ async def get_demo_status(
     except Exception:
         job = None
 
+    from app.config import get_settings
+    from app.models.organization import Organization
+    from app.services.demo_template import is_guest_org
+
+    org = await db.get(Organization, org_id)
     return {
         "data": {
+            # The one-click demo is offered only when demo mode is on AND this is a guest workspace.
+            "demo_available": bool(get_settings().demo_mode and org is not None and is_guest_org(org)),
             "has_demo":  job is not None,
             "job_id":    job.id if job else None,
             "status":    job.status if job else None,

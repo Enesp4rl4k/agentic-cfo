@@ -93,8 +93,8 @@ async def node_coo_summary(state: COOState, config: dict) -> COOState:
                 })
 
     # -- Resource score --------------------------------------------------------
-    if resources:
-        util = resources.get("avg_utilization_rate", 0.5)
+    if resources and resources.get("avg_utilization_rate") is not None:
+        util = resources["avg_utilization_rate"]
         # Score: 10 = terrible (>110% or <30%), 0 = ideal (70-85%)
         if util > 1.1:
             res_score = 10.0
@@ -248,8 +248,8 @@ def _compute_ops_efficiency(
         # Invert: efficiency_score 0 = perfect, 10 = terrible
         scores.append(10.0 - eff)
 
-    if resources:
-        util = resources.get("avg_utilization_rate", 0.5)
+    if resources and resources.get("avg_utilization_rate") is not None:
+        util = resources["avg_utilization_rate"]
         # Ideal utilization 70-85% = score 10, too low or too high penalized
         if 0.70 <= util <= 0.85:
             util_score = 10.0
@@ -259,8 +259,8 @@ def _compute_ops_efficiency(
             util_score = util / 0.70 * 10.0
         scores.append(min(10.0, util_score))
 
-    if sla:
-        breach = sla.get("sla_breach_rate", 0.5)
+    if sla and sla.get("sla_breach_rate") is not None:
+        breach = sla["sla_breach_rate"]
         sla_score = max(0.0, 10.0 - breach * 30)
         scores.append(min(10.0, sla_score))
 

@@ -2,7 +2,6 @@
 CHRO API Endpoints
 
 POST /chro/analyze - Run CHRO pipeline (headcount, attrition, compensation analysis)
-GET /chro/health-check - Service health check
 """
 
 import logging
@@ -100,12 +99,3 @@ async def run_chro_analysis(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"CHRO analysis failed: {e!s}")
 
-
-@router.get("/chro/health-check")
-async def chro_health(current_user: User = Depends(get_current_user)) -> dict[str, Any]:
-    """Health check for CHRO service."""
-    return {
-        "status": "healthy",
-        "service": "chro",
-        "capabilities": ["headcount_analysis", "attrition_analysis", "compensation_analysis"],
-    }

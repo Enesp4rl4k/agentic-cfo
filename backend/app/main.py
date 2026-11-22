@@ -101,6 +101,11 @@ async def lifespan(app: FastAPI):
     from app.database import Base, engine
     from app.scheduler import start_scheduler, stop_scheduler
 
+    if not (settings.whatsapp_verify_token and settings.whatsapp_app_secret):
+        logger.warning(
+            "WhatsApp webhook disabled: WHATSAPP_VERIFY_TOKEN and WHATSAPP_APP_SECRET must both be set."
+        )
+
     # SOLID-4: create_all only in SQLite dev mode
     if settings.use_sqlite:
         from app.core.dev_schema import sync_dev_schema

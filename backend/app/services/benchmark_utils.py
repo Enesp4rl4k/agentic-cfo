@@ -206,9 +206,12 @@ def cto_benchmark_tech_debt(
     """
     get_benchmark_engine()
 
-    debt_score = company_tech.get("debt_score", 5.0)
-    velocity_trend = company_tech.get("velocity_trend", "stable")
-    mttr_hours = company_tech.get("mttr_hours", 4.0)
+    missing = [k for k in ("debt_score", "mttr_hours") if company_tech.get(k) is None]
+    if missing:
+        return {"available": False, "missing": missing}
+    debt_score = company_tech["debt_score"]
+    velocity_trend = company_tech.get("velocity_trend", "unknown")
+    mttr_hours = company_tech["mttr_hours"]
 
     # Normalize debt score as a percentage (inverted: lower is better)
 
@@ -325,7 +328,9 @@ def chro_benchmark_attrition(
 
     Returns: {attrition_comparison, health_assessment}
     """
-    attrition_rate = company_hr.get("attrition_rate", 0.15)
+    attrition_rate = company_hr.get("attrition_rate")
+    if attrition_rate is None:
+        return {"available": False, "missing": ["attrition_rate"]}
     voluntary = company_hr.get("voluntary_attrition", attrition_rate * 0.7)
     involuntary = company_hr.get("involuntary_attrition", attrition_rate * 0.3)
 

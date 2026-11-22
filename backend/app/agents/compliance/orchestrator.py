@@ -142,7 +142,7 @@ async def node_compliance_summary(state: ComplianceState, config: dict) -> Compl
         total_v   = violations.get("total_violations", 0)
         overdue_v = violations.get("overdue_violations", 0)
         critical  = violations.get("critical_open", 0)
-        rem_rate  = violations.get("remediation_rate", 100.0)
+        rem_rate  = violations.get("remediation_rate") or 0.0  # unknown remediation is not "fully remediated"
 
         if total_v > 0:
             # Heavily penalise critical open and overdue

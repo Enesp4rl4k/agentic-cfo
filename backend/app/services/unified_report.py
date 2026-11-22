@@ -25,6 +25,7 @@ from typing import Any
 
 from app.core.branding import get_brand
 from app.core.currency_totals import fmt_compact
+from app.services.runway_display import runway_for_display
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +76,7 @@ def _build_cfo_section(cfo: dict[str, Any]) -> dict[str, Any]:
             "ebitda_margin":   _pct(pnl.get("ebitda_margin")),
             "net_income":      _fmt_lira(pnl.get("net_income", 0), cur),
             "net_margin":      _pct(pnl.get("net_margin")),
-            "cash_runway":     f"{base.get('runway_months', '?')} ay" if base.get("runway_months") else "—",
+            "cash_runway":     runway_for_display(forecast).text(),
             "forecast_12m":    _fmt_lira(base.get("twelve_month_net", 0), cur),
         },
         "critical_alerts": [a for a in alerts if a.get("level") == "critical"],

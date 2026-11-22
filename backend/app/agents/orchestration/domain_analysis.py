@@ -32,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.analysis_job import AnalysisJob
 from app.models.data_source import DataSource, DataSourceType
+from app.services.runway_display import runway_for_display
 
 logger = logging.getLogger(__name__)
 
@@ -211,12 +212,12 @@ async def _cfo_gercek(db: AsyncSession, job_id: str, alan: Alan) -> dict[str, An
             })
     if alan.kod == "risk":
         forecast = data.get("forecast") or {}
-        base = ((forecast.get("scenarios") or {}).get("base") or {})
-        if base.get("runway_months") is not None:
+        rwv = runway_for_display(forecast)
+        if rwv.months is not None:
             kalemler.append({
                 "kategori": "runway", "etiket": "Nakit ömrü (baz senaryo)",
-                "deger": base.get("runway_months"), "birim": "ay",
-                "kaynak": "CFO tahmini — bu işin nakit akışından",
+                "deger": rwv.months, "birim": "ay",
+                "kaynak": f"CFO tahmini — {rwv.text()}",
             })
         alerts = ((data.get("cashflow") or {}).get("alerts") or [])
         if alerts:
