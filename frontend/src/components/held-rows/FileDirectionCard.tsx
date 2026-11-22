@@ -22,11 +22,12 @@ export function FileDirectionCard({
   file: FileQuestion;
   pending: boolean;
   canRemember: boolean;
-  onAnswer: (answer: FileAnswer, remember: boolean) => void;
+  onAnswer: (answer: FileAnswer, remember: boolean, standing?: boolean) => void;
 }>) {
   const { t } = useI18n();
   const copy = t.heldRows;
   const [remember, setRemember] = useState(true);
+  const [standing, setStanding] = useState(false);
   const roles = copy.fileRoles as Record<string, string>;
   const options = copy.fileOptions as Record<string, string>;
   const columns = file.question?.columns ?? [];
@@ -36,18 +37,28 @@ export function FileDirectionCard({
   // "this file holds only one kind" is a statement about one file and is never remembered.
   const rememberable =
     file.reason === "convention_unverified" || file.reason === "balance_contradicts" || file.reason === "sign_unconfirmed";
-  // A convention or a sign answer is only worth remembering for a known account; without one it could never be checked.
-  const needsAccount = file.reason === "convention_unverified" || file.reason === "sign_unconfirmed";
+  // A convention is only worth remembering for a known account; without one it could never be checked. The sign of
+  // an export is a fact about the export's format, so a sign answer does not need the account.
+  const needsAccount = file.reason === "convention_unverified";
   const storable = rememberable && canRemember && (file.identity || !needsAccount);
   const mapping = file.question?.mapping ?? [];
+  // The earlier answer for the same header words, not evidenced as the same source: asked again with it pre-selected.
+  const previous = file.reason === "sign_unconfirmed" ? (file.previous ?? file.question?.previous ?? null) : null;
+  const suggested = file.reason === "sign_unconfirmed" ? (file.question?.suggested ?? null) : null;
+  const preselect = previous?.answer ?? suggested?.answer ?? null;
+  const previousOption = previous ? (copy.fileOptions as Record<string, string>)[previous.answer] : null;
+  // An identity-less file may become a standing rule, only by this explicit choice.
+  const canStand = file.reason === "sign_unconfirmed" && !file.identity && storable;
   const outLabel = mapping.find((m) => m.means === "expense")?.label;
   const body = {
     no_signal: copy.fileBodyNoSignal,
     balance_contradicts: copy.fileBodyBalance,
     convention_unverified: copy.fileBodyConvention,
     balance_inconclusive: copy.fileBodyInconclusive,
-    sign_unconfirmed: copy.fileBodySign,
+    sign_unconfirmed: file.question?.uniform ? copy.fileBodySignUniform : copy.fileBodySign,
   }[file.reason];
+  const totals = file.question?.totals;
+  const money = (kurus: number) => (kurus / 100).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const meaning = (m: { label: string; means: string }) =>
     `${m.label} → ${m.means === "expense" ? copy.expense : copy.income}`;
 
@@ -60,7 +71,25 @@ export function FileDirectionCard({
       {file.reason === "convention_unverified" && outLabel && (
         <p className="text-sm font-medium">{copy.fileConventionQuestion.replace("{label}", outLabel)}</p>
       )}
+      {file.reason === "sign_unconfirmed" && <p className="text-sm font-medium">{copy.fileSignQuestion}</p>}
+      {previous && (
+        <p className="rounded-md border p-2 text-sm" data-testid="previous-answer">
+          {copy.filePreviousAnswer
+            .replace("{answer}", previousOption ?? previous.answer)
+            .replace("{source}", previous.account ?? previous.columns)}
+        </p>
+      )}
+      {suggested && !previous && <p className="text-sm" data-testid="suggested-answer">{copy.fileSuggested}</p>}
       <p className="text-sm text-muted-foreground">{body}</p>
+      {file.reason === "sign_unconfirmed" && totals && (
+        <p className="text-xs text-muted-foreground">
+          {copy.fileSignReading
+            .replace("{inIncome}", money(totals.as_read.income))
+            .replace("{inExpense}", money(totals.as_read.expense))
+            .replace("{outIncome}", money(totals.inverted.income))
+            .replace("{outExpense}", money(totals.inverted.expense))}
+        </p>
+      )}
       {mapping.length > 0 && (
         <p className="text-xs text-muted-foreground">
           {copy.fileConventionMapping.replace("{mapping}", mapping.map(meaning).join(" · "))}
@@ -106,21 +135,31 @@ export function FileDirectionCard({
           {copy.fileRemember}
         </label>
       )}
+      {canStand && remember && (
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={standing} onChange={(e) => setStanding(e.target.checked)} />
+          {copy.fileStanding}
+        </label>
+      )}
       {rememberable && !canRemember && <p className="text-xs text-muted-foreground">{copy.fileRememberDenied}</p>}
       {rememberable && canRemember && !storable && (
         <p className="text-xs text-muted-foreground">{copy.fileNoAccount}</p>
       )}
       <div className="flex flex-wrap gap-2">
-        {file.options.map((answer) => (
-          <Button
-            key={answer}
-            variant={answer === "mixed" || answer === "only_income" || answer === "only_expense" ? "outline" : "default"}
-            disabled={pending}
-            onClick={() => onAnswer(answer, storable && remember && answer !== "mixed")}
-          >
-            {options[answer] ?? answer}
-          </Button>
-        ))}
+        {[...file.options]
+          .sort((a, b) => Number(b === preselect) - Number(a === preselect))
+          .map((answer) => (
+            <Button
+              key={answer}
+              variant={answer === "mixed" || answer === "only_income" || answer === "only_expense" ? "outline" : "default"}
+              disabled={pending}
+              aria-pressed={answer === preselect}
+              onClick={() => onAnswer(answer, storable && remember && answer !== "mixed", canStand && standing && answer !== "mixed")}
+            >
+              {answer === previous?.answer ? `${copy.fileConfirm}: ` : ""}
+              {options[answer] ?? answer}
+            </Button>
+          ))}
       </div>
     </Card>
   );

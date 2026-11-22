@@ -21,7 +21,6 @@ from app.parsers.direction import (
     parse_money,
     resolve_file,
     settle_rows,
-    sign_is_informative,
     statement_identity,
     value_direction,
 )
@@ -135,7 +134,6 @@ NO_SIGNAL = _csv(
 
 CASES = [
     # layout, inflow, outflow, waiting: booked with no question
-    ("signed single column", SIGNED_SINGLE, 700000, 155050, 0),
     ("signed single column with balance", SIGNED_SINGLE_BALANCE, 700000, 155050, 0),
     ("all-positive, Borç/Alacak words, balance agrees", POSITIVE_WITH_BORC_ALACAK_WORDS_AND_BALANCE, 400000, 65000, 0),
     ("İşlem Tipi column (Ödeme/Tahsilat)", ISLEM_TIPI, 3000000, 1200000, 0),
@@ -190,17 +188,13 @@ def test_the_bank_view_without_a_balance_is_asked_and_the_inverted_answer_books_
 
 def test_all_negative_without_a_balance_is_a_guess_and_is_held() -> None:
     rows = _read(ALL_NEGATIVE)
-    assert totals(rows) == (0, 0, 3) and {r["direction_file"]["reason"] for r in rows} == {"no_signal"}
+    assert totals(rows) == (0, 0, 3) and {r["direction_file"]["reason"] for r in rows} == {"sign_unconfirmed"}
 
 
 def test_a_stray_reversal_does_not_make_every_other_row_income() -> None:
     rows = _read(_csv("Tarih;Açıklama;Tutar", *[f"{d:02d}.03.2026;Satış {d};100,00" for d in range(1, 10)],
                       "10.03.2026;İade;-100,00"))
     assert totals(rows) == (0, 0, 10) and {r["direction_file"]["reason"] for r in rows} == {"sign_unconfirmed"}
-    assert sign_is_informative([False] * 9 + [True]) is False        # one reversal: asked, not assumed
-    assert sign_is_informative([False, True, False, True]) is True    # genuinely mixed
-    assert sign_is_informative([True] * 37 + [False] * 3) is True     # an ordinary month: 37 out, 3 in
-    assert sign_is_informative([True, True, True]) is False and sign_is_informative([False] * 3) is False
 
 
 def test_a_balance_can_make_a_rare_sign_informative() -> None:
@@ -286,7 +280,7 @@ def test_the_identity_of_a_statement_is_in_its_signature() -> None:
 def test_an_all_positive_column_with_no_other_signal_is_never_income() -> None:
     rows = _read(NO_SIGNAL)
     assert [r["type"] for r in rows] == [None, None]
-    assert {r["direction_file"]["reason"] for r in rows} == {"no_signal"}
+    assert {r["direction_file"]["reason"] for r in rows} == {"sign_unconfirmed"}     # the same one question as any sign-only file
     assert len({r["direction_file"]["key"] for r in rows}) == 1          # one file, one question
     assert sum("direction_question" in r for r in rows) == 1
     accepted, held = split_uncertain([{**r, "currency": "TRY"} for r in rows])
@@ -372,7 +366,9 @@ def test_a_type_column_that_is_not_a_direction_is_not_read_as_one() -> None:
         "01.03.2026;Kira;EFT;-100,00",
         "02.03.2026;Satış;HAVALE;300,00",
     ))
-    assert [r["type"] for r in rows] == ["expense", "income"]          # the sign, which varies in this file
+    assert [r["type"] for r in rows] == [None, None]                    # a sign alone is not evidence: asked once
+    apply_to_rows(rows, "sign_correct")
+    assert [r["type"] for r in rows] == ["expense", "income"]
 
 
 def test_the_explicit_income_expense_values_are_still_honoured() -> None:
@@ -433,7 +429,12 @@ def test_a_text_layout_with_all_positive_amounts_does_not_default_to_income() ->
 
     positive = "GARANTİ BBVA" + NL + "10.02.2024  FATURA  2.000,00  12.000,00" + NL + "12.02.2024  MAAŞ  4.500,00  7.500,00" + NL
     statement = GarantiParser().parse(positive)
-    assert [t.tx_type for t in statement.transactions] == ["", ""]
+    # The sign is only a reading, marked as such; with no verifying chain the file is asked (settle_rows).
+    assert {t.direction_basis for t in statement.transactions} == {"sign"}
+    rows = [{"type": t.tx_type, "amount_cents": t.amount_cents, "balance_cents": t.balance_cents,
+             "description": t.description, "direction_basis": t.direction_basis} for t in statement.transactions]
+    asked = settle_rows(rows, "Garanti")
+    assert asked is not None and asked["reason"] == "sign_unconfirmed" and all(r["type"] is None for r in rows)
     assert [t.balance_cents for t in statement.transactions] == [1200000, 750000]
 
 
@@ -557,6 +558,9 @@ def test_real_rows_that_merely_begin_like_a_summary_line_are_booked() -> None:
         "04.03.2026;Satış;5.000,00",
     ))
     assert [r["description"] for r in rows] == ["Toplam fatura ödemesi", "Devreden KDV", "Total Wireless", "Satış"]
+    assert [r["description"] for r in rows] == ["Toplam fatura ödemesi", "Devreden KDV", "Total Wireless", "Satış"]
+    assert totals(rows)[:2] == (0, 0)                      # all four are rows (none skipped); their signs await the answer
+    apply_to_rows(rows, "sign_correct")
     assert totals(rows) == (500000, 188000, 0) and not any("summary_lines_skipped" in r for r in rows)
 
 
@@ -593,11 +597,11 @@ def test_a_summary_phrase_with_a_date_and_an_amount_is_held_when_it_does_not_fit
     assert len(rows) == 11                                   # not skipped, not booked: held
 
 
-def test_a_collections_light_month_is_booked_without_a_question() -> None:
+def test_a_collections_light_month_is_asked_once_not_booked_on_its_signs() -> None:
     lines = ["Tarih;Açıklama;Tutar"] + [f"{d:02d}.03.2026;Ödeme {d};-{d * 10},00" for d in range(1, 11)]
     lines += ["11.03.2026;Tahsilat;500,00", "12.03.2026;Tahsilat;300,00", "13.03.2026;Tahsilat;200,00"]
     rows = _read(_csv(*lines))
-    assert totals(rows) == (100000, 55000, 0) and not any("direction_file" in r for r in rows)
+    assert totals(rows)[:2] == (0, 0) and {r["direction_file"]["reason"] for r in rows} == {"sign_unconfirmed"}
 
 
 def test_two_stray_positives_among_payments_ask_once_and_the_sign_answer_books_it() -> None:
@@ -641,8 +645,9 @@ def test_a_bare_payment_type_value_is_not_a_direction() -> None:
         "02.03.2026;Satış;Havale;300,00",
         "03.03.2026;Gaz;EFT;-50,00",
     ))
-    assert [r["type"] for r in rows] == ["expense", "income", "expense"]            # by the sign, since the column is no direction
-    assert all("direction_file" not in r for r in rows)
+    assert all(r["type"] is None and r["direction_file"]["reason"] == "sign_unconfirmed" for r in rows)
+    apply_to_rows(rows, "sign_correct")                  # the column is no direction; the person confirms the signs
+    assert [r["type"] for r in rows] == ["expense", "income", "expense"]
 
 
 def test_a_two_row_text_statement_is_unverified_and_a_debit_credit_layout_asks() -> None:

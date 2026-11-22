@@ -41,6 +41,7 @@ from app.services.ingest.hold import (
     DATE_UNREADABLE,
     DIRECTION_FILE,
     DIRECTION_UNKNOWN,
+    OUTSIDE_CHAIN,
     row_reasons,
 )
 from app.services.ingest.persist import build_transaction
@@ -54,6 +55,7 @@ REASON_TEXT: dict[str, str] = {
     "direction_unknown": "yön belirsiz",
     "direction_file_unknown": "yön belirsiz",
     "balance_mismatch": "bakiye ile uyuşmuyor",
+    "balance_outside_chain": "bakiye zincirinin dışında kalan satır",
     "summary_suspect": "özet satırı olabilir",
     "amount_zero": "tutar sıfır",
     "line_unreadable": "satır okunamadı",
@@ -218,7 +220,7 @@ class UnknownRows(LookupError):
 
 # Which open question each corrected field answers.
 _FIXES = {
-    "type": (DIRECTION_UNKNOWN, DIRECTION_FILE, BALANCE_MISMATCH),
+    "type": (DIRECTION_UNKNOWN, DIRECTION_FILE, BALANCE_MISMATCH, OUTSIDE_CHAIN),
     "currency": (CURRENCY_UNKNOWN, CURRENCY_UNREADABLE),
     "transaction_date": (DATE_UNREADABLE,),
     "amount_cents": (AMOUNT_UNREADABLE, AMOUNT_ZERO, AMOUNT_UNCERTAIN),
@@ -266,6 +268,7 @@ def apply_corrections(payload: dict[str, Any], corrections: dict[str, Any] | Non
         out.pop("direction_file", None)
         out.pop("direction_question", None)
         out.pop("balance_mismatch", None)
+        out.pop("outside_chain", None)
         if out.get("category") is None:        # chosen now that the direction is known
             from app.services.ingest.rows import _yukleyenin_kategorisi
 
