@@ -20,6 +20,7 @@ from app.models.open_item import OpenItem
 from app.models.open_item_match import OpenItemMatch
 from app.models.transaction import Transaction
 from app.models.user import User
+from app.services.acting_role import acting_role
 from app.services.cash_radar import compute_cash_radar
 from app.services.duplicate_resolution import settle_resolution
 from app.services.ledger import (
@@ -40,6 +41,7 @@ from app.services.reconciliation import (
     payment_behaviour,
     settle_from_matches,
 )
+from app.services.settlement_decisions import record_person_answer
 
 router = APIRouter()
 
@@ -242,7 +244,10 @@ async def resolve_settlement(
                 OpenItemMatch.status == PROPOSED,
             )
         )).scalars())
+    if not group:   # the lump was answered meanwhile: nothing is left to decide (it used to answer 200 with no effect)
+        raise HTTPException(409, "Bu öneri karar beklemiyor.")
     members = [(m.id, m.open_item_id, m.amount_cents) for m in group]
+    role = await acting_role(db, user)
     won = await db.execute(
         update(OpenItemMatch)
         .where(OpenItemMatch.id.in_([m[0] for m in members]), OpenItemMatch.status == PROPOSED)
@@ -254,9 +259,13 @@ async def resolve_settlement(
         raise HTTPException(409, "Bu öneri karar beklemiyor.")
     if body.action == "confirm":
         await settle_from_matches(db, [item_id for _, item_id, _ in members])
+    decision_ids = await record_person_answer(
+        db, org_id=org_id, user_id=str(user.id), role=role, matches=group,
+        outcome="confirmed" if body.action == "confirm" else "rejected",
+    )
     await db.commit()
     _refresh_view(org_id)
-    return {"data": {"id": match_id, "action": body.action}, "error": None}
+    return {"data": {"id": match_id, "action": body.action, "decision_ids": decision_ids}, "error": None}
 
 
 @router.get("/ledger/payment-behaviour", responses={400: {"description": "The user has no organisation."}})

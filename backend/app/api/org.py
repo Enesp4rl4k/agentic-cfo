@@ -35,6 +35,7 @@ from app.models.user import User, UserRole
 from app.services import email_verification
 from app.services.acting_role import acting_role
 from app.services.decisions import record_decision
+from app.services.org_identity_decision import identity_view, record_identity_change
 from app.services.secret_tokens import hash_token, new_token
 
 router = APIRouter()
@@ -314,6 +315,7 @@ async def update_org(
 ) -> dict[str, Any]:
     """Update org settings. Requires admin role."""
     org = await _require_admin(current_user, db)
+    before = identity_view(org)
     if body.name is not None:
         org.name = body.name
     if body.description is not None:
@@ -353,6 +355,7 @@ async def update_org(
             org.vkn = normalize(body.vkn)
     if body.legal_title is not None:
         org.legal_title = body.legal_title.strip() or None
+    await record_identity_change(db, org, current_user, before)
     await db.commit()
     await db.refresh(org)
     return {"data": {**_org_dict(org), **await _base_fields(db, org)}, "error": None}

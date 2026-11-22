@@ -31,8 +31,11 @@ from app.api.access import require_writer
 from app.api.auth import get_current_user
 from app.config import get_settings
 from app.database import get_db
+from app.models.decision import DecidedVia, DecisionKind
 from app.models.user import User
+from app.services.acting_role import acting_role
 from app.services.csv_validator import FIELD_MAP_CANDIDATES, CSVValidator
+from app.services.decisions import record_decision
 from app.services.smmm_clients import ClientNotOwned, assert_owns_client
 
 logger = logging.getLogger(__name__)
@@ -285,6 +288,8 @@ async def accept_column_mapping(
     Accept user-confirmed column mapping and start analysis.
     Called after the user reviews and adjusts the auto-detected mapping in the UI (DQ-2).
     """
+    if not user.org_id:
+        raise HTTPException(status_code=400, detail="Bu işlem için bir organizasyon gerekli.")
     if body.client_id:
         try:
             body.client_id = await assert_owns_client(
@@ -327,33 +332,30 @@ async def accept_column_mapping(
         validate_extension(ext)
         upload_result = await stream_to_disk(fake_file, ext, settings.max_upload_size_mb)
 
-        # Store the confirmed mapping in job metadata
+        # The job, the confirmed mapping and the decision that records who confirmed it commit together.
         job = await create_analysis_job(
             result=upload_result,
             user_id=user.id,
             org_id=user.org_id,
             db=db,
             smmm_client_id=body.client_id,
+            commit=False,
         )
-
-        # Persist mapping in job metadata (for the pipeline to use)
-        if job and body.column_mapping:
-
-            from sqlalchemy import update
-
-            from app.models.analysis_job import AnalysisJob
-            existing_meta = job.result_metadata or {}
-            existing_meta["column_mapping"] = body.column_mapping
-            await db.execute(
-                update(AnalysisJob)
-                .where(AnalysisJob.id == job.id)
-                .values(result_metadata=existing_meta)
-            )
-            await db.commit()
+        if body.column_mapping:
+            job.result_metadata = {**(job.result_metadata or {}), "column_mapping": body.column_mapping}
+        await record_decision(
+            db, org_id=str(user.org_id), kind=DecisionKind.COLUMN_MAPPING_ACCEPTANCE, target_type="analysis_job",
+            target_id=str(job.id), outcome="accepted", decided_via=DecidedVia.HUMAN, decided_by=str(user.id),
+            after={"column_mapping": dict(list(body.column_mapping.items())[:40]),
+                   "acting_role": await acting_role(db, user)},
+        )
+        await db.commit()
 
     except FileValidationError as exc:
+        await db.rollback()
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
+        await db.rollback()
         logger.error("accept_column_mapping failed: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
 

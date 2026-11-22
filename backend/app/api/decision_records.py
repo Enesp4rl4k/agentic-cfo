@@ -2,27 +2,33 @@
 
 GET /decision-records   the caller's organisation's decisions, newest first
 
-Filters: `kind`, `target_type`, `target_id`, `current_only`; paged by `limit`/`offset`.
+Filters: `kind`, `target_type`, `target_id`, `decided_by`, `since`, `until` (an aware or UTC datetime; `until` exclusive), `current_only`; paged by `limit`/`offset`.
 There is deliberately no write route: decisions are recorded by the endpoints that
 make them, inside their own transaction (`app.services.decisions.record_decision`).
-Another organisation's decisions never appear: the query is scoped to the caller's
+Who may read what: by KIND, in one table (`models/decision.py` `DECISION_READ`, guards in `api/access.py`):
+a decision is readable only by the roles that may see the thing it is about, whatever path asks (the object id
+of a settlement opens settlement decisions to a viewer; the organisation's id opens no security record).
+Kinds the caller may not read are left out, never an error. On top of that the company-wide log (no object
+named) is for owner, admin, cfo and smmm (`WRITER_ROLES`). An unknown kind is the deciders' (fail closed). Another organisation's decisions never appear: the query is scoped to the caller's
 organisation, and a caller without one is refused.
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import WRITER_ROLES, may_read_decision_kind, readable_decision_kinds
 from app.api.auth import get_current_user
 from app.api.contract import Envelope
 from app.database import get_db
 from app.models.decision import Decision
 from app.models.user import User
 from app.services import decisions as svc
+from app.services.acting_role import acting_role
 
 router = APIRouter()
 
@@ -73,12 +79,18 @@ def _view(row: Decision, replaced_by: str | None) -> DecisionView:
 
 @router.get(
     "/decision-records", response_model=DecisionList,
-    responses={400: {"description": "The user has no organisation."}},
+    responses={
+        400: {"description": "The user has no organisation."},
+        403: {"description": "The company-wide log needs owner, admin, cfo or smmm; one object's history is open to members."},
+    },
 )
 async def list_decision_records(
     kind: str | None = Query(default=None, max_length=40),
     target_type: str | None = Query(default=None, max_length=40),
     target_id: str | None = Query(default=None, max_length=120),
+    decided_by: str | None = Query(default=None, max_length=36),
+    since: datetime | None = None,
+    until: datetime | None = None,
     current_only: bool = False,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
@@ -88,9 +100,18 @@ async def list_decision_records(
     if not user.org_id:
         raise HTTPException(400, "Bu işlem için bir organizasyon gerekli.")
     org_id = str(user.org_id)
+    since, until = (d if d is None or d.tzinfo else d.replace(tzinfo=UTC) for d in (since, until))
+    role = await acting_role(db, user)
+    one_object = target_type is not None and target_id is not None
+    if not one_object and role not in WRITER_ROLES:
+        raise HTTPException(403, "Şirket genelindeki karar günlüğü için owner, admin, cfo veya smmm rolü gerekir.")
+    # Whatever the path, a decision is readable only by the roles that may see the thing it is about
+    # (`DECISION_READ`): naming an object id opens nothing the kind's guard does not.
+    if kind is not None and not may_read_decision_kind(role, kind):
+        raise HTTPException(403, "Bu türdeki karar kayıtlarını görme yetkiniz yok.")
     rows, total = await svc.list_decisions(
-        db, org_id, kind=kind, target_type=target_type, target_id=target_id,
-        current_only=current_only, limit=limit, offset=offset,
+        db, org_id, kind=kind, target_type=target_type, target_id=target_id, kinds=readable_decision_kinds(role),
+        current_only=current_only, limit=limit, offset=offset, decided_by=decided_by, since=since, until=until,
     )
     replaced = await svc.superseded_ids(db, org_id, [r.id for r in rows])
     return DecisionList(

@@ -22,15 +22,17 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_current_user
 from app.core.http_headers import content_disposition
 from app.database import get_db
+from app.models.decision import DecidedVia, DecisionKind
 from app.models.user import User
 from app.services.acting_role import acting_role
+from app.services.decisions import record_decision
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -217,7 +219,8 @@ async def audit_summary_report(
 # ── SEC-5: IP Whitelist ───────────────────────────────────────────────────────
 
 class IPWhitelistUpdate(BaseModel):
-    cidrs:   list[str]  # ["10.0.0.0/8", "203.0.113.42/32"]
+    # ["10.0.0.0/8", "203.0.113.42/32"]. Bounded: the decision record keeps the whole list before and after.
+    cidrs:   list[str] = Field(max_length=50)
     enabled: bool = True
 
 
@@ -278,8 +281,8 @@ async def get_ip_whitelist(
     if not org:
         return {"data": {"enabled": False, "cidrs": []}, "error": None}
 
-    whitelist = getattr(org, "ip_whitelist", "") or ""
-    enabled   = getattr(org, "ip_whitelist_enabled", False) or False
+    whitelist = org.ip_whitelist or ""
+    enabled   = org.ip_whitelist_enabled or False
 
     return {
         "data": {
@@ -300,7 +303,8 @@ async def update_ip_whitelist(
     Update IP whitelist for the org.
     WARNING: Wrong config can lock out all users. Always include your own IP.
     """
-    if await acting_role(db, current_user) not in ("owner", "admin"):
+    role = await acting_role(db, current_user)
+    if role not in ("owner", "admin"):
         raise HTTPException(status_code=403, detail="Sadece admin ve owner erişebilir")
 
     org_id = getattr(current_user, "org_id", None)
@@ -315,8 +319,21 @@ async def update_ip_whitelist(
     if not org:
         raise HTTPException(status_code=404, detail="Organizasyon bulunamadı")
 
-    org.ip_whitelist         = ",".join(valid_cidrs)  # type: ignore[attr-defined]
-    org.ip_whitelist_enabled = req.enabled             # type: ignore[attr-defined]
+    before = {
+        "enabled": bool(org.ip_whitelist_enabled),
+        "cidrs": [c.strip() for c in (org.ip_whitelist or "").split(",") if c.strip()],
+    }
+    org.ip_whitelist         = ",".join(valid_cidrs)
+    org.ip_whitelist_enabled = req.enabled
+    # Who may reach the company at all: a security decision, recorded in the same transaction (a wrong list
+    # can lock everyone out, so the record names who set it and from what). Addresses of the company's own
+    # offices, as the organisation already stores them; nothing else is copied.
+    after = {"enabled": req.enabled, "cidrs": valid_cidrs}
+    await record_decision(
+        db, org_id=str(org.id), kind=DecisionKind.SECURITY_SETTING_CHANGE, target_type="organization_ip_whitelist",
+        target_id=str(org.id), outcome="enabled" if req.enabled else "disabled", decided_via=DecidedVia.HUMAN,
+        decided_by=str(current_user.id), before=before, after={**after, "acting_role": role},
+    )
     await db.commit()
 
     logger.info(
@@ -349,10 +366,10 @@ async def test_ip_whitelist(
     result = await db.execute(select(Organization).where(Organization.id == str(org_id)))
     org    = result.scalar_one_or_none()
 
-    if not org or not getattr(org, "ip_whitelist_enabled", False):
+    if not org or not org.ip_whitelist_enabled:
         return {"data": {"allowed": True, "reason": "Whitelist devre dışı"}, "error": None}
 
-    whitelist = getattr(org, "ip_whitelist", "") or ""
+    whitelist = org.ip_whitelist or ""
     allowed   = check_ip_in_whitelist(ip, whitelist)
 
     return {

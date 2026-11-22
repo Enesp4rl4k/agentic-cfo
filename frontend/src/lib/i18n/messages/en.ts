@@ -331,6 +331,7 @@ export type MessageTree = {
       alerts: string;
       workspace: string;
       pilot: string;
+      kararlar: string;
     };
   };
   bulten: {
@@ -2944,6 +2945,48 @@ export type MessageTree = {
     emptyCta: string;
     applyToVendor: string;
   };
+  decisionLog: {
+    title: string;
+    subtitle: string;
+    empty: string;
+    failed: string;
+    forbidden: string;
+    loading: string;
+    filterKind: string;
+    filterWho: string;
+    filterFrom: string;
+    filterTo: string;
+    allKinds: string;
+    everyone: string;
+    clear: string;
+    colWhen: string;
+    colWho: string;
+    colKind: string;
+    colOutcome: string;
+    viaHuman: string;
+    viaRule: string;
+    viaSystem: string;
+    ruleNote: string;
+    unknownPerson: string;
+    historyTitle: string;
+    historyEmpty: string;
+    historyFailed: string;
+    historyOpen: string;
+    historyShowing: string;
+    showAll: string;
+    detail: string;
+    before: string;
+    after: string;
+    evidence: string;
+    reason: string;
+    replaces: string;
+    replacedBy: string;
+    prev: string;
+    next: string;
+    page: string;
+    kinds: Record<string, string>;
+    outcomes: Record<string, string>;
+  };
   codes: {
     unknown: string;
     category: {
@@ -3605,6 +3648,7 @@ export const en: MessageTree = {
       alerts: "Alerts",
       workspace: "Settings",
       pilot: "Pilot Program",
+      kararlar: "Decision log",
     },
   },
   bulten: {
@@ -6534,6 +6578,102 @@ export const en: MessageTree = {
     emptyBody: "Upload a financial document and run an analysis to see and edit transactions.",
     emptyCta: "Upload document",
     applyToVendor: "Apply to all from vendor",
+  },
+  decisionLog: {
+    title: "Decision log",
+    subtitle: "Every decision taken in the company: who, in which role, on what basis, when. The system proposes; the record shows a person's answer or a built-in rule's decision.",
+    empty: "No decision records match the current filters.",
+    failed: "The decision log could not be read.",
+    forbidden: "The company-wide decision log is open to owner, admin, cfo and accountant roles.",
+    loading: "Loading",
+    filterKind: "Decision type",
+    filterWho: "Who",
+    filterFrom: "From",
+    filterTo: "To",
+    allKinds: "All types",
+    everyone: "Everyone",
+    clear: "Clear filters",
+    colWhen: "When",
+    colWho: "Decided by",
+    colKind: "Type",
+    colOutcome: "Outcome",
+    viaHuman: "Person",
+    viaRule: "Built-in rule",
+    viaSystem: "System",
+    ruleNote: "Rule {id}; a person may take it back.",
+    unknownPerson: "Unknown member",
+    historyTitle: "Decision history",
+    historyEmpty: "No decision records for this item.",
+    historyFailed: "The decision history could not be read.",
+    historyOpen: "History of this item",
+    historyShowing: "Showing the history of one item",
+    showAll: "Show all",
+    detail: "Basis",
+    before: "Before",
+    after: "After",
+    evidence: "Linked records",
+    reason: "Reason",
+    replaces: "Took back or replaced this decision",
+    replacedBy: "Replaced later",
+    prev: "Previous page",
+    next: "Next page",
+    page: "Page {n}",
+    kinds: {
+      category_correction: "Category correction",
+      duplicate_resolution: "Possible duplicate",
+      settlement_match: "Bank match",
+      held_run_release: "Held run decision",
+      held_row_resolution: "Held row answer",
+      balance_reverification: "Balance re-verification",
+      account_identity: "Account identity",
+      base_currency_confirmation: "Company currency",
+      file_direction_answer: "File direction answer",
+      direction_mapping: "Direction mapping",
+      plan_change: "Payment plan change",
+      briefing_release: "Briefing release",
+      month_close: "Month close",
+      smmm_onay: "Accountant approval",
+      erasure: "Erasure",
+      automation_rule_change: "Automatic rule (related party, trigger, learned rule)",
+      counterparty_alias: "Counterparty alias",
+      owner_statement: "Owner statement",
+      size_profile: "Company size",
+      authority_policy_change: "Authority policy",
+      member_change: "Membership change",
+      action_decision: "Action decision",
+      packet_finalization: "Packet seal",
+      agent_conflict_resolution: "Agent conflict resolution",
+      company_view_adoption: "Company view adopted",
+      security_setting_change: "Security setting (IP allow-list)",
+      context_reset: "Company context reset",
+      compliance_filing: "Compliance filing (breach, SOX)",
+      column_mapping_acceptance: "Column mapping accepted",
+      org_identity_change: "Company identity (tax no., country, packs)",
+      materiality: "Materiality threshold",
+      briefing_recipients: "Briefing to the accountant",
+    },
+    outcomes: {
+      confirmed: "Confirmed",
+      rejected: "Rejected",
+      undone: "Undone",
+      approved: "Approved",
+      withdrawn: "Withdrawn",
+      proposed: "Proposed",
+      enabled: "Enabled",
+      disabled: "Disabled",
+      revoked: "Revoked",
+      created_disabled: "Created disabled",
+      changed: "Changed",
+      reset: "Reset",
+      accepted: "Accepted",
+      certified: "Certified",
+      breach_recorded: "Breach recorded",
+      marked_notified: "Marked as notified",
+      kept_separate: "Kept separate",
+      same_document: "Same document",
+      corrected: "Corrected",
+      sent: "Sent",
+    },
   },
   codes: {
     unknown: "Unknown status: {code}",

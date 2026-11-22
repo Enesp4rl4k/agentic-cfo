@@ -22,6 +22,7 @@ nothing stays what it was: its own money.
 from __future__ import annotations
 
 import re
+import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
@@ -34,6 +35,7 @@ from app.core.turkish import fold
 from app.models.canonical_transaction import CanonicalTransaction, money_rows
 from app.models.open_item import OpenItem
 from app.models.open_item_match import OpenItemMatch
+from app.services.settlement_decisions import record_rule_settlement
 
 CASH = "cash"
 CONFIRMED = "confirmed"
@@ -279,12 +281,15 @@ async def reconcile_org(db: AsyncSession, org_id: str) -> dict[str, int]:
             if lump:
                 counts["proposed"] += 1
             continue
-        db.add(OpenItemMatch(
-            org_id=org_id, open_item_id=match.item.id, ledger_row_id=row.id,
+        made = OpenItemMatch(
+            id=str(uuid.uuid4()), org_id=org_id, open_item_id=match.item.id, ledger_row_id=row.id,
             amount_cents=match.amount, method=match.method, status=match.status,
             matched_on=_day(row.transaction_date),
-        ))
+        )
+        db.add(made)
         if match.status == CONFIRMED:
+            # A built-in rule just decided: it leaves its record in this transaction (a failed record blocks it).
+            await record_rule_settlement(db, org_id=org_id, match=made, counterparty=match.item.counterparty)
             _note_payment(match.item, match.amount)
             settled_ids.add(match.item.id)
             counts["settled"] += 1
