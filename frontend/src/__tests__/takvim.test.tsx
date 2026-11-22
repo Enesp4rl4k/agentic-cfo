@@ -8,7 +8,7 @@
  */
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useSession } from "next-auth/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -239,6 +239,33 @@ describe("Ödeme takvimi: from scenario to a proposal", () => {
     await moveAndSend(user, "Planı değiştir");
     expect(decidePlanChange).toHaveBeenCalledWith("c1", "approve");
     expect(await screen.findByText("Ödeme planı değişti.")).toBeInTheDocument();
+  });
+
+  it("confirms with the server's sentence when the proposer is the only decider", async () => {
+    getCashRadar.mockResolvedValue(radar());
+    listPlanChanges.mockResolvedValue({ changes: [], canDecide: true, selfDecisionAck: "Öneren ve onaylayan aynı kişi: ben." });
+    proposePlanChange.mockResolvedValue({ id: "c1", self_decision: "acknowledge" });
+    decidePlanChange.mockResolvedValue({ id: "c1" });
+    const user = userEvent.setup();
+    show();
+    await user.click(await screen.findByRole("button", { name: "Ana Tedarikçi: 1 hafta ötele" }));
+    // the one confirmation says, before the click, that proposer and approver are the same person
+    expect(await screen.findByText(/aynı kişi olduğunuz karar kaydına yazılır/)).toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: "Ana Tedarikçi: Planı değiştir" }));
+    await waitFor(() =>
+      expect(decidePlanChange).toHaveBeenCalledWith("c1", "approve", undefined, "Öneren ve onaylayan aynı kişi: ben."));
+  });
+
+  it("leaves the proposal waiting when another decider must approve it, and says so", async () => {
+    getCashRadar.mockResolvedValue(radar());
+    listPlanChanges.mockResolvedValue({ changes: [], canDecide: true, selfDecisionAck: "x" });
+    proposePlanChange.mockResolvedValue({ id: "c1", self_decision: "blocked" });
+    const user = userEvent.setup();
+    show();
+    await moveAndSend(user, "Planı değiştir");
+    expect(decidePlanChange).not.toHaveBeenCalled();
+    expect(await screen.findByText(/diğer sahip ya da yöneticisinin onayına gönderildi/)).toBeInTheDocument();
+    expect(screen.queryByText("Ödeme planı değişti.")).toBeNull();
   });
 
   it("shows the server's own sentence when it refuses", async () => {

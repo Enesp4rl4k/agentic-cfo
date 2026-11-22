@@ -36,7 +36,7 @@ function useResolved(currency: string | null | undefined): string | null {
 export function useCurrencyFormat(currency?: string | null): (value: number) => string {
   const { org } = useOrgSettings();
   const code = useResolved(currency);
-  const locale = org?.locale || "en-US";
+  const locale = org?.locale || "tr-TR";
   return useCallback((value: number) => formatCurrency(value, code, locale), [code, locale]);
 }
 
@@ -47,7 +47,7 @@ export function useCurrencyFormat(currency?: string | null): (value: number) => 
 export function useCurrencySymbol(currency?: string | null): string {
   const { org } = useOrgSettings();
   const code = useResolved(currency);
-  const locale = org?.locale || "en-US";
+  const locale = org?.locale || "tr-TR";
   if (!code) return "";
   try {
     const parts = new Intl.NumberFormat(locale, { style: "currency", currency: code }).formatToParts(1);

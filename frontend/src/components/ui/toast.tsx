@@ -3,6 +3,7 @@
 import * as RadixToast from "@radix-ui/react-toast";
 import { createContext, useContext, useState, useCallback, ReactNode } from "react";
 import { CheckCircle, AlertCircle, X } from "lucide-react";
+import { useI18n } from "@/hooks/useI18n";
 import { cn } from "@/lib/utils";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -14,12 +15,14 @@ interface Toast {
   title: string;
   description?: string;
   variant: ToastVariant;
+  /** Stable hook for tests: toast text is translated and must not be what a test addresses. */
+  testId?: string;
 }
 
 interface ToastContextValue {
   toast: (opts: Omit<Toast, "id">) => void;
-  success: (title: string, description?: string) => void;
-  error: (title: string, description?: string) => void;
+  success: (title: string, description?: string, testId?: string) => void;
+  error: (title: string, description?: string, testId?: string) => void;
 }
 
 // ── Context ───────────────────────────────────────────────────────────────────
@@ -29,6 +32,8 @@ const ToastContext = createContext<ToastContextValue | null>(null);
 // ── Provider ──────────────────────────────────────────────────────────────────
 
 export function ToastProvider({ children }: { children: ReactNode }) {
+  const { t: messages } = useI18n();
+  const dismissLabel = messages.scanToast.dismiss;
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   const addToast = useCallback((opts: Omit<Toast, "id">) => {
@@ -42,8 +47,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
   const value: ToastContextValue = {
     toast: addToast,
-    success: (title, description) => addToast({ title, description, variant: "success" }),
-    error: (title, description) => addToast({ title, description, variant: "error" }),
+    success: (title, description, testId) => addToast({ title, description, variant: "success", testId }),
+    error: (title, description, testId) => addToast({ title, description, variant: "error", testId }),
   };
 
   return (
@@ -77,7 +82,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             ) : null}
 
             <div className="flex-1">
-              <RadixToast.Title className="text-sm font-medium leading-snug">
+              <RadixToast.Title data-testid={t.testId} className="text-sm font-medium leading-snug">
                 {t.title}
               </RadixToast.Title>
               {t.description && (
@@ -89,7 +94,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
             <RadixToast.Close
               className="rounded p-0.5 opacity-60 hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              aria-label="Dismiss notification"
+              aria-label={dismissLabel}
             >
               <X className="h-3.5 w-3.5" aria-hidden="true" />
             </RadixToast.Close>

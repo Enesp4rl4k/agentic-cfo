@@ -138,6 +138,48 @@ describe("Onay bekleyenler: payment plan change proposals", () => {
     await waitFor(() => expect(decidePlanChange).toHaveBeenCalledWith("c1", "approve", "kredi vadesi"));
   });
 
+  it("asks the only decider to confirm that proposer and approver are the same person, and sends the server's sentence", async () => {
+    getProposedSettlements.mockResolvedValue([]);
+    getPossibleDuplicates.mockResolvedValue([]);
+    listPlanChanges.mockResolvedValue({
+      changes: [{ ...proposal, self_decision: "acknowledge" }], canDecide: true, selfDecisionAck: "Öneren ve onaylayan aynı kişi: ben.",
+    });
+    decidePlanChange.mockResolvedValue({});
+    const user = userEvent.setup();
+    show();
+    expect(screen.queryByRole("button", { name: "Onayla" })).toBeNull();
+    await user.click(await screen.findByRole("button", { name: "Öneren ve onaylayan aynı kişi: onaylıyorum" }));
+    await waitFor(() =>
+      expect(decidePlanChange).toHaveBeenCalledWith("c1", "approve", undefined, "Öneren ve onaylayan aynı kişi: ben."));
+  });
+
+  it("does not offer approval of one's own proposal when another decider must decide, and says why", async () => {
+    getProposedSettlements.mockResolvedValue([]);
+    getPossibleDuplicates.mockResolvedValue([]);
+    listPlanChanges.mockResolvedValue({
+      changes: [{ ...proposal, self_decision: "blocked", self_decision_message: "Bu tutar eşiğin üstünde." }],
+      canDecide: true, selfDecisionAck: "x",
+    });
+    show();
+    expect(await screen.findByText(/başka bir sahibi ya da yöneticisi onaylamalı/)).toBeInTheDocument();
+    expect(screen.getByText("Bu tutar eşiğin üstünde.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Onayla" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Öneren ve onaylayan aynı kişi: onaylıyorum" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Geri çek" })).toBeInTheDocument();
+    // and it is not in the one-tap queue either: it is not theirs to decide
+    expect(screen.queryByRole("button", { name: "Tek dokunuşla karar ver" })).toBeNull();
+  });
+
+  it("says so when the proposer changed the approval threshold themselves", async () => {
+    getProposedSettlements.mockResolvedValue([]);
+    getPossibleDuplicates.mockResolvedValue([]);
+    listPlanChanges.mockResolvedValue({
+      changes: [{ ...proposal, threshold_changed_by_proposer: true }], canDecide: true, selfDecisionAck: "x",
+    });
+    show();
+    expect(await screen.findByText(/eşiğini yakın zamanda kendisi değiştirdi/)).toBeInTheDocument();
+  });
+
   it("shows anyone else that the decision belongs to an owner or admin, and lets the proposer withdraw", async () => {
     getProposedSettlements.mockResolvedValue([]);
     getPossibleDuplicates.mockResolvedValue([]);

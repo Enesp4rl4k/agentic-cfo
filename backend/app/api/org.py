@@ -296,6 +296,14 @@ async def get_my_org(
     members = [u for u, _ in await _org_members(db, str(org.id)) if u.is_active]
     data = {**_org_dict(org), **await _base_fields(db, org)}
     data["member_count"] = len(members)
+    # Whether an active accountant (smmm) belongs to the company, so the screens can adapt, and the
+    # defaults the confirmed size profile sets (a starting point, never a lock).
+    from app.services.accountant import has_active_smmm
+    from app.services.size_profile import profile_defaults
+
+    data["has_smmm"] = await has_active_smmm(db, str(org.id))
+    data["briefing_to_smmm"] = bool(org.briefing_to_smmm)
+    data["profile_defaults"] = profile_defaults(org.size_profile)
     return {"data": data, "error": None}
 
 

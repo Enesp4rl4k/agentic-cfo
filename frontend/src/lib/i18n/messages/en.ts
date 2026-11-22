@@ -2232,6 +2232,60 @@ export type MessageTree = {
     saved: string;
     error: string;
   };
+  scale: {
+    materiality: {
+      title: string;
+      intro: string;
+      current: string;
+      fixedNote: string;
+      basis: string;
+      proposalTitle: string;
+      proposalHint: string;
+      acknowledge: string;
+      own: string;
+      ownLabel: string;
+      reasonLabel: string;
+      ownerOnly: string;
+      bounds: string;
+      historyTitle: string;
+      historyLine: string;
+      historyReason: string;
+      save: string;
+      cancel: string;
+      saved: string;
+      stale: string;
+      error: string;
+      safety: string;
+    };
+    recipients: {
+      title: string;
+      toSmmm: string;
+      hint: string;
+      suggested: string;
+      noSmmm: string;
+      saved: string;
+      error: string;
+    };
+    workload: {
+      title: string;
+      subtitle: string;
+      empty: string;
+      onay: string;
+      close: string;
+      briefing: string;
+      switch: string;
+      nothing: string;
+      total: string;
+      failed: string;
+    };
+    selfDecision: {
+      confirmApprove: string;
+      note: string;
+      blockedTitle: string;
+      waitingOther: string;
+      thresholdMoved: string;
+    };
+  };
   baslangic: {
     title: string;
     subtitle: string;
@@ -2932,6 +2986,267 @@ export type MessageTree = {
     page: string;
     kinds: Record<string, string>;
     outcomes: Record<string, string>;
+  };
+  codes: {
+    unknown: string;
+    category: {
+      revenue: string;
+      cogs: string;
+      salary: string;
+      rent: string;
+      utilities: string;
+      marketing: string;
+      technology: string;
+      tax: string;
+      loan: string;
+      other_expense: string;
+      other_income: string;
+      tax_payment: string;
+      transfer: string;
+    };
+    role: {
+      owner: string;
+      admin: string;
+      cfo: string;
+      analyst: string;
+      viewer: string;
+      smmm: string;
+    };
+    jobStatus: {
+      pending: string;
+      ingesting: string;
+      analyzing: string;
+      awaiting_review: string;
+      completed: string;
+      failed: string;
+      running: string;
+      queued: string;
+    };
+    health: {
+      excellent: string;
+      good: string;
+      warning: string;
+      critical: string;
+    };
+    severity: {
+      critical: string;
+      high: string;
+      medium: string;
+      low: string;
+      info: string;
+    };
+    integrationStatus: {
+      pending: string;
+      active: string;
+      error: string;
+      disconnected: string;
+      expired: string;
+      firma_secimi: string;
+    };
+    syncStatus: {
+      success: string;
+      error: string;
+      partial: string;
+      running: string;
+    };
+    conflictStatus: {
+      open: string;
+      resolved: string;
+      dismissed: string;
+      escalated: string;
+    };
+    resolution: {
+      pending: string;
+      open: string;
+      approved: string;
+      rejected: string;
+      resolved: string;
+      dismissed: string;
+      acknowledged: string;
+    };
+  };
+  categoryEditor: {
+    listLabel: string;
+    triggerLabel: string;
+    updated: string;
+    updateFailed: string;
+    savedAsRule: string;
+  };
+  scanToast: {
+    complete: string;
+    critical: string;
+    failed: string;
+    dismiss: string;
+  };
+  ccPage: {
+    companyHealth: string;
+    nineAgentAvg: string;
+    semanticBrief: string;
+    owner: string;
+    managementLayer: string;
+    checking: string;
+    escalationActive: string;
+    slaBreachDetected: string;
+    recentFailuresReview: string;
+    openConflicts: string;
+    generateDeck: string;
+    completedJobs: string;
+    failedJobs: string;
+    awaitingReview: string;
+    queueDepth: string;
+    notAvailable: string;
+    slaP95: string;
+    completion: string;
+    firstResult: string;
+    slaBreaches: string;
+    noSlaBreaches: string;
+    breachLine: string;
+    recentFailures: string;
+    noRecentFailures: string;
+    unknownError: string;
+    suggestedActions: string;
+    autoChain: string;
+    cfoAutoChain: string;
+    agentsCompletedAria: string;
+    loadingAria: string;
+    analysisFailed: string;
+    loadFailedBody: string;
+    retry: string;
+    heading: string;
+    agentsCount: string;
+    liveSync: string;
+    refreshAria: string;
+    refreshing: string;
+    refresh: string;
+    healthApiDown: string;
+    agentsNeedAttention: string;
+    highRisks: string;
+    agentHealthStatus: string;
+    hideDetails: string;
+    showAgentHealth: string;
+    agentsTracked: string;
+    crossDomainRisks: string;
+    quickWins: string;
+    lastUpdated: string;
+    footerHint: string;
+    ceoSynthesisNode: string;
+  };
+  codesAgent: {
+    CFO: string;
+    CEO: string;
+    CTO: string;
+    CMO: string;
+    COO: string;
+    CHRO: string;
+    Compliance: string;
+    Risk: string;
+    "Internal Audit": string;
+    Audit: string;
+  };
+  shell: {
+    userMenu: string;
+    workspaceSettings: string;
+    billing: string;
+    signOut: string;
+    criticalAnomalies: string;
+    homeAria: string;
+    mainNav: string;
+    recentAnalyses: string;
+    upgradePlan: string;
+    upgradeHint: string;
+    breadcrumb: string;
+    sidebarNav: string;
+    mobileNav: string;
+    closeMenu: string;
+    openMenu: string;
+  };
+  billingSuccess: {
+    title: string;
+    bodyPlan: string;
+    body: string;
+    back: string;
+    open: string;
+    popular: string;
+  };
+  conflicts: {
+    title: string;
+    openCount: string;
+    run: string;
+    loading: string;
+    unavailable: string;
+    none: string;
+    versus: string;
+    consensus: string;
+    resolve: string;
+    reconcile: string;
+    topics: {
+      cash_risk: string;
+      revenue_outlook: string;
+    };
+  };
+  boardDeck: {
+    title: string;
+    slide: string;
+    previous: string;
+    next: string;
+    navigation: string;
+    goTo: string;
+  };
+  pipelineGraph: {
+    close: string;
+    group: string;
+    status: string;
+    confidence: string;
+    duration: string;
+    graphAria: string;
+    statuses: {
+      pending: string;
+      running: string;
+      success: string;
+      error: string;
+      completed: string;
+      failed: string;
+    };
+  };
+  evidenceUi: {
+    noEvidence: string;
+    tx: string;
+    semantic: string;
+    disclaimer: string;
+    metricsTitle: string;
+    period: string;
+    decisionBrief: string;
+    baselinePrefix: string;
+    baselineTitle: string;
+    baselineSources: {
+      semantic: string;
+      context: string;
+      job: string;
+      none: string;
+    };
+  };
+  systemStatus: {
+    online: string;
+    offline: string;
+    checking: string;
+    active: string;
+    title: string;
+    apiDocs: string;
+    apiDocsAria: string;
+    backend: string;
+    activeAnalyses: string;
+    completedToday: string;
+    refreshNote: string;
+  };
+  sweepMisc: {
+    trendingUp: string;
+    trendingDown: string;
+    stable: string;
+    busFactor: string;
+    median: string;
+    aiChat: string;
+    aiPipeline: string;
+    companyPlaceholder: string;
   };
   passwordReset: {
     forgot: {
@@ -5378,6 +5693,62 @@ export const en: MessageTree = {
     saved: "Your answers were saved.",
     error: "Could not save. Please try again.",
   },
+  scale: {
+    materiality: {
+      title: "Approval threshold",
+      intro: "Decisions above this amount go to the company's owner or admin; the ones below do not need them.",
+      current: "In force now: {amount}",
+      fixedNote: "A fixed amount. It has not yet been calculated for your company's size and confirmed.",
+      basis: "Basis: {basis}",
+      proposalTitle: "Our proposal: {amount}",
+      proposalHint: "The current amount stays in force until you confirm; nothing changes by itself.",
+      acknowledge: "Confirm and apply the proposal",
+      own: "Enter my own amount",
+      ownLabel: "Amount",
+      reasonLabel: "Why (required)",
+      ownerOnly: "Only the company's owner can change the approval threshold. You can view it here.",
+      bounds: "Must be between {min} and {max}.",
+      historyTitle: "Threshold history",
+      historyLine: "{date} · {who}: {from} → {to}",
+      historyReason: "Why: {reason}",
+      save: "Save",
+      cancel: "Cancel",
+      saved: "Threshold saved; it is written to the decision record.",
+      stale: "The proposal changed while you were looking. Review the new one and confirm again.",
+      error: "Could not be saved. Please try again.",
+      safety:
+        "This is only an amount threshold. Rows that cannot be read, currency, direction, account identity and reconciliation questions never look at the amount; they are always asked.",
+    },
+    recipients: {
+      title: "Monday briefing recipients",
+      toSmmm: "Also send the briefing to my accountant",
+      hint: "The e-mail still goes out when the accountant releases it; this only adds the recipient.",
+      suggested: "A suggestion for your company's size: let the briefing go to the accountant too.",
+      noSmmm: "The company has no accountant. To send the briefing to one, first invite an accountant (smmm) under Members.",
+      saved: "Your preference was saved.",
+      error: "Could not be saved. Please try again.",
+    },
+    workload: {
+      title: "What waits in your companies",
+      subtitle: "Only the companies where you are the accountant. Switch into a company to see its data.",
+      empty: "Nothing is waiting for you in any company right now.",
+      onay: "{n} entries wait for your approval",
+      close: "{month} is waiting to be closed",
+      briefing: "{n} briefing e-mails wait for your release",
+      switch: "Switch to company",
+      nothing: "Nothing waiting",
+      total: "{n} items waiting in total",
+      failed: "The company list could not be read.",
+    },
+    selfDecision: {
+      confirmApprove: "Proposer and approver are the same person: I approve",
+      note: "That the proposer and the approver are the same person is written to the decision record.",
+      blockedTitle: "Another owner or admin of the company must approve this proposal",
+      thresholdMoved: "The proposer changed the approval threshold themselves recently.",
+      waitingOther:
+        "The amount is above the threshold: the proposal went to the company's other owner or admin for approval. The route keeps the old date until then.",
+    },
+  },
   baslangic: {
     title: "Getting started",
     subtitle:
@@ -6276,6 +6647,8 @@ export const en: MessageTree = {
       compliance_filing: "Compliance filing (breach, SOX)",
       column_mapping_acceptance: "Column mapping accepted",
       org_identity_change: "Company identity (tax no., country, packs)",
+      materiality: "Materiality threshold",
+      briefing_recipients: "Briefing to the accountant",
     },
     outcomes: {
       confirmed: "Confirmed",
@@ -6299,6 +6672,269 @@ export const en: MessageTree = {
       corrected: "Corrected",
       sent: "Sent",
     },
+  },
+    },
+  },
+  codes: {
+    unknown: "Unknown status: {code}",
+    category: {
+      revenue: "Revenue",
+      cogs: "Cost of goods sold",
+      salary: "Salary",
+      rent: "Rent",
+      utilities: "Utilities",
+      marketing: "Marketing",
+      technology: "Technology",
+      tax: "Tax",
+      loan: "Loan",
+      other_expense: "Other expense",
+      other_income: "Other income",
+      tax_payment: "Tax / social security payment",
+      transfer: "Transfer",
+    },
+    role: {
+      owner: "Owner",
+      admin: "Admin",
+      cfo: "CFO",
+      analyst: "Analyst",
+      viewer: "Viewer",
+      smmm: "SMMM (certified public accountant)",
+    },
+    jobStatus: {
+      pending: "Queued",
+      ingesting: "Reading document",
+      analyzing: "Analysing",
+      awaiting_review: "Awaiting approval",
+      completed: "Completed",
+      failed: "Failed",
+      running: "Running",
+      queued: "Queued",
+    },
+    health: {
+      excellent: "Excellent",
+      good: "Good",
+      warning: "Warning",
+      critical: "Critical",
+    },
+    severity: {
+      critical: "Critical",
+      high: "High",
+      medium: "Medium",
+      low: "Low",
+      info: "Info",
+    },
+    integrationStatus: {
+      pending: "Setup pending",
+      active: "Connected",
+      error: "Error",
+      disconnected: "Disconnected",
+      expired: "Expired",
+      firma_secimi: "Waiting for company selection",
+    },
+    syncStatus: {
+      success: "Succeeded",
+      error: "Error",
+      partial: "Partially completed",
+      running: "Running",
+    },
+    conflictStatus: {
+      open: "Open",
+      resolved: "Resolved",
+      dismissed: "Dismissed",
+      escalated: "Escalated",
+    },
+    resolution: {
+      pending: "Pending",
+      open: "Open",
+      approved: "Approved",
+      rejected: "Rejected",
+      resolved: "Resolved",
+      dismissed: "Dismissed",
+      acknowledged: "Acknowledged",
+    },
+  },
+  categoryEditor: {
+    listLabel: "Select category",
+    triggerLabel: "Category: {category}. Click to change.",
+    updated: "Category updated",
+    updateFailed: "Failed to update category",
+    savedAsRule: "Saved as rule for future transactions",
+  },
+  scanToast: {
+    complete: "Scan complete: {n} anomalies found",
+    critical: "{n} critical issues need attention",
+    failed: "Scan failed",
+    dismiss: "Dismiss notification",
+  },
+  ccPage: {
+    companyHealth: "Company health",
+    nineAgentAvg: "9-agent average",
+    semanticBrief: "Semantic decision brief",
+    owner: "Owner: {owner}",
+    managementLayer: "Management Layer v1.5",
+    checking: "checking",
+    escalationActive: "Escalation active",
+    slaBreachDetected: "{n} SLA breach detected",
+    recentFailuresReview: "Recent failures require operator review",
+    openConflicts: "{n} open agent conflicts",
+    generateDeck: "Generate board deck",
+    completedJobs: "Completed jobs",
+    failedJobs: "Failed jobs",
+    awaitingReview: "Awaiting review",
+    queueDepth: "Queue depth",
+    notAvailable: "n/a",
+    slaP95: "SLA (P95)",
+    completion: "completion",
+    firstResult: "first result",
+    slaBreaches: "SLA breaches",
+    noSlaBreaches: "No active SLA breaches.",
+    breachLine: "{status} for {age} min (threshold {threshold} min)",
+    recentFailures: "Recent failures",
+    noRecentFailures: "No failed jobs in recent window.",
+    unknownError: "Unknown error",
+    suggestedActions: "Suggested actions",
+    autoChain: "Auto-chain pipeline",
+    cfoAutoChain: "CFO auto-chain",
+    agentsCompletedAria: "{done} of {total} agents completed",
+    loadingAria: "Loading Command Center",
+    analysisFailed: "Analysis failed",
+    loadFailedBody: "Could not load Command Center data. Make sure the backend is running.",
+    retry: "Retry",
+    heading: "Executive Command Center",
+    agentsCount: "{n} agents",
+    liveSync: "live sync",
+    refreshAria: "Refresh Command Center",
+    refreshing: "Refreshing…",
+    refresh: "Refresh",
+    healthApiDown: "Agent health API unavailable — showing semantic brief from CompanyContext.",
+    agentsNeedAttention: "{n} agent(s) require immediate attention",
+    highRisks: "{n} high-severity cross-domain risk(s)",
+    agentHealthStatus: "Agent health status",
+    hideDetails: "Hide details",
+    showAgentHealth: "Show agent health",
+    agentsTracked: "{n} agents tracked · expand for per-agent health scores",
+    crossDomainRisks: "Cross-domain risks",
+    quickWins: "Quick wins — actionable now",
+    lastUpdated: "Last updated: {when} · Data synthesised from all executive agents",
+    footerHint: "This dashboard synthesises data from all executive agents. Refresh to run a new analysis.",
+    ceoSynthesisNode: "CEO synthesis",
+  },
+  codesAgent: {
+    CFO: "CFO",
+    CEO: "CEO",
+    CTO: "CTO",
+    CMO: "CMO",
+    COO: "COO",
+    CHRO: "HR (CHRO)",
+    Compliance: "Compliance",
+    Risk: "Risk",
+    "Internal Audit": "Internal audit",
+    Audit: "Audit",
+  },
+  shell: {
+    userMenu: "User menu",
+    workspaceSettings: "Workspace settings",
+    billing: "Billing",
+    signOut: "Sign out",
+    criticalAnomalies: "{n} critical anomalies",
+    homeAria: "{name} — home",
+    mainNav: "Main navigation",
+    recentAnalyses: "Recent analyses",
+    upgradePlan: "Upgrade plan",
+    upgradeHint: "All management views",
+    breadcrumb: "Breadcrumb",
+    sidebarNav: "Sidebar navigation",
+    mobileNav: "Mobile navigation",
+    closeMenu: "Close menu",
+    openMenu: "Open menu",
+  },
+  billingSuccess: {
+    title: "Subscription activated",
+    bodyPlan: "Your {plan} plan checkout completed. It may take a moment for Stripe to sync.",
+    body: "Your checkout completed. Welcome aboard.",
+    back: "Back to billing",
+    open: "Open Command Center",
+    popular: "Popular",
+  },
+  conflicts: {
+    title: "Agent conflicts",
+    openCount: "{n} open",
+    run: "Run {topic}",
+    loading: "Loading conflicts…",
+    unavailable: "Conflicts unavailable (table or org scope may be missing).",
+    none: "No agent conflicts detected. Consensus is stable.",
+    versus: "vs",
+    consensus: "consensus {score}",
+    resolve: "Resolve",
+    reconcile: "Reconcile {a} vs {b} on {topic}",
+    topics: {
+      cash_risk: "Cash risk",
+      revenue_outlook: "Revenue outlook",
+    },
+  },
+  boardDeck: {
+    title: "Board deck viewer",
+    slide: "Slide",
+    previous: "Previous slide",
+    next: "Next slide",
+    navigation: "Slide navigation",
+    goTo: "Go to slide {n}",
+  },
+  pipelineGraph: {
+    close: "Close",
+    group: "Group",
+    status: "Status",
+    confidence: "Confidence",
+    duration: "Duration",
+    graphAria: "Agent pipeline graph",
+    statuses: {
+      pending: "Pending",
+      running: "Running",
+      success: "Completed",
+      error: "Error",
+      completed: "Completed",
+      failed: "Failed",
+    },
+  },
+  evidenceUi: {
+    noEvidence: "no evidence · unverified",
+    tx: "tx ×{n}",
+    semantic: "semantic ×{n}",
+    disclaimer: "disclaimer applied",
+    metricsTitle: "Semantic metrics",
+    period: "Period · {period}",
+    decisionBrief: "Decision brief →",
+    baselinePrefix: "baseline · {label}",
+    baselineTitle: "Simulation baseline: {label}",
+    baselineSources: {
+      semantic: "Semantic snapshot",
+      context: "Agent context",
+      job: "Analysis job",
+      none: "No baseline",
+    },
+  },
+  systemStatus: {
+    online: "Online",
+    offline: "Offline",
+    checking: "Checking…",
+    active: "{n} active",
+    title: "System status",
+    apiDocs: "API docs",
+    apiDocsAria: "Open API documentation",
+    backend: "Backend API",
+    activeAnalyses: "Active analyses",
+    completedToday: "Completed today",
+    refreshNote: "Refreshes every 30 seconds",
+  },
+  sweepMisc: {
+    trendingUp: "Trending up",
+    trendingDown: "Trending down",
+    stable: "Stable",
+    busFactor: "bus factor",
+    median: "Median",
+    aiChat: "AI chat",
+    aiPipeline: "AI agent pipeline",
+    companyPlaceholder: "Acme Corp",
   },
   passwordReset: {
     forgot: {

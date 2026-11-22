@@ -105,7 +105,7 @@ export function TechDebtSection({ data }: { data: TechDebtData }) {
                 <span className="flex-1 truncate font-mono text-foreground">{f.file}</span>
                 <span className="ml-3 text-muted-foreground">{f.changes} {t.roleDashboards.cto.body.changes}</span>
                 {f.bus_factor_risk && (
-                  <span className="ml-2 text-destructive" role="img" aria-label={t.roleDashboards.cto.body.busFactorRisk}>⚠ bus factor</span>
+                  <span className="ml-2 text-destructive" role="img" aria-label={t.roleDashboards.cto.body.busFactorRisk}>⚠ {t.sweepMisc.busFactor}</span>
                 )}
               </div>
             ))}

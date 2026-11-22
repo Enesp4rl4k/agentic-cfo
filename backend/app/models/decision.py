@@ -88,6 +88,11 @@ class DecisionKind(StrEnum):
     # tax number, country, regional packs, legal title.
     ORG_IDENTITY_CHANGE = "org_identity_change"
 
+    # The amount above which a decision needs a senior person: acknowledged as proposed, or set by the owner.
+    MATERIALITY = "materiality"
+    # Who else receives the Monday briefing (the owner's standing choice about the accountant).
+    BRIEFING_RECIPIENTS = "briefing_recipients"
+
 
 class ReadClass(StrEnum):
     """The least role that may READ a decision of a kind: it follows who may see the thing it is about.
@@ -134,6 +139,10 @@ DECISION_READ: dict[DecisionKind, ReadClass] = {
     _K.AUTHORITY_POLICY_CHANGE: _R.WRITER,
     _K.MEMBER_CHANGE: _R.WRITER,
     _K.ORG_IDENTITY_CHANGE: _R.WRITER,
+    # owner-decided settings whose current value every member can read (GET /org/me/materiality and
+    # /org/me/briefing-recipients are `require_member`): their decisions follow the same visibility
+    _K.MATERIALITY: _R.MEMBER,
+    _K.BRIEFING_RECIPIENTS: _R.MEMBER,
     # access, security and outward filings: the deciders only
     _K.SECURITY_SETTING_CHANGE: _R.DECIDER,
     _K.CONTEXT_RESET: _R.DECIDER,

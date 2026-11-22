@@ -11,7 +11,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, date, datetime
 
-from sqlalchemy import Date, DateTime, Index, String, Text
+from sqlalchemy import BigInteger, Date, DateTime, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -47,3 +47,7 @@ class PaymentPlanChange(Base):
     decided_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     decision_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The materiality threshold in force when it was proposed: a proposal is judged against that, never
+    # against a threshold changed afterwards (services/self_approval). Null on rows older than migration 071.
+    threshold_cents: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    threshold_currency: Mapped[str | None] = mapped_column(String(8), nullable=True)

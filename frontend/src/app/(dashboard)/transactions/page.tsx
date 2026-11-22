@@ -11,6 +11,7 @@ import {
 } from "@/components/transactions/TransactionParts";
 import { BaseCurrencyNotice, OtherCurrencyLines, type OtherCurrency } from "@/components/ui/other-currency-lines";
 import { useI18n } from "@/hooks/useI18n";
+import { codeLabel } from "@/lib/i18n/codes";
 import { useOrgSettings } from "@/hooks/useOrgSettings";
 import { effectiveCurrencyOf } from "@/lib/effective-currency";
 import { formatCurrency, cn } from "@/lib/utils";
@@ -121,7 +122,7 @@ export default function TransactionsPage() {
   // A row is in its OWN currency. One that names none is unknown: it is neither summed into the headline nor
   // given a symbol (formerly it silently took the headline, or "TRY").
   const currencyOf = (t: { currency?: string | null }) => (t.currency || "").toUpperCase();
-  const locale = org?.locale || "en-US";
+  const locale = org?.locale || "tr-TR";
   const sumOf = (rows: typeof allTransactions, type: string) =>
     rows.filter((t) => t.type === type).reduce((s, t) => s + t.amount_cents, 0);
   const inBase = headline ? allTransactions.filter((t) => currencyOf(t) === headline) : [];
@@ -253,7 +254,7 @@ export default function TransactionsPage() {
           <option value="all">{tp.allCategories}</option>
           {CATEGORIES.map((c) => (
             <option key={c} value={c}>
-              {c.replace(/_/g, " ")}
+              {codeLabel(t, "category", c)}
             </option>
           ))}
         </select>

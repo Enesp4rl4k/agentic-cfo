@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Check, ChevronDown, ChevronUp, ChevronsUpDown, Upload, Loader2 } from "lucide-react";
 import { useCorrectCategory } from "@/hooks/useCFO";
 import { useI18n } from "@/hooks/useI18n";
+import { codeLabel } from "@/lib/i18n/codes";
 import { cn } from "@/lib/utils";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -87,11 +88,13 @@ export function CategoryEditor({
         )}
         aria-haspopup="listbox"
         aria-expanded={open}
+        data-testid="category-trigger"
+        data-category={current}
       >
         {correct.isPending ? (
           <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
         ) : null}
-        {current.replace(/_/g, " ")}
+        {codeLabel(t, "category", current)}
         <ChevronDown className="h-3 w-3 opacity-60" aria-hidden="true" />
       </button>
 
@@ -104,7 +107,8 @@ export function CategoryEditor({
           />
           <div
             role="listbox"
-            aria-label="Select category"
+            data-testid="category-listbox"
+            aria-label={t.categoryEditor.listLabel}
             className={cn(
               "absolute left-0 top-full z-20 mt-1 w-48 rounded-lg border border-border bg-card",
               "shadow-lg py-1"
@@ -124,6 +128,7 @@ export function CategoryEditor({
               <button
                 key={cat}
                 role="option"
+                data-testid={`category-option-${cat}`}
                 aria-selected={cat === current}
                 onClick={() => select(cat)}
                 className={cn(
@@ -136,7 +141,7 @@ export function CategoryEditor({
                 ) : (
                   <span className="w-3" />
                 )}
-                {cat.replace(/_/g, " ")}
+                {codeLabel(t, "category", cat)}
               </button>
             ))}
           </div>

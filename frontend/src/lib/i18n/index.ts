@@ -13,14 +13,21 @@ export const LOCALE_COOKIE_KEY = `${STORAGE_PREFIX}_locale`;
 
 const DICTS: Record<AppLocale, MessageTree> = { en, tr };
 
+/**
+ * The product's audience is Turkish SMEs and their accountants, so Turkish is
+ * the default whenever nothing says otherwise. An explicit choice of English
+ * (an org stored as "en-*" or a cached "en") is respected.
+ */
+export const DEFAULT_APP_LOCALE: AppLocale = "tr";
+
 export function resolveAppLocale(orgLocale?: string | null): AppLocale {
-  if (!orgLocale) return "en";
+  if (!orgLocale) return DEFAULT_APP_LOCALE;
   const lower = orgLocale.toLowerCase();
-  if (lower.startsWith("tr")) return "tr";
-  return "en";
+  if (lower.startsWith("en")) return "en";
+  return "tr";
 }
 
-export function getMessages(locale: AppLocale = "en"): MessageTree {
+export function getMessages(locale: AppLocale = DEFAULT_APP_LOCALE): MessageTree {
   return DICTS[locale] ?? en;
 }
 
@@ -30,16 +37,17 @@ export function getMessages(locale: AppLocale = "en"): MessageTree {
  * The org row stays the source of truth, but waiting for it makes every
  * dashboard paint its role header in English and flip to Turkish a beat later —
  * wrong language in the position users read first. The last resolved locale
- * wins when we have one; a first visit borrows the browser language; "en" is
- * the final fallback.
+ * wins when we have one; otherwise Turkish — a first visit does not borrow the
+ * browser language, since an English-configured browser is not a request for an
+ * English finance product.
  */
 export function detectInitialLocale(
   cached?: string | null,
   languages: readonly string[] = [],
 ): AppLocale {
   if (cached) return resolveAppLocale(cached);
-  if (languages.some((lang) => lang?.toLowerCase().startsWith("tr"))) return "tr";
-  return "en";
+  void languages; // kept in the signature for callers; the default is Turkish
+  return DEFAULT_APP_LOCALE;
 }
 
 export type { MessageTree };
