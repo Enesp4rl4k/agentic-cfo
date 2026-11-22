@@ -235,10 +235,10 @@ async def run_data_ingestion(
         )
 
     sonuc = _uncertain_rows_wait(await _read_all_documents(state, config))
-    if not state.get("ek_belgeler") and sonuc.patch:  # one document: its header may state the period it covers
-        from app.services.stated_period import attach_period
+    if sonuc.patch:  # one document: its header may state its period; a feed's job carries its pull as metadata
+        from app.services.stated_period import attach_periods
 
-        sonuc.patch = attach_period(sonuc.patch)
+        sonuc.patch = await attach_periods(sonuc.patch, state)
     return sonuc
 
 

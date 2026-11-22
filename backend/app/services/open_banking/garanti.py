@@ -29,7 +29,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.services.open_banking.base import BankOAuthConfig, OpenBankingClient
+from app.services.ingest.feed import (
+    INCOME,
+    Feed,
+    direction_from_code,
+    first,
+    item_is_blank,
+    read_money,
+    signed_amount,
+)
+from app.services.open_banking.base import BankOAuthConfig, OpenBankingClient, response_list
 
 
 def _make_garanti_config(
@@ -68,59 +77,44 @@ class GarantiClient(OpenBankingClient):
             {
                 "account_id":   acc.get("AccountNumber") or acc.get("accountId", ""),
                 "iban":         acc.get("IBAN") or acc.get("iban", ""),
-                "currency":     acc.get("CurrencyCode") or acc.get("currency", "TRY"),
+                # A currency or balance the bank did not state is None, not lira and not zero.
+                "currency":     first(acc, "CurrencyCode", "currency"),
                 "account_type": acc.get("AccountType", "CURRENT"),
                 "name":         acc.get("AccountName", "Garanti BBVA Hesabı"),
-                "balance":      float(acc.get("Balance") or acc.get("balance") or 0),
+                "balance":      signed_amount(first(acc, "Balance", "balance")),
             }
             for acc in account_list
         ]
 
-    def _parse_transactions(self, raw: Any) -> list[dict[str, Any]]:
+    def _parse_transactions(self, raw: Any, feed: Feed) -> None:
         """
-        Normalize Garanti BBVA transaction format to CFO pipeline format.
+        Add one row to `feed` per Garanti BBVA transaction.
 
-        Garanti uses:
-          TransactionType: "C" = Credit (income), "D" = Debit (expense)
-          TransactionDate: "YYYYMMDD" format (different from Akbank)
+          TransactionType: "C" = Credit (income), "D" = Debit (expense); anything else, or nothing, is an
+                           unknown direction and the row is held: it is never an expense.
+          TransactionDate: "YYYYMMDD" (or ISO); a date that cannot be read holds the row.
+          Amount:          read by the one money parser; missing, unreadable or ambiguous ("1.500") holds the row.
         """
-        tx_list = (
-            raw.get("TransactionList")
-            or raw.get("transactions")
-            or raw.get("data")
-            or []
-        )
-        result: list[dict[str, Any]] = []
-
-        for tx in tx_list:
-            raw_amount = float(tx.get("Amount") or tx.get("amount") or 0)
-            tx_type_code = (tx.get("TransactionType") or "D").upper()
-            tx_type = "income" if tx_type_code == "C" else "expense"
-            amount_cents = abs(int(raw_amount * 100))
-
-            # Normalize date from YYYYMMDD to YYYY-MM-DD
-            raw_date = tx.get("TransactionDate") or tx.get("BookingDate") or ""
-            if len(raw_date) == 8 and raw_date.isdigit():
-                date_str = f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:8]}"
-            else:
-                date_str = raw_date  # Assume already ISO format
-
-            description = (
-                tx.get("Description")
-                or tx.get("remittanceInformationUnstructured", "")
-                or "Garanti BBVA işlemi"
+        for tx in feed.each(response_list(raw, "TransactionList", "transactions", "data")):
+            if item_is_blank(tx):
+                feed.blank()
+                continue
+            raw_amount = first(tx, "Amount", "amount")
+            code = first(tx, "TransactionType")
+            money = read_money(raw_amount)
+            direction = direction_from_code(code, ("C",), ("D",))
+            if money.negative and direction == INCOME:
+                direction = None       # a negative credit contradicts itself: a person decides
+            date = first(tx, "TransactionDate", "BookingDate")
+            if isinstance(date, str) and len(date) == 8 and date.isdigit():
+                date = f"{date[:4]}-{date[4:6]}-{date[6:8]}"
+            vendor = first(tx, "CounterPartyName", "DebtorName")
+            description = first(tx, "Description", "remittanceInformationUnstructured") or "Garanti BBVA işlemi"
+            feed.add(
+                amount=raw_amount, direction=direction, date=date, currency=first(tx, "CurrencyCode", "currency"),
+                description=str(description)[:200], reference=first(tx, "TransactionId", "ReferenceNumber"),
+                evidence={"Amount": raw_amount, "TransactionType": code, "TransactionDate": first(tx, "TransactionDate", "BookingDate"),
+                          "CurrencyCode": first(tx, "CurrencyCode", "currency"), "TransactionId": first(tx, "TransactionId")},
+                vendor=str(vendor)[:100] if vendor else None, raw_source="garanti_open_banking",
             )
-            vendor = tx.get("CounterPartyName") or tx.get("DebtorName") or None
 
-            result.append({
-                "amount_cents":     amount_cents,
-                "type":             tx_type,
-                "transaction_date": date_str,
-                "description":      description[:200],
-                "currency":         tx.get("CurrencyCode") or tx.get("currency", "TRY"),
-                "reference":        tx.get("TransactionId") or tx.get("ReferenceNumber"),
-                "vendor":           vendor[:100] if vendor else None,
-                "raw_source":       "garanti_open_banking",
-            })
-
-        return result

@@ -51,8 +51,6 @@ def _col(hmap: dict[str, str], candidates: tuple[str, ...]) -> str | None:
 
 def _is_won(stage: str) -> bool:
     token = (stage or "").strip().lower()
-    if not token:
-        return True
     compact = token.replace("_", " ")
     return compact in _WON_STAGES or token.replace(" ", "") in {s.replace(" ", "") for s in _WON_STAGES}
 
@@ -77,13 +75,16 @@ def normalize_crm_deals_csv(raw: bytes) -> bytes:
         id_col = _col(hmap, _ID_HEADERS)
         rows: list[dict[str, Any]] = []
         for i, rec in enumerate(reader, start=1):
-            if stage_col and not _is_won(str(rec.get(stage_col) or "")):
+            stage = str(rec.get(stage_col) or "").strip() if stage_col else ""
+            # A deal that is not closed-won is a pipeline entry, not money: the one named rule that leaves a row
+            # out. A deal whose stage is EMPTY is not assumed won: its type is "?" and it waits for a person.
+            if stage and not _is_won(stage):
                 continue
-            amount_raw = rec.get(amount_col) or "0"
             rows.append(
                 {
                     "date": rec.get(date_col) or "",
-                    "amount": amount_raw,
+                    "amount": rec.get(amount_col) or "",     # a missing amount is empty, not "0"
+                    "type": "income" if (stage or not stage_col) else "?",
                     "description": (rec.get(name_col) if name_col else None) or f"CRM deal {i}",
                     "category": "revenue",
                     "reference": (rec.get(id_col) if id_col else None) or f"crm-{i}",

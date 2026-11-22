@@ -2990,6 +2990,7 @@ export const tr: MessageTree = {
       confidence_unknown: "güven bilinmiyor",
       confidence_low: "güven düşük",
       currency_unknown: "para birimi bilinmiyor",
+      currency_unreadable: "para birimi okunamadı",
       direction_unknown: "yön belirsiz",
       amount_unreadable: "tutar okunamadı",
       date_unreadable: "tarih okunamadı",
@@ -3044,6 +3045,7 @@ export const tr: MessageTree = {
     ingestLost: "{count} satır hesaba katılamadı; dosyayı gözden geçirin.",
     ingestFallback: "Bu dosya beklenen biçimde okunamadı, alternatif okuyucu kullanıldı.",
     ingestBalanceVerified: "Bakiye zinciriyle doğrulandı.",
+    ingestBalancePartial: "Bakiye zinciriyle doğrulanan {verified} satır; {held} satır kararınızı bekliyor.",
     ingestBalanceUnverified: "Bakiye ile doğrulanamadı: satırlar bakiye zinciriyle denetlenemedi.",
   },
   acceptInvite: {
