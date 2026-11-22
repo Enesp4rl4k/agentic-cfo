@@ -6,8 +6,6 @@ in the body and answers a state the page can show: invalid, expired or used.
 """
 from __future__ import annotations
 
-import asyncio
-import hashlib
 import time
 from typing import Any
 
@@ -16,11 +14,9 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.password_reset import _client_ip
-from app.config import get_settings
+from app.api.password_reset import _client_ip, address_allowed, hold_to_floor
 from app.core.email_address import normalize_email
 from app.database import get_db
-from app.middleware.rate_limit import consume
 from app.services import email_verification, outbox
 
 router = APIRouter()
@@ -50,19 +46,15 @@ async def resend_verification(
     body: ResendRequest, request: Request, db: AsyncSession = Depends(get_db)
 ) -> dict[str, Any]:
     """Ask for the verification link again. The answer never depends on the account."""
-    settings = get_settings()
     started = time.monotonic()
     address = normalize_email(str(body.email))
-    digest = hashlib.sha256(address.encode("utf-8")).hexdigest()[:32]
-    allowed = await consume(f"emailverify:{digest}", settings.password_reset_per_email_per_hour, 3600)
+    allowed = await address_allowed("emailverify", address)
     outcome = await email_verification.resend(
         db, email=address, ip=_client_ip(request), rate_limited=not allowed
     )
     if outcome == "sent":
         outbox.kick()
-    remaining = settings.password_reset_response_floor_seconds - (time.monotonic() - started)
-    if remaining > 0:
-        await asyncio.sleep(remaining)
+    await hold_to_floor(started)
     return {"data": {"accepted": True}, "error": None}
 
 

@@ -13,10 +13,9 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime, timedelta
-from typing import Any, Literal, cast
+from typing import Literal
 
 from sqlalchemy import select, update
-from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -25,7 +24,7 @@ from app.models.audit_log import AuditLog
 from app.models.email_verification import EmailVerificationToken
 from app.models.user import User
 from app.services import outbox_immediate
-from app.services.secret_tokens import hash_token, new_token
+from app.services.secret_tokens import claim_token, hash_token, new_token
 
 logger = logging.getLogger(__name__)
 
@@ -120,20 +119,7 @@ async def verify(db: AsyncSession, *, token: str, ip: str | None) -> VerifyOutco
     user = await db.get(User, row.user_id)
     if user is None or not user.is_active:
         return "invalid"
-    claimed = cast(
-        "CursorResult[Any]",
-        await db.execute(
-            update(EmailVerificationToken)
-            .where(
-                EmailVerificationToken.id == row.id,
-                EmailVerificationToken.used_at.is_(None),
-                EmailVerificationToken.expires_at > now,
-            )
-            .values(used_at=now)
-            .execution_options(synchronize_session=False)
-        ),
-    )
-    if claimed.rowcount != 1:
+    if not await claim_token(db, EmailVerificationToken, row.id, now):
         await db.rollback()
         return "used"
     await mark_verified(db, user.id)

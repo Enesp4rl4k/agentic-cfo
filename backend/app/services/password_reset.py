@@ -18,10 +18,9 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime, timedelta
-from typing import Any, Literal, cast
+from typing import Literal
 
 from sqlalchemy import func, select, update
-from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -31,7 +30,7 @@ from app.models.password_reset import PasswordResetToken
 from app.models.user import User
 from app.services import outbox_immediate
 from app.services.auth import hash_password
-from app.services.secret_tokens import hash_token, new_token
+from app.services.secret_tokens import claim_token, hash_token, new_token
 
 logger = logging.getLogger(__name__)
 
@@ -140,20 +139,7 @@ async def complete_reset(
 
     # Single use, decided by the database: of two simultaneous completions only the one whose
     # UPDATE closes the token goes on. Nothing else is written before it.
-    claimed = cast(
-        "CursorResult[Any]",
-        await db.execute(
-            update(PasswordResetToken)
-            .where(
-                PasswordResetToken.id == row.id,
-                PasswordResetToken.used_at.is_(None),
-                PasswordResetToken.expires_at > now,
-            )
-            .values(used_at=now)
-            .execution_options(synchronize_session=False)
-        ),
-    )
-    if claimed.rowcount != 1:
+    if not await claim_token(db, PasswordResetToken, row.id, now):
         await db.rollback()
         return "used"
     await db.execute(

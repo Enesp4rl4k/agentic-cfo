@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { Logo } from "@/components/ui/logo";
 import { useI18n } from "@/hooks/useI18n";
+import { Notice } from "@/components/auth/EmailRequestForm";
 import { cn } from "@/lib/utils";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -183,15 +184,5 @@ export default function ResetPasswordPage() {
       <h1 className="mb-5 text-center text-2xl font-bold tracking-tight">{s.title}</h1>
       {body()}
     </main>
-  );
-}
-
-function Notice({ title, body, children, role = "alert" }: { title: string; body: string; children?: ReactNode; role?: "alert" | "status" }) {
-  return (
-    <div role={role} className="space-y-2 rounded-lg border border-border bg-muted/30 p-4">
-      <p className="m-0 text-sm font-semibold">{title}</p>
-      <p className="m-0 text-sm text-muted-foreground">{body}</p>
-      {children}
-    </div>
   );
 }

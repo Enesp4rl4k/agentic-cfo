@@ -60,6 +60,19 @@ def _client_ip(request: Request) -> str | None:
     return request.client.host if request.client else None
 
 
+async def address_allowed(scope: str, address: str) -> bool:
+    """Count one request against the per-address hourly limit (the address is hashed in the key)."""
+    digest = hashlib.sha256(address.encode("utf-8")).hexdigest()[:32]
+    return await consume(f"{scope}:{digest}", get_settings().password_reset_per_email_per_hour, 3600)
+
+
+async def hold_to_floor(started: float) -> None:
+    """Every answer takes at least the floor, whether or not the account exists."""
+    remaining = get_settings().password_reset_response_floor_seconds - (time.monotonic() - started)
+    if remaining > 0:
+        await asyncio.sleep(remaining)
+
+
 @router.post("/auth/forgot-password")
 async def forgot_password(
     body: ForgotPasswordRequest,
@@ -67,20 +80,16 @@ async def forgot_password(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Ask for a reset link. The answer never depends on the account."""
-    settings = get_settings()
     started = time.monotonic()
     address = normalize_email(str(body.email))
-    digest = hashlib.sha256(address.encode("utf-8")).hexdigest()[:32]
-    allowed = await consume(f"pwreset:{digest}", settings.password_reset_per_email_per_hour, 3600)
+    allowed = await address_allowed("pwreset", address)
     outcome = await request_reset(
         db, email=address, ip=_client_ip(request), user_agent=request.headers.get("User-Agent"),
         rate_limited=not allowed,
     )
     if outcome == "sent":
         outbox.kick()
-    remaining = settings.password_reset_response_floor_seconds - (time.monotonic() - started)
-    if remaining > 0:
-        await asyncio.sleep(remaining)
+    await hold_to_floor(started)
     return {"data": {"accepted": True}, "error": None}
 
 

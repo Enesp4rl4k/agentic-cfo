@@ -12,6 +12,12 @@ from __future__ import annotations
 
 import hashlib
 import secrets
+from datetime import datetime
+from typing import Any, cast
+
+from sqlalchemy import update
+from sqlalchemy.engine import CursorResult
+from sqlalchemy.ext.asyncio import AsyncSession
 
 TOKEN_BYTES = 32
 
@@ -25,3 +31,19 @@ def new_token() -> tuple[str, str]:
     """(raw token for the link, digest to store)."""
     raw = secrets.token_hex(TOKEN_BYTES)
     return raw, hash_token(raw)
+
+
+async def claim_token(db: AsyncSession, model: Any, row_id: str, now: datetime) -> bool:
+    """Close a single-use token row (`used_at` set) if it is still open and unexpired.
+
+    One conditional UPDATE, so of two simultaneous claims the database lets exactly one win."""
+    result = cast(
+        "CursorResult[Any]",
+        await db.execute(
+            update(model)
+            .where(model.id == row_id, model.used_at.is_(None), model.expires_at > now)
+            .values(used_at=now)
+            .execution_options(synchronize_session=False)
+        ),
+    )
+    return bool(result.rowcount == 1)
