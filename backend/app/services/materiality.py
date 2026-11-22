@@ -34,7 +34,13 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.currency_totals import CONFIRMED, DEFAULT_BASE, SINGLE_UNCONFIRMED, fmt_money
+from app.core.currency_totals import (
+    CONFIRMED,
+    DEFAULT_BASE,
+    SINGLE_UNCONFIRMED,
+    fmt_money,
+    split_by_currency,
+)
 from app.models.decision import DecidedVia, DecisionKind
 from app.models.organization import Organization
 from app.models.user import User
@@ -154,16 +160,18 @@ def basis_text(applied: dict[str, Any] | None) -> str:
     return text[0].upper() + text[1:] + note + "."
 
 
-def monthly_out_series(cash: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def monthly_out_series(cash: list[dict[str, Any]], currency: str = DEFAULT_BASE) -> list[dict[str, Any]]:
     """Cash in and out per month, exactly as the cash-flow step builds the series the runway reads
     (`agents/cashflow_agent._classify_cashflow`: every non-income base-currency row is outflow).
 
     One definition of outflow: a test pins this equal to that step's own `monthly_series`. Transfers between
     the company's own accounts are not identifiable in the ledger (the runway cannot tell them either), so
-    both legs count here and there alike.
+    both legs count here and there alike. Only rows in `currency` are summed; another currency is left out
+    (`split_by_currency`), never added in.
     """
     monthly: dict[str, dict[str, int]] = {}
-    for tx in cash:
+    in_currency, _ = split_by_currency(cash, currency)
+    for tx in in_currency:
         raw = tx.get("transaction_date")
         if not raw:
             continue
@@ -190,7 +198,7 @@ async def measure_monthly_outflow(db: AsyncSession, org_id: str) -> tuple[dict[s
     if view is None or view.base_state not in (CONFIRMED, SINGLE_UNCONFIRMED):
         return None, 0
     series = annotate_series(
-        monthly_out_series(view.cash), view.cash, await proven_statements(db, org_id, view.base_currency)
+        monthly_out_series(view.cash, view.base_currency), view.cash, await proven_statements(db, org_id, view.base_currency)
     )
     months = [(str(m["month"]), int(m["out"])) for m in usable_months(series) if int(m["out"]) > 0][-MAX_MONTHS:]
     if len(months) < MIN_MONTHS:

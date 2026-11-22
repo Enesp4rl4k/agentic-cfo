@@ -179,6 +179,17 @@ def test_the_outflow_is_the_runways_outflow():
     assert m.monthly_out_series(rows) == theirs
 
 
+def test_the_outflow_series_leaves_other_currencies_out_instead_of_adding_them_in():
+    rows = [
+        {"transaction_date": "2026-03-04", "type": "expense", "amount_cents": 500, "currency": "TRY"},
+        {"transaction_date": "2026-03-05", "type": "expense", "amount_cents": 90_000, "currency": "USD"},
+        {"transaction_date": "2026-03-06", "type": "income", "amount_cents": 800, "currency": "EUR"},
+        {"transaction_date": "2026-03-07", "type": "income", "amount_cents": 900, "currency": "TRY"},
+    ]
+    assert m.monthly_out_series(rows, "TRY") == [{"month": "2026-03", "in": 900, "out": 500, "net": 400}]
+    assert m.monthly_out_series(rows, "USD") == [{"month": "2026-03", "in": 0, "out": 90_000, "net": -90_000}]
+
+
 # ── the flow: proposal, acknowledgement, applied ─────────────────────────────
 
 async def test_a_proposal_applies_only_after_the_owner_acknowledges_it(client, monkeypatch):

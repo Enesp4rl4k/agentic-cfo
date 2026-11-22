@@ -267,6 +267,11 @@ async def _apply_decision(
     role = await acting_role(db, user)
     acknowledgement: str | None = None
     if payment_plan.can_decide(role) and change.status == PENDING:
+        if change.requested_by == str(user.id):
+            # Check and approve as one step per person: wait for any concurrent self-approval, then judge
+            # the proposal (still pending?) and the cumulative total as they are after it.
+            await self_approval.lock_proposer(db, str(change.org_id), str(user.id))
+            await db.refresh(change)
         # Deciding one's own proposal: one honest step, or not at all (`services/self_approval`).
         state = await _self_state(db, change, await _item(db, change), user, role)
         if state.state == self_approval.BLOCKED and approve:

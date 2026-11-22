@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.currency_totals import fmt_money
 from app.models.decision import Decision, DecisionKind
+from app.models.organization import Organization, OrgMembership
 from app.services import materiality
 from app.services.accountant import active_member_ids
 
@@ -77,11 +78,30 @@ async def self_approved_total(
         )
     ).scalars().all()
     cur = (currency or "").strip().upper()
-    return sum(
-        int(a.get("amount_cents") or 0)
-        for a in rows
-        if a and a.get("self_decided") and str(a.get("currency") or "").strip().upper() == cur
-    )
+    total = 0
+    for after in rows:
+        row_currency = str((after or {}).get("currency") or "").strip().upper()
+        if after and after.get("self_decided") and row_currency == cur:  # another currency is never added in
+            total += int(after.get("amount_cents") or 0)
+    return total
+
+
+async def lock_proposer(db: AsyncSession, org_id: str, user_id: str) -> None:
+    """Serialise one person's self-approvals within an organisation until the caller commits.
+
+    The cumulative limit reads what the person approved before and then approves: two requests at once
+    would both read the same total. Taking a row lock on the person's membership first makes the second
+    wait for the first's commit, then read the total including it. SQLite ignores `FOR UPDATE` and its
+    single writer gives the same order; without a membership row the organisation row is locked instead.
+    """
+    locked = (
+        await db.execute(
+            select(OrgMembership.id).where(OrgMembership.org_id == org_id, OrgMembership.user_id == user_id)
+            .with_for_update()
+        )
+    ).first()
+    if locked is None:
+        await db.execute(select(Organization.id).where(Organization.id == org_id).with_for_update())
 
 
 def assess(

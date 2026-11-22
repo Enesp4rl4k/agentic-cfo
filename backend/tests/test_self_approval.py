@@ -229,3 +229,58 @@ async def test_someone_elses_proposal_needs_no_acknowledgement_and_the_list_carr
     assert listing["meta"]["self_decision_ack"] == SELF_DECISION_ACK
     assert listing["data"][0]["self_decision"] is None
     assert (await client.post(f"{PLANS}/{change['id']}/approve", headers=owner, json={})).status_code == 200
+
+
+async def test_what_was_self_approved_in_another_currency_is_not_added_to_the_total(client):
+    from app.services.self_approval import self_approved_total
+
+    _owner, org_id, owner_id = await kullanici(client, "sahip10@example.com", role="owner")
+    now = datetime.now(UTC)
+    async with client._maker() as db:
+        for cur, cents in (("TRY", 40_000_00), ("USD", 900_000_00), ("try", 5_000_00), ("", 7_000_00)):
+            db.add(Decision(
+                org_id=org_id, kind="plan_change", target_type="payment_plan_change", target_id="x", outcome="approved",
+                decided_via="human", decided_by=owner_id, decided_at=now,
+                after={"self_decided": True, "amount_cents": cents, "currency": cur},
+            ))
+        await db.commit()
+        assert await self_approved_total(db, org_id, owner_id, "TRY") == 45_000_00
+        assert await self_approved_total(db, org_id, owner_id, "USD") == 900_000_00
+        assert await self_approved_total(db, org_id, owner_id, "EUR") == 0
+
+
+async def test_the_self_approval_check_takes_a_lock_on_the_proposers_membership():
+    """On Postgres the second of two concurrent self-approvals waits for the first's commit (FOR UPDATE)."""
+    from sqlalchemy import select as sa_select
+    from sqlalchemy.dialects import postgresql
+
+    from app.models.organization import OrgMembership
+
+    stmt = sa_select(OrgMembership.id).where(OrgMembership.org_id == "o", OrgMembership.user_id == "u").with_for_update()
+    assert "FOR UPDATE" in str(stmt.compile(dialect=postgresql.dialect()))
+
+
+async def test_a_second_self_approval_is_judged_after_the_first_even_when_both_were_loaded_together(client):
+    """Two requests, each with its own session, each loaded its proposal before either approved. The second
+    re-reads after the first committed, so the cumulative limit holds (3 x 99.000 against 100.000)."""
+    from fastapi import HTTPException
+
+    from app.api.plan_changes import DecisionRequest, _apply_decision
+    from app.models.payment_plan_change import PaymentPlanChange
+
+    _owner, org_id, _ = await kullanici(client, "sahip11@example.com", role="owner")
+    admin = await member(client, "yonetici11@example.com", org_id, "admin")
+    ids = [(await propose(client, admin, await seed(client, org_id, amount=99_000_00, tag=f"c{n}")))["id"] for n in range(2)]
+    async with client._maker() as db1, client._maker() as db2:
+        user1 = (await db1.execute(select(User).where(User.email == "yonetici11@example.com"))).scalar_one()
+        user2 = (await db2.execute(select(User).where(User.email == "yonetici11@example.com"))).scalar_one()
+        first = (await db1.execute(select(PaymentPlanChange).where(PaymentPlanChange.id == ids[0]))).scalar_one()
+        second = (await db2.execute(select(PaymentPlanChange).where(PaymentPlanChange.id == ids[1]))).scalar_one()
+        body = DecisionRequest(self_decision_ack=SELF_DECISION_ACK)
+        assert (await _apply_decision(db1, first, True, body, user1))["error"] is None
+        try:
+            await _apply_decision(db2, second, True, body, user2)
+            raise AssertionError("the second self-approval must be refused")
+        except HTTPException as exc:
+            assert exc.status_code == 403
+    assert len(await approvals(client, org_id)) == 1

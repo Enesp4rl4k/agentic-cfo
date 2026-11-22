@@ -6,8 +6,8 @@ acknowledged the proposed value (or set their own). Null until then: nothing cha
 
 `payment_plan_changes.threshold_*`: the materiality threshold in force when a change was proposed.
 
-Revision ID: 071_materiality_smmm_brief
-Revises: 070_direction_mappings
+Revision ID: 073_materiality_smmm_brief
+Revises: 072_email_verification
 """
 from __future__ import annotations
 
@@ -15,8 +15,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "071_materiality_smmm_brief"
-down_revision = "070_direction_mappings"
+revision = "073_materiality_smmm_brief"
+down_revision = "072_email_verification"
 branch_labels = None
 depends_on = None
 
