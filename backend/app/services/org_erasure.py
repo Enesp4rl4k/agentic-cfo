@@ -54,6 +54,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.email_address import normalize_email
 from app.database import Base
 from app.models.erasure_record import OrgErasureRecord
+from app.models.password_reset import PasswordResetToken
 
 ANONYMISE = "anonymise"
 HARD_DELETE = "hard_delete"
@@ -71,7 +72,7 @@ SPECIAL_TABLES: dict[str, str] = {
     "users": "members; deleted unless they belong to another organisation too",
     "audit_logs": "no org column; linked through the erased users' ids",
     "pilot_invites": "global table; linked through the erased users' ids / emails",
-    "password_reset_tokens": "no org column; linked through the erased users' ids",
+    PasswordResetToken.__tablename__: "no org column; linked through the erased users' ids",
     "smmm_muhasebeci": "an accountant's profile; linked through the erased users' ids",
     "smmm_musteri_kayit": "an accountant's client list; linked through client_org_id",
 }
@@ -464,7 +465,8 @@ async def _erase(
             (mail.c.org_id == "system") & func.lower(mail.c.recipient).in_([normalize_email(e) for e in chunk]),
         )
     for chunk in _chunks(erase_users):
-        await drop("password_reset_tokens", tables["password_reset_tokens"].c.user_id.in_(chunk))
+        reset_tokens = tables[PasswordResetToken.__tablename__]
+        await drop(PasswordResetToken.__tablename__, reset_tokens.c.user_id.in_(chunk))
     for chunk in _chunks(erase_users):
         await drop("users", users.c.id.in_(chunk))
 

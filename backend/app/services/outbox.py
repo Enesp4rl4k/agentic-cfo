@@ -202,7 +202,7 @@ async def _send_http(row: OutboxMessage) -> str:
         problem = destination_problem(url)
         if problem:
             return f"failed:{problem}"
-        if not live() and AlertDispatcher.transport is None:
+        if not live() and not AlertDispatcher.test_transport_injected():
             # Development: recorded, not posted (tests inject a transport and go through it).
             RECORDED.append((row.channel, row.recipient, row.subject))
             return "sent:noop"
