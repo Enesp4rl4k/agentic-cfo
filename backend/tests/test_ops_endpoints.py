@@ -139,11 +139,8 @@ class FakeRedis:
 
 
 def use_redis(monkeypatch: pytest.MonkeyPatch, fake: FakeRedis) -> None:
-    async def client() -> FakeRedis:
-        return fake
-
     monkeypatch.setattr(ops, "redis_enabled", lambda: True)
-    monkeypatch.setattr(ops, "_redis_client", client)
+    monkeypatch.setattr(ops, "_redis_client", lambda: fake)
 
 
 async def test_a_live_worker_and_a_recent_outbox_pass_are_ok(monkeypatch: pytest.MonkeyPatch) -> None:

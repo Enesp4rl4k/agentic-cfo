@@ -20,7 +20,7 @@ import os
 import time
 from collections.abc import Awaitable
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
@@ -86,7 +86,7 @@ async def _migrations(db: AsyncSession) -> dict[str, Any]:
     return result
 
 
-async def _redis_client() -> Any:
+def _redis_client() -> Any:
     import redis.asyncio as aioredis
 
     return aioredis.from_url(
@@ -102,7 +102,7 @@ async def _broker_checks(production: bool) -> dict[str, dict[str, Any]]:
     if not redis_enabled():
         off = _check(None, required=False, code="redis_disabled")
         return {"redis": off, "worker": off, "scheduler": off}
-    client = await _redis_client()
+    client = _redis_client()
     try:
         try:
             await client.ping()
@@ -162,7 +162,7 @@ def summarise(checks: dict[str, dict[str, Any]]) -> tuple[str, int]:
 
 
 @router.get("/ready")
-async def ready(db: AsyncSession = Depends(get_db)) -> JSONResponse:
+async def ready(db: Annotated[AsyncSession, Depends(get_db)]) -> JSONResponse:
     production = is_production(get_settings())
     checks: dict[str, dict[str, Any]] = {
         "database": await _bounded(_database(db), required=True, name="database"),

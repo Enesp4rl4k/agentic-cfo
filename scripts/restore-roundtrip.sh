@@ -58,7 +58,8 @@ app_env() {
 }
 in_backend() { (cd "$REPO_ROOT/backend" && "$@"); }
 count_rows() {
-  psql -d "$1" -At -F $'\t' -c "
+  local db="$1"
+  psql -d "$db" -At -F $'\t' -c "
     SELECT table_name,
            (xpath('/row/c/text()',
                   query_to_xml(format('SELECT count(*) AS c FROM %I.%I', table_schema, table_name),

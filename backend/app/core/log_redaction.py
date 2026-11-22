@@ -11,12 +11,11 @@ from __future__ import annotations
 import logging
 import re
 
-_EMAIL = re.compile(r"\b([A-Za-z0-9._%+\-])[A-Za-z0-9._%+\-]*@([A-Za-z0-9\-]+(?:\.[A-Za-z0-9\-]+)*\.[A-Za-z]{2,})\b")
-_IBAN = re.compile(r"\b(TR)\d{2}(?:[ ]?\d{4}){5}[ ]?(\d{2})\b", re.IGNORECASE)
-_BEARER = re.compile(r"(?i)\b(bearer)\s+[A-Za-z0-9._~+/\-]{12,}=*")
-_SECRET_PAIR = re.compile(
-    r"(?i)\b(password|passwd|secret|api[_-]?key|access[_-]?token|refresh[_-]?token|authorization)(['\"]?\s*[=:]\s*['\"]?)[^\s,;'\"&]{4,}"
-)
+_EMAIL = re.compile(r"\b([\w.%+-])[\w.%+-]*@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,})\b")
+_IBAN = re.compile(r"\b(TR)\d{2}(?: ?\d{4}){5} ?(\d{2})\b", re.IGNORECASE)
+_BEARER = re.compile(r"\b(bearer)\s+[\w.~+/-]{12,}=*", re.IGNORECASE)
+_SECRET_NAME = r"(?:password|passwd|secret|api[_-]?key|(?:access|refresh)[_-]?token|authorization)"
+_SECRET_PAIR = re.compile(rf"\b({_SECRET_NAME})(['\"]?\s*[=:]\s*['\"]?)[^\s,;'\"&]{{4,}}", re.IGNORECASE)
 
 
 def redact(text: str) -> str:

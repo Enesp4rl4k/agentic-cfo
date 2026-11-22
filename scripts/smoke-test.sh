@@ -16,13 +16,14 @@ set -uo pipefail
 
 API="" APP="" EXPECT="" STRICT=0 ORIGIN=""
 while [[ $# -gt 0 ]]; do
-  case "$1" in
+  flag="$1"
+  case "$flag" in
     --api) API="${2:-}"; shift 2 ;;
     --app) APP="${2:-}"; shift 2 ;;
     --expect-commit) EXPECT="${2:-}"; shift 2 ;;
     --origin) ORIGIN="${2:-}"; shift 2 ;;
     --strict) STRICT=1; shift ;;
-    *) echo "smoke: unknown argument '$1'" >&2; exit 2 ;;
+    *) echo "smoke: unknown argument '$flag'" >&2; exit 2 ;;
   esac
 done
 [[ -n "$API" ]] || { echo "usage: smoke-test.sh --api URL [--app URL] [--expect-commit SHA] [--strict]" >&2; exit 2; }
@@ -84,7 +85,8 @@ for name in X-Content-Type-Options Content-Security-Policy X-Frame-Options Refer
 done
 if [[ "$API" == https://* ]]; then
   [[ -n "$(header Strict-Transport-Security)" ]] && pass "API sends HSTS" || fail "API is missing Strict-Transport-Security"
-  http_code="$(curl -sS --max-time 15 -o /dev/null -w '%{http_code}' "http://${API#https://}/health" 2>/dev/null || echo 000)"
+  plain="http"   # the check is that port 80 redirects: it must be asked in clear text on purpose
+  http_code="$(curl -sS --max-time 15 -o /dev/null -w '%{http_code}' "${plain}://${API#https://}/health" 2>/dev/null || echo 000)"
   case "$http_code" in
     301|302|307|308) pass "plain http redirects to https ($http_code)" ;;
     000) warn "port 80 not reachable (fine if only 443 is open, but certificate issuance needs it)" ;;
