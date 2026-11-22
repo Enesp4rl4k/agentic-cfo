@@ -141,6 +141,11 @@ class CFOState(TypedDict, total=False):
     # the caller since nodes hold no session. The forecast's runway starts from the newer of
     # this and the balance this run's own statement proves; None → no runway is claimed.
     opening_cash: dict[str, Any] | None
+    # How far the statement's balances are believed (`bank_balance.assess`) and, for a statement with
+    # held rows, the rows' place in the file with their balances (`balance_reverify.snapshot_chain`):
+    # a person's later answer re-reads the proof from these.
+    balance_proof: dict[str, Any] | None
+    statement_chain: dict[str, Any] | None
     # {start, end, opening_cents, closing_cents}: the days this run's statement covers, proven
     # over ALL its rows (like `statement_closing_balance`); and, for a company analysis that
     # reads its ledger, the extents of every completed statement (loaded by the caller). They say

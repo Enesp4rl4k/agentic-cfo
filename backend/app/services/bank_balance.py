@@ -12,10 +12,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.models.analysis_job import AnalysisJob, JobStatus
+MIN_STEPS = 3  # reconciling balance steps a text statement needs to be believed outright (parsers/direction)
 
 
 def _signed(tx: dict[str, Any]) -> int:
@@ -86,24 +83,6 @@ def statement_extent(transactions: list[dict[str, Any]]) -> dict[str, Any] | Non
     }
 
 
-async def proven_balance(db: AsyncSession, org_id: str) -> dict[str, Any] | None:
-    """The latest closing balance a completed statement proved, if any did."""
-    jobs = (
-        await db.execute(
-            select(AnalysisJob.id, AnalysisJob.filename, AnalysisJob.result_metadata).where(
-                AnalysisJob.org_id == org_id,
-                AnalysisJob.status == JobStatus.COMPLETED,
-            )
-        )
-    ).all()
-    found = [
-        {**m["closing_balance"], "job_id": job_id, "filename": filename}
-        for job_id, filename, m in jobs
-        if m and m.get("closing_balance") and chain_verified(m.get("ingest"))
-    ]
-    return max(found, key=lambda c: c["date"], default=None)
-
-
 def balance_age(as_of: str, anchor: date, stale_after_days: int) -> tuple[int, bool]:
     """(days since the statement closed, whether that is older than the staleness limit).
 
@@ -120,14 +99,121 @@ def latest_balance(*candidates: dict[str, Any] | None) -> dict[str, Any] | None:
     return max(known, key=lambda c: str(c["date"])[:10], default=None)
 
 
-async def proven_statements(db: AsyncSession, org_id: str) -> list[dict[str, Any]]:
-    """The extents of the company's completed balance-proven statements (see `statement_extent`)."""
-    metas = (
-        await db.execute(
-            select(AnalysisJob.result_metadata).where(
-                AnalysisJob.org_id == org_id,
-                AnalysisJob.status == JobStatus.COMPLETED,
-            )
-        )
-    ).scalars().all()
-    return [m["statement_extent"] for m in metas if m and m.get("statement_extent") and chain_verified(m.get("ingest"))]
+def _orders_that_chain(rows: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    return [o for o in (rows, rows[::-1]) if _chains(o)]
+
+
+def assess(
+    transactions: list[dict[str, Any]], counts: dict[str, Any] | None, *, recheck: bool = False,
+    identity: str | None = None,
+) -> dict[str, Any]:
+    """How far a statement's running balances can be believed, and why not when they cannot.
+
+    `state`: "verified" (basis "known"), "weak" (basis "assumed": one or two reconciling steps) or
+    "unverified" (basis None; `reason` says why). Never a guess: every row must carry a direction and
+    a balance that chains to the next exactly, to the cent, in exactly one file order.
+
+    The reader's own verdict (`counts["balance_check"]`, which needs `MIN_STEPS` steps) stands unless
+    `recheck` (a person has since answered the direction or the held rows, so it is read again from
+    the rows). A statement with fewer steps than that is weak evidence, not none: it is kept as an
+    assumption with its step count stated, and never as known.
+    """
+    c = counts or {}
+    rows = list(transactions)
+    # An answer remembered from a person's earlier decision for this statement format settled the
+    # direction at ingest (`held_direction.apply_remembered`), after the reader's verdict was written.
+    recheck = recheck or any(r.get("direction_remembered") for r in rows)
+    out: dict[str, Any] = {
+        "state": "unverified", "basis": None, "steps": 0, "reason": None, "identity": identity,
+        "has_balances": any(r.get("balance_cents") is not None for r in rows),
+        "currency": _currency_of(rows),
+    }
+    if lost := int(c.get("unaccounted") or 0):
+        return {**out, "reason": f"{lost} satır hesaba katılamadı"}
+    ordered = _chain_order(rows)
+    if ordered is None:
+        return {**out, "reason": "satır bakiyeleri birbirini tutmuyor" if out["has_balances"] else None}
+    steps = len(ordered) - 1
+    out["steps"] = steps
+    days = [str(r["transaction_date"])[:10] for r in ordered]
+    if days != sorted(days):
+        # Balances that chain only when the file is read against its own dates (a wrong direction can do that).
+        return {**out, "reason": "bakiye zinciri satır tarihleriyle çelişiyor"}
+    if any(r.get("type") not in ("income", "expense") for r in ordered):
+        return {**out, "reason": "bazı satırların yönü (giriş/çıkış) belli değil"}
+    out.update(_evidence(ordered))
+    if steps >= MIN_STEPS:
+        if c.get("balance_check") != "unverified" and not recheck:
+            return {**out, "state": "verified", "basis": "known"}
+        if recheck:
+            return {**out, "state": "verified", "basis": "known"}
+        return {**out, "reason": "okuyucu bakiye zincirini doğrulayamadı"}
+    # Fewer than three reconciling steps is thin evidence for ANY file type (a CSV's "no verdict" is no proof).
+    if not recheck and any(r.get("direction_from_balance") for r in ordered):
+        # The balance steps are the only evidence for the directions AND are checked against them: circular.
+        return {**out, "reason": "satırların yönü yalnızca bakiyeden çıkarıldı; bağımsız bir kanıt yok"}
+    if len(_orders_that_chain(rows)) != 1:
+        return {**out, "reason": "bakiye zinciri her iki sıralamada da tutuyor; hangisinin son olduğu belli değil"}
+    return {
+        **out, "state": "weak", "basis": "assumed",
+        "reason": f"yalnızca {steps} bakiye adımıyla doğrulandı",
+    }
+
+
+MAX_POINTS = 400
+
+
+def _evidence(ordered: list[dict[str, Any]]) -> dict[str, Any]:
+    """What lets two statements be recognised as one account: the rows' digest and the balance on each day.
+
+    `content_sha`: the same statement uploaded twice has the same digest. `points`: {day: the balance the
+    statement ends that day on} (the newest days when long); two statements of one account agree on every
+    day they both show.
+    """
+    import hashlib
+
+    digest = hashlib.sha256(
+        "|".join(sorted(
+            f"{str(r['transaction_date'])[:10]};{r.get('amount_cents')};{r.get('type')};{r['balance_cents']}"
+            for r in ordered
+        )).encode()
+    ).hexdigest()[:32]
+    points: dict[str, int] = {}
+    for r in ordered:  # oldest first: the last row of a day is that day's closing balance
+        points[str(r["transaction_date"])[:10]] = int(r["balance_cents"])
+    keep = sorted(points)[-MAX_POINTS:]
+    per_day: dict[str, list[str]] = {}
+    for r in ordered:
+        per_day.setdefault(str(r["transaction_date"])[:10], []).append(f"{r.get('amount_cents')};{r.get('type')};{r['balance_cents']}")
+    days = {d: hashlib.sha256("|".join(sorted(per_day[d])).encode()).hexdigest()[:16] for d in keep}
+    return {"content_sha": digest, "points": {d: points[d] for d in keep}, "day_sha": days}
+
+
+def _currency_of(rows: list[dict[str, Any]]) -> str | None:
+    """The one currency the rows are in, None when they name none or more than one."""
+    found = {str(r["currency"]).strip().upper() for r in rows if str(r.get("currency") or "").strip()}
+    return next(iter(found)) if len(found) == 1 else None
+
+
+def basis_of(meta: dict[str, Any] | None) -> str | None:
+    """"known" | "assumed" | None: how far a completed job's stored statement balance may be believed.
+
+    A job that recorded its proof (`balance_proof`, written at ingest and again after a person's
+    answer) says so; an older job falls back to the reader's own verdict (`chain_verified`).
+    """
+    m = meta or {}
+    proof = m.get("balance_proof")
+    if isinstance(proof, dict) and "basis" in proof:
+        basis = proof["basis"]
+        return basis if isinstance(basis, str) else None
+    return "known" if chain_verified(m.get("ingest")) else None
+
+
+def proof_reason(meta: dict[str, Any] | None) -> str:
+    """Why a statement's balance is not proven (or only assumed), in words."""
+    m = meta or {}
+    proof = m.get("balance_proof")
+    if isinstance(proof, dict) and proof.get("reason"):
+        return str(proof["reason"])
+    lost = int((m.get("ingest") or {}).get("unaccounted") or 0)
+    return f"{lost} satır hesaba katılamadı" if lost else "bakiye ile doğrulanamadı"

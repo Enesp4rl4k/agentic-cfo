@@ -1,6 +1,89 @@
 {
   "components": {
     "schemas": {
+      "AccountQuestionOut": {
+        "description": "Two proven statements nothing links or separates: are they one bank account? (answered in /onay)",
+        "properties": {
+          "a": {
+            "$ref": "#/components/schemas/AccountSideOut"
+          },
+          "b": {
+            "$ref": "#/components/schemas/AccountSideOut"
+          },
+          "job_ids_a": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Job Ids A",
+            "type": "array"
+          },
+          "job_ids_b": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Job Ids B",
+            "type": "array"
+          },
+          "question": {
+            "title": "Question",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question",
+          "a",
+          "b",
+          "job_ids_a",
+          "job_ids_b"
+        ],
+        "title": "AccountQuestionOut",
+        "type": "object"
+      },
+      "AccountSideOut": {
+        "properties": {
+          "as_of": {
+            "title": "As Of",
+            "type": "string"
+          },
+          "balance_cents": {
+            "title": "Balance Cents",
+            "type": "integer"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "identity_hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Identity Hint"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "required": [
+          "as_of",
+          "balance_cents",
+          "currency"
+        ],
+        "title": "AccountSideOut",
+        "type": "object"
+      },
       "Analizler": {
         "description": "Every analysis of the company by what became of it, not only the latest one.",
         "properties": {
@@ -78,6 +161,116 @@
           "path"
         ],
         "title": "AwaitingLineOut",
+        "type": "object"
+      },
+      "BalanceAccountOut": {
+        "description": "One account's latest proven balance, with its own date: the starting cash is their sum.",
+        "properties": {
+          "as_of": {
+            "title": "As Of",
+            "type": "string"
+          },
+          "balance_cents": {
+            "title": "Balance Cents",
+            "type": "integer"
+          },
+          "basis": {
+            "default": "known",
+            "enum": [
+              "known",
+              "assumed"
+            ],
+            "title": "Basis",
+            "type": "string"
+          },
+          "basis_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Basis Note"
+          },
+          "behind_days": {
+            "default": 0,
+            "title": "Behind Days",
+            "type": "integer"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "currency_assumed": {
+            "default": false,
+            "title": "Currency Assumed",
+            "type": "boolean"
+          },
+          "gaps": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Gaps",
+            "type": "array"
+          },
+          "identity_hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Identity Hint"
+          },
+          "identity_uncertain": {
+            "default": false,
+            "title": "Identity Uncertain",
+            "type": "boolean"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "lagging": {
+            "default": false,
+            "title": "Lagging",
+            "type": "boolean"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "statements": {
+            "default": 1,
+            "title": "Statements",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "as_of",
+          "balance_cents",
+          "currency"
+        ],
+        "title": "BalanceAccountOut",
         "type": "object"
       },
       "BasisSplitOut": {
@@ -281,6 +474,14 @@
       },
       "CashRadarOut": {
         "properties": {
+          "account_questions": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AccountQuestionOut"
+            },
+            "title": "Account Questions",
+            "type": "array"
+          },
           "anchor_date": {
             "title": "Anchor Date",
             "type": "string"
@@ -336,6 +537,14 @@
               }
             ]
           },
+          "other_currency_balances": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/OtherCurrencyBalanceOut"
+            },
+            "title": "Other Currency Balances",
+            "type": "array"
+          },
           "other_currency_items": {
             "title": "Other Currency Items",
             "type": "integer"
@@ -363,6 +572,16 @@
             "default": 0,
             "title": "Recurring Payables Cents",
             "type": "integer"
+          },
+          "runway": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunwayOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "shortfall": {
             "anyOf": [
@@ -408,6 +627,14 @@
           "undated_receivables_cents": {
             "title": "Undated Receivables Cents",
             "type": "integer"
+          },
+          "unproven_statements": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/UnprovenStatementOut"
+            },
+            "title": "Unproven Statements",
+            "type": "array"
           },
           "weeks": {
             "items": {
@@ -1222,6 +1449,49 @@
             "title": "Org Id",
             "type": "string"
           },
+          "runway_basis": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runway Basis"
+          },
+          "runway_level": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runway Level"
+          },
+          "runway_line": {
+            "default": "",
+            "title": "Runway Line",
+            "type": "string"
+          },
+          "runway_months": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runway Months"
+          },
+          "runway_status": {
+            "default": "no_balance",
+            "title": "Runway Status",
+            "type": "string"
+          },
           "sentence_action": {
             "title": "Sentence Action",
             "type": "string"
@@ -1312,6 +1582,14 @@
       },
       "OpeningCashOut": {
         "properties": {
+          "accounts": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/BalanceAccountOut"
+            },
+            "title": "Accounts",
+            "type": "array"
+          },
           "age_days": {
             "title": "Age Days",
             "type": "integer"
@@ -1323,6 +1601,42 @@
           "balance_cents": {
             "title": "Balance Cents",
             "type": "integer"
+          },
+          "basis": {
+            "default": "known",
+            "enum": [
+              "known",
+              "assumed"
+            ],
+            "title": "Basis",
+            "type": "string"
+          },
+          "basis_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Basis Note"
+          },
+          "identity_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Identity Note"
+          },
+          "identity_uncertain": {
+            "default": false,
+            "title": "Identity Uncertain",
+            "type": "boolean"
           },
           "source_filename": {
             "anyOf": [
@@ -1365,6 +1679,35 @@
           "source_filename"
         ],
         "title": "OpeningCashOut",
+        "type": "object"
+      },
+      "OtherCurrencyBalanceOut": {
+        "description": "A bank balance in a currency other than the radar's: shown with its own total, never converted.",
+        "properties": {
+          "accounts": {
+            "title": "Accounts",
+            "type": "integer"
+          },
+          "as_of": {
+            "title": "As Of",
+            "type": "string"
+          },
+          "balance_cents": {
+            "title": "Balance Cents",
+            "type": "integer"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          }
+        },
+        "required": [
+          "currency",
+          "balance_cents",
+          "as_of",
+          "accounts"
+        ],
+        "title": "OtherCurrencyBalanceOut",
         "type": "object"
       },
       "OtherCurrencyTotalOut": {
@@ -1822,6 +2165,240 @@
         "title": "RadarWeekOut",
         "type": "object"
       },
+      "RunwayMonthOut": {
+        "properties": {
+          "month": {
+            "title": "Month",
+            "type": "string"
+          },
+          "net_cents": {
+            "title": "Net Cents",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "month",
+          "net_cents"
+        ],
+        "title": "RunwayMonthOut",
+        "type": "object"
+      },
+      "RunwayOut": {
+        "description": "The measured runway (`services.runway`), or the reason there is none. No number without a basis.",
+        "properties": {
+          "accounts": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/BalanceAccountOut"
+            },
+            "title": "Accounts",
+            "type": "array"
+          },
+          "age_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Age Days"
+          },
+          "as_of": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "assumptions": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Assumptions",
+            "type": "array"
+          },
+          "avg_monthly_net_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Monthly Net Cents"
+          },
+          "balance_basis": {
+            "anyOf": [
+              {
+                "enum": [
+                  "known",
+                  "assumed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Balance Basis"
+          },
+          "basis": {
+            "anyOf": [
+              {
+                "enum": [
+                  "known",
+                  "assumed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Basis"
+          },
+          "beyond_horizon": {
+            "default": false,
+            "title": "Beyond Horizon",
+            "type": "boolean"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "identity_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Identity Note"
+          },
+          "identity_uncertain": {
+            "default": false,
+            "title": "Identity Uncertain",
+            "type": "boolean"
+          },
+          "level": {
+            "anyOf": [
+              {
+                "enum": [
+                  "critical",
+                  "warning"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Level"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "months": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/RunwayMonthOut"
+            },
+            "title": "Months",
+            "type": "array"
+          },
+          "months_needed": {
+            "title": "Months Needed",
+            "type": "integer"
+          },
+          "months_used": {
+            "title": "Months Used",
+            "type": "integer"
+          },
+          "opening_cash_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opening Cash Cents"
+          },
+          "other_currencies": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/OtherCurrencyBalanceOut"
+            },
+            "title": "Other Currencies",
+            "type": "array"
+          },
+          "runway_months": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runway Months"
+          },
+          "source_filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Filename"
+          },
+          "stale": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stale"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "message",
+          "months_needed",
+          "months_used"
+        ],
+        "title": "RunwayOut",
+        "type": "object"
+      },
       "ShortfallOut": {
         "properties": {
           "actions": {
@@ -1937,6 +2514,42 @@
           "olusturma"
         ],
         "title": "SonAnaliz",
+        "type": "object"
+      },
+      "UnprovenStatementOut": {
+        "description": "A statement with balances that could not be proven: left out of the starting cash, named with why.",
+        "properties": {
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "UnprovenStatementOut",
         "type": "object"
       },
       "ValidationError": {

@@ -141,7 +141,7 @@ async def _analyse_ledger(view: Any, org_id: str, job_id: str | None, db: Any) -
     """The CFO pipeline over the ledger's rows, with its AgentRun around it."""
     from app.agents import orchestrator
     from app.agents.run_ledger import agent_run
-    from app.services.bank_balance import proven_balance, proven_statements
+    from app.services.bank_accounts import proven_balance, proven_statements
 
     opening_cash = await proven_balance(db, org_id)
     statement_extents = await proven_statements(db, org_id)

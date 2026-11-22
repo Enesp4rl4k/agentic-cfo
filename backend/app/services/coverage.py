@@ -20,7 +20,7 @@ import calendar
 from datetime import date
 from typing import Any
 
-from app.services.bank_balance import chain_verified, statement_extent
+from app.services.bank_balance import assess, statement_extent
 
 
 def _day(value: Any) -> date:
@@ -111,7 +111,7 @@ def extents_for(state: dict[str, Any]) -> list[dict[str, Any]]:
     if state.get("ledger_view") is not None:
         return [e for e in (state.get("statement_extents") or []) if e]
     rows = list(state.get("transactions") or [])
-    chained = chain_verified(state.get("ingest_counts"))
+    chained = bool((state.get("balance_proof") or assess(rows, state.get("ingest_counts")))["basis"])
     # A chain the reader could not verify proves no balances (and so no join): only the dates stand.
     own = (state.get("statement_extent") or statement_extent(rows) if chained else None) or extent_of_rows(rows)
     path = str(state.get("file_path") or "").replace("\\", "/").rsplit("/", 1)[-1] or None
@@ -208,7 +208,7 @@ def covered_days(month: str, extents: list[dict[str, Any]]) -> tuple[int, int] |
     best: tuple[int, int] | None = None
     for g in _groups(extents):
         lo, hi = max(g["start"], first), min(g["end"], last)
-        if lo <= hi and (best is None or (hi - lo) > (best[1] - best[0])):
+        if lo <= hi and (best is None or hi.day - lo.day > best[1] - best[0]):
             best = (lo.day, hi.day)
     return best
 

@@ -174,6 +174,24 @@ export type MessageTree = {
     awaitingDocuments: string;
     awaitingOpen: string;
     heldReview: string;
+    runwayTitle: string;
+    runwayMonths: string;
+    runwayBeyond: string;
+    runwayUnknown: string;
+    runwayCritical: string;
+    runwayWarning: string;
+    runwayAssumed: string;
+    runwayAssumedHint: string;
+    runwayDetails: string;
+    accountsTitle: string;
+    accountBehind: string;
+    otherCurrencyBalancesTitle: string;
+    otherCurrencyBalancesNote: string;
+    unprovenTitle: string;
+    unprovenNote: string;
+    openingAssumed: string;
+    accountQuestionLink: string;
+    identityUncertainNote: string;
   };
   takvim: {
     title: string;
@@ -238,6 +256,13 @@ export type MessageTree = {
     planReason: string;
     planWaiting: string;
     actionNotConnected: string;
+    accountQuestionsTitle: string;
+    accountQuestionsBody: string;
+    accountQuestionAsk: string;
+    accountQuestionSame: string;
+    accountQuestionDifferent: string;
+    accountQuestionOwnerOnly: string;
+    accountQuestionFailed: string;
   };
   ooda: {
     label: string;
@@ -3031,6 +3056,24 @@ export const en: MessageTree = {
     awaitingDocuments: "Possible duplicate documents",
     awaitingOpen: "Decide",
     heldReview: "Review the documents and decide",
+    runwayTitle: "Cash runway",
+    runwayMonths: "{n} months",
+    runwayBeyond: "longer than {n} months",
+    runwayUnknown: "Unknown",
+    runwayCritical: "Critical",
+    runwayWarning: "Warning",
+    runwayAssumed: "Assumption",
+    runwayAssumedHint: "Part of this figure rests on an assumption, stated below. It is not a measurement.",
+    runwayDetails: "How it was worked out",
+    accountsTitle: "Accounts in the starting cash",
+    accountBehind: "{days} days older than the newest statement",
+    otherCurrencyBalancesTitle: "Bank balances in other currencies",
+    otherCurrencyBalancesNote: "Shown on their own, not converted and not added to the cash above.",
+    unprovenTitle: "Statements left out of the balance",
+    unprovenNote: "Their running balances could not be proven, so they are not counted. Answer the waiting rows or upload a statement that reconciles.",
+    openingAssumed: "The balance rests on weak evidence and is taken as an assumption:",
+    accountQuestionLink: "Answer: are these the same account?",
+    identityUncertainNote: "Statements that may be one account are not added together; only the newest balance is counted.",
   },
   takvim: {
     title: "Payment calendar",
@@ -3095,6 +3138,13 @@ export const en: MessageTree = {
     planReason: "Reason (optional)",
     planWaiting: "Awaiting a decision: an owner or an admin can approve.",
     actionNotConnected: "This action is not connected yet — nothing was done.",
+    accountQuestionsTitle: "{n} bank statement question: are they one account?",
+    accountQuestionsBody: "Nothing says whether these statements belong to the same bank account, so they are never added together. Until you answer, only the newest balance is used and the runway is shown as an assumption.",
+    accountQuestionAsk: "Do these statements belong to the same bank account?",
+    accountQuestionSame: "Same account",
+    accountQuestionDifferent: "Different accounts",
+    accountQuestionOwnerOnly: "The owner or an admin answers this question.",
+    accountQuestionFailed: "The answer could not be saved.",
   },
   ooda: {
     label: "Weekly loop",

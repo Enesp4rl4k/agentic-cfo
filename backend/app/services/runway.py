@@ -20,7 +20,7 @@ from typing import Any
 
 from app.config import get_settings
 from app.core.currency_totals import fmt_money
-from app.services.bank_balance import balance_age, chain_verified, closing_balance, latest_balance
+from app.services.bank_balance import assess, balance_age, closing_balance, latest_balance
 from app.services.coverage import gaps, usable_months
 
 RUNWAY_MIN_MONTHS = 3  # months of cash movement the burn average needs (the forecast's baseline window)
@@ -52,14 +52,15 @@ def opening_cash_for(state: dict[str, Any], anchor: date | None = None) -> dict[
     The newest of: the balance this run's own statement proves, and the one the company's
     completed statements prove (loaded by the caller, as the radar reads it).
     """
-    verified = chain_verified(state.get("ingest_counts"))
-    own = (
-        (state.get("statement_closing_balance") or closing_balance(list(state.get("transactions") or [])))
-        if verified else None
-    )
+    rows = list(state.get("transactions") or [])
+    proof = state.get("balance_proof") or assess(rows, state.get("ingest_counts"))
+    own = (state.get("statement_closing_balance") or closing_balance(rows)) if proof["basis"] else None
     if own:
         path = str(state.get("file_path") or "")
-        own = {**own, "filename": path.replace("\\", "/").rsplit("/", 1)[-1] or None}
+        own = {
+            **own, "filename": path.replace("\\", "/").rsplit("/", 1)[-1] or None,
+            "basis": proof["basis"], "basis_note": proof.get("reason"),
+        }
     chosen = latest_balance(own, state.get("opening_cash"))
     if chosen is None:
         return None
@@ -73,7 +74,39 @@ def opening_cash_for(state: dict[str, Any], anchor: date | None = None) -> dict[
         "stale": stale,
         "stale_after_days": limit,
         "filename": chosen.get("filename"),
+        # "known", or "assumed" when the proof is thin (`bank_balance.assess`): said wherever it is shown.
+        "basis": chosen.get("basis") or "known",
+        "basis_note": chosen.get("basis_note"),
+        "accounts": list(chosen.get("accounts") or []),
+        "excluded": list(chosen.get("excluded") or []),
     }
+
+
+def _balance_notes(opening: dict[str, Any], money: Any) -> str:
+    """What the balance is made of when it is not one plain statement: accounts, an old account, a thin
+    proof, a statement left out. Each says its own date and reason; nothing is merged silently."""
+    parts: list[str] = []
+    accounts = opening.get("accounts") or []
+    if len(accounts) > 1:
+        listed = ", ".join(f"{a['name'] or 'adsız ekstre'} {_date_tr(a['as_of'])} {money(a['balance_cents'])}" for a in accounts)
+        parts.append(f"Bakiye {len(accounts)} hesabın son ekstre bakiyelerinin toplamıdır ({listed})")
+    for a in accounts:
+        if a.get("lagging") and len(accounts) > 1:
+            parts.append(f"{a['name'] or 'adsız ekstre'} bakiyesi {_date_tr(a['as_of'])} tarihli, diğerlerinden {a['behind_days']} gün eski")
+    if opening.get("basis") == "assumed":
+        why = "; ".join(sorted({a["basis_note"] for a in accounts if a.get("basis_note")} or {opening.get("basis_note") or "zayıf kanıt"}))
+        parts.append(f"Bakiye zayıf kanıta dayanıyor ({why}), varsayım olarak alındı")
+    if opening.get("identity_note"):
+        parts.append(str(opening["identity_note"]))
+    parts.extend(_excluded_note(opening.get("excluded") or []))
+    return "".join(f" {p}." for p in parts)
+
+
+def _excluded_note(excluded: list[dict[str, Any]]) -> list[str]:
+    return [
+        f"{e.get('filename') or 'adsız ekstre'} ekstresinin bakiyesi doğrulanamadığı için dışarıda bırakıldı ({e['reason']})"
+        for e in excluded
+    ]
 
 
 def _block(status: str, message: str, opening: dict[str, Any] | None, **extra: Any) -> dict[str, Any]:
@@ -84,6 +117,10 @@ def _block(status: str, message: str, opening: dict[str, Any] | None, **extra: A
         "age_days": opening["age_days"] if opening else None,
         "stale": opening["stale"] if opening else None,
         "source_filename": opening["filename"] if opening else None,
+        "balance_basis": (opening.get("basis") or "known") if opening else None,
+        "identity_uncertain": bool(opening.get("uncertain")) if opening else False,
+        "identity_note": opening.get("identity_note") if opening else None,
+        "accounts": [dict(a) for a in opening.get("accounts") or []] if opening else [],
         "months_needed": RUNWAY_MIN_MONTHS,
         "months_used": 0,
         "months": [],
@@ -114,6 +151,9 @@ def _notes(series: list[dict[str, Any]], window: list[dict[str, Any]], opening: 
     incomplete = [m for m in series if m.get("complete") is False and not m.get("short")]
     parts = []
     for m in incomplete:
+        if m.get("missing_statement"):
+            parts.append(f"{_month_name(m['month'])} için {m['missing_statement']} ekstresi eksik; hesaba katılmadı")
+            continue
         days = m.get("covered")
         span = f"yalnızca {days[0]}–{days[1]} arası" if days else "yalnızca kısmen"
         later = not window or m["month"] > window[-1]["month"]
@@ -144,16 +184,18 @@ def _mismatch_note(series: list[dict[str, Any]]) -> str:
     )
 
 
-def _assumed_note(window: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]]]:
-    """The edges counted as complete on the tolerance, said as the assumption they are."""
-    edges = [{"month": m["month"], **a} for m in window for a in m.get("assumed") or []]
-    if not edges:
-        return "", []
+def _assumed_text(edges: list[dict[str, Any]]) -> str:
     parts = [
         f"{_month_name(e['month'])} ayının {'ilk' if e['edge'] == 'start' else 'son'} {e['days']} günü"
         for e in edges
     ]
-    return f" {' ve '.join(parts)} için işlem yok; ay tam sayıldı (varsayım).", edges
+    return f" {' ve '.join(parts)} için işlem yok; ay tam sayıldı (varsayım)." if parts else ""
+
+
+def _assumed_note(window: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]]]:
+    """The edges counted as complete on the tolerance, said as the assumption they are."""
+    edges = [{"month": m["month"], **a} for m in window for a in m.get("assumed") or []]
+    return _assumed_text(edges), edges
 
 
 def _short_note(series: list[dict[str, Any]]) -> str:
@@ -186,7 +228,8 @@ def _one_off(window: list[dict[str, Any]], burn_total: int, currency: str | None
 
 
 def compute_runway(
-    opening: dict[str, Any] | None, cashflow: dict[str, Any], currency: str | None = None
+    opening: dict[str, Any] | None, cashflow: dict[str, Any], currency: str | None = None,
+    unproven: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """The runway of this company, or the reason there is none.
 
@@ -194,6 +237,7 @@ def compute_runway(
     coverage_unknown. The burn is the average net of the latest `RUNWAY_MIN_MONTHS` COMPLETE,
     consecutive months (`app.services.coverage`); the months and their totals are in the block
     and the message. `currency` is the one the figures are written in (none known: bare numbers).
+    `unproven` names statements whose balance could not be proven, said when there is no balance.
     """
     def money(cents: int) -> str:
         return fmt_money(cents, currency)
@@ -202,14 +246,15 @@ def compute_runway(
         return _block(
             NO_BALANCE,
             "Kasa bakiyesi bilinmiyor — nakit pisti hesaplanamadı. "
-            "Satır bakiyeleri birbirini tutan bir banka ekstresi yüklenince hesaplanır.",
+            "Satır bakiyeleri birbirini tutan bir banka ekstresi yüklenince hesaplanır."
+            + "".join(f" {x}." for x in _excluded_note(unproven or [])),
             None,
         )
     basis = f"{_date_tr(opening['as_of'])} ekstresindeki bakiyeye göre kasa {money(opening['balance_cents'])}"
     stale_note = (
         f" Bu bakiye {opening['age_days']} gün önceki ekstreden; güncel olmayabilir."
         if opening["stale"] else ""
-    )
+    ) + _balance_notes(opening, money)
     if cashflow.get("esas") == "tahakkuk":
         return _block(
             NOT_CASH_BASIS,
@@ -242,7 +287,7 @@ def compute_runway(
     avg_net = int(statistics.mean(nets))
     assumed_text, assumptions = _assumed_note(window)
     notes = assumed_text + notes
-    basis_tag = "assumed" if assumptions else "known"
+    basis_tag = "assumed" if assumptions or opening.get("basis") == "assumed" else "known"
     with_year = len({m["month"][:4] for m in window}) > 1
     listing = ", ".join(f"{_month_name(m['month'], with_year)} {money(int(m['net']))}" for m in window)
     if avg_net >= 0:
@@ -265,6 +310,8 @@ def compute_runway(
         else "warning" if runway <= RUNWAY_WARNING_MONTHS
         else None
     )
+    if opening.get("uncertain") and level == "critical":
+        level = "warning"  # the cash is the newest of statements that may be one account: not measured
     if balance <= 0:
         verdict = "Kasa bakiyesi sıfırın altında: nakit bitmiş."
     elif beyond:
@@ -301,3 +348,53 @@ def runway_alert(runway: dict[str, Any]) -> dict[str, str] | None:
 def can_project(runway: dict[str, Any]) -> bool:
     """Whether scenario runways may be read off a balance: it is known and the burn is measured."""
     return runway["status"] in (COMPUTED, NOT_BURNING)
+
+
+def runway_line(block: dict[str, Any]) -> str:
+    """The runway in one short passage for the Monday briefing: the same block, worded for reading aloud.
+
+    A measured runway gives its months, the balance with its date, the months the burn was read from and
+    any assumption in plain words; a critical one opens with "KRİTİK". No runway gives the reason and no
+    number ("Kasa bakiyesi bilinmiyor"). Never a figure that is not in the block.
+    """
+    status = block["status"]
+    cur = block.get("currency")
+    if status == NO_BALANCE:
+        return str(block["message"])
+    if status == INSUFFICIENT_HISTORY:
+        return (
+            f"Nakit pisti hesaplanamadı: üst üste {block['months_used']} tam ay var, "
+            f"en az {block['months_needed']} gerekir."
+        )
+    if status in (NOT_CASH_BASIS, COVERAGE_UNKNOWN):
+        why = "aylık hareketler gerçek nakit değil, muhasebe kaydı" if status == NOT_CASH_BASIS else "ekstrenin kapsadığı tarihler bilinmiyor"
+        return f"Nakit pisti hesaplanamadı: {why}."
+    months = block["months"]
+    with_year = len({m["month"][:4] for m in months}) > 1
+    span = f"{_month_name(months[0]['month'], with_year)}–{_month_name(months[-1]['month'], with_year)}"
+    avg = block["avg_monthly_net_cents"]
+    where = f"{_date_tr(block['as_of'])} ekstresindeki kasa {fmt_money(block['opening_cash_cents'], cur)}"
+    stale = f" Bu bakiye {block['age_days']} gün önceki ekstreden; güncel olmayabilir." if block.get("stale") else ""
+    if status == NOT_BURNING:
+        return (
+            f"Nakit azalmıyor: son {len(months)} tam ayın ({span}) ortalama net nakit akışı "
+            f"{fmt_money(avg, cur)} (pozitif); nakit pisti hesaplanmadı. {where}.{stale}"
+        )
+    if block["beyond_horizon"]:
+        head = f"Nakit pisti {RUNWAY_LONG_MONTHS} aydan uzun"
+    elif not block["opening_cash_cents"] or block["opening_cash_cents"] <= 0:
+        head = "Kasa bakiyesi sıfırın altında: nakit bitmiş"
+    else:
+        head = "Nakit pisti yaklaşık " + f"{block['runway_months']:.1f}".replace(".", ",") + " ay"
+    level = {"critical": "KRİTİK: ", "warning": "Uyarı: "}.get(block.get("level") or "", "")
+    out = (
+        f"{level}{head} ({where}; son {len(months)} tam ayın ({span}) ortalama net çıkışı "
+        f"{fmt_money(-avg, cur)}/ay)."
+    )
+    caveats = _assumed_text(block.get("assumptions") or [])
+    if block.get("identity_note"):
+        caveats += f" {block['identity_note']}."
+    if block.get("balance_basis") == "assumed" and not block.get("identity_note"):
+        why = "; ".join(sorted({a["basis_note"] for a in block.get("accounts") or [] if a.get("basis_note")})) or "zayıf kanıt"
+        caveats += f" Bakiye zayıf kanıta dayanıyor ({why}), varsayım."
+    return out + (f" Varsayım:{caveats}" if block.get("basis") == "assumed" and caveats else "") + stale

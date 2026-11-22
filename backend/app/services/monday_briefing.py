@@ -29,6 +29,7 @@ from app.services import decisions
 from app.services.briefing_held import held_caveat, held_only_sentence
 from app.services.briefing_numbers import _date_parts, verify_narrative_numbers
 from app.services.cash_radar import _fmt, compute_cash_radar
+from app.services.runway import runway_line
 
 
 class BriefingNeedsAnalysis(Exception):
@@ -69,6 +70,14 @@ class MondayBriefing:
     balance_as_of: str | None = None
     balance_age_days: int = 0
     balance_stale: bool = False
+    # The measured runway (`app.services.runway`, the forecast's own computation), or that there is none:
+    # `runway_line` is the sentence the briefing carries (a critical one is its first); `runway_months` is
+    # None unless the runway was measured; `runway_basis` is "assumed" when it rests on an assumption.
+    runway_status: str = "no_balance"
+    runway_months: float | None = None
+    runway_level: str | None = None
+    runway_basis: str | None = None
+    runway_line: str = ""
     # A digest of everything above. The owner answers the briefing they saw; the
     # answer carries this back, and a briefing whose figures moved in between
     # (a new upload, a settled invoice) is not the one they answered.
@@ -342,6 +351,13 @@ async def assemble_monday_briefing(
             fallback_used = True
             final_text = deterministic_full_text
 
+    runway = radar.runway
+    runway_text = runway_line(runway) if runway else ""
+    if runway_text and runway and runway["level"] == "critical":
+        final_text = f"{runway_text} {final_text}"  # cash running out is the first thing said
+    elif runway_text:
+        final_text += f" {runway_text}"
+
     from app.services.awaiting_decisions import closing_note
 
     final_text += await closing_note(db, org_id, radar, bool(caveat) or held_only)
@@ -375,6 +391,11 @@ async def assemble_monday_briefing(
         balance_as_of=opening.as_of if opening else None,
         balance_age_days=opening.age_days if opening else 0,
         balance_stale=opening.stale if opening else False,
+        runway_status=runway["status"] if runway else "no_balance",
+        runway_months=runway["runway_months"] if runway else None,
+        runway_level=runway["level"] if runway else None,
+        runway_basis=runway["basis"] if runway else None,
+        runway_line=runway_text,
     )
     return replace(briefing, fingerprint=briefing_fingerprint(briefing))
 

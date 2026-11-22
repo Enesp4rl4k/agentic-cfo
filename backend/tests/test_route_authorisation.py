@@ -103,6 +103,7 @@ def test_every_state_changing_route_declares_who_may_use_it() -> None:
 MEMBER_READ_ROUTES = [
     ("GET", "/api/v1/held-rows"),
     ("GET", "/api/v1/held-rows/file-questions"),
+    ("GET", "/api/v1/held-rows/account-questions"),
     ("GET", "/api/v1/held-rows/direction-mappings"),
     ("GET", "/api/v1/org/base-currency"),
 ]
