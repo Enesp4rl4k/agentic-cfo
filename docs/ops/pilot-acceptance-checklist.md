@@ -8,7 +8,7 @@ explains the reasons and ratings. "Blocker" lines are the ones the audit rated G
 
 - [ ] Hosting provider chosen and the VPS exists in Turkey (D8). Evidence: the contract.
 - [ ] Domain, `APP_DOMAIN` and `API_DOMAIN` resolve to the VPS (`dig +short`). Evidence: command output.
-- [x] Registration policy decided and applied (D1: closed, invitation only; `REGISTRATION_MODE=invite_only`, PR_NUMBER). Evidence: `POST /auth/register` without an invite answers 403 on the host; the register page says "yalnızca davetle".
+- [x] Registration policy decided and applied (D1: closed, invitation only; `REGISTRATION_MODE=invite_only`, PR #139). Evidence: `POST /auth/register` without an invite answers 403 on the host; the register page says "yalnızca davetle".
 - [ ] The first operator account exists (`scripts/issue_pilot_invite.py`, [runbooks/onboard-company.md](runbooks/onboard-company.md)). Evidence: the operator signs in and `GET /api/v1/pilot/invites` answers 200.
 - [ ] Mail provider chosen, SPF, DKIM and DMARC pass (D2). Evidence: "show original" of a received invitation ([mail.md](mail.md)).
 - [ ] Backup destination chosen, in Turkey, separate from the VPS provider (D3). Evidence: `rclone lsd` output.

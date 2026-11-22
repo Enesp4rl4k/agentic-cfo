@@ -229,7 +229,7 @@ Setting them changes nothing:
 
 | Variable | What it implied | Reality |
 |---|---|---|
-| `PILOT_REQUIRE_INVITE`, `PILOT_MODE`, `PILOT_MAX_USERS` | an invite requirement and a user cap | **Removed (PR for audit blocker 1).** They were read by nothing and registration was open. `REGISTRATION_MODE` replaces them and is enforced by `/auth/register`, SSO and `/org/create`; there is no user cap (the number of companies is the number of pilot invites an operator issues). The Kubernetes and Helm config maps no longer set them |
+| `PILOT_REQUIRE_INVITE`, `PILOT_MODE`, `PILOT_MAX_USERS` | an invite requirement and a user cap | **Removed (PR #139).** They were read by nothing and registration was open. `REGISTRATION_MODE` replaces them and is enforced by `/auth/register`, SSO and `/org/create`; there is no user cap (the number of companies is the number of pilot invites an operator issues). The Kubernetes and Helm config maps no longer set them |
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_S3_BUCKET`, `AWS_S3_REGION` | S3 storage | `STORAGE_BACKEND` is read by nothing; files go to `STORAGE_LOCAL_PATH` |
 | `DEFAULT_COUNTRY_CODE`, `DEFAULT_BASE_CURRENCY`, `DEFAULT_LOCALE` | organisation defaults | not read |
 | `EMAIL_INGEST_API_KEY`, `EMAIL_ALLOWED_DOMAINS`, `EMAIL_MAX_ATTACHMENT_MB` | inbound mail guard | the inbound webhook uses `EMAIL_INBOUND_SECRET`; the others are not read |
