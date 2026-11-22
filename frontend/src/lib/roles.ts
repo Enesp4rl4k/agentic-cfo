@@ -93,12 +93,13 @@ export function canClosePeriod(role: string | null | undefined, hasSmmm: boolean
 
 /**
  * Who may give which role when inviting, mirrored from `_INVITER_MAY_GRANT` in `backend/app/api/org.py`
- * (and checked against it by `src/__tests__/roles.test.ts`): only an owner makes an owner or an admin;
+ * (and checked against it by `src/__tests__/roles.test.ts`): only an owner makes an admin, and nobody
+ * invites an owner (one owner per company; transferring ownership is a separate action);
  * an admin may invite cfo, smmm, analyst and viewer. Anyone else may not invite at all. The order is
  * the order the invite form lists them in.
  */
 export const INVITER_MAY_GRANT: Record<string, readonly string[]> = {
-  owner: ["admin", "cfo", "smmm", "analyst", "viewer", "owner"],
+  owner: ["admin", "cfo", "smmm", "analyst", "viewer"],
   admin: ["cfo", "smmm", "analyst", "viewer"],
 };
 

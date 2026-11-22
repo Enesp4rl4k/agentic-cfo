@@ -185,7 +185,7 @@ http://localhost:3000.
 - **Anomaly detection** — duplicate payments, unusual amounts, vendor concentration
 
 ### Platform
-- **Multi-tenant workspaces** — invite team members, role-based access (owner/admin/analyst/viewer)
+- **Multi-tenant workspaces** — invite team members, role-based access (owner/admin/cfo/smmm/analyst/viewer; one owner per company, who invites everyone else)
 - **NextAuth.js authentication** — JWT, refresh tokens, API key support
 - **OCR pipeline** — PyMuPDF + pdfplumber + Tesseract for PDF invoices
 - **Turkish accounting parsers** — Logo Tiger, Paraşüt, GİB e-Fatura, Akbank, Garanti, İş Bankası

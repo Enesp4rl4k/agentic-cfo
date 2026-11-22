@@ -11,6 +11,7 @@ from sqlalchemy import select
 
 from app.models.organization import Organization, OrgInvite, OrgMembership
 from app.models.user import User
+from app.services.secret_tokens import hash_token
 from tests.api_helpers import PAROLA, bellek_istemcisi, kullanici
 from tests.test_route_authorisation import _company
 
@@ -134,7 +135,7 @@ async def test_invite_role_is_validated_and_bounded_by_the_inviter(client) -> No
 async def test_an_invite_with_a_stored_junk_role_is_refused_not_500(client) -> None:
     org_id, _ = await _company(client, "zeta", roles=())
     async with client._maker() as db:
-        db.add(OrgInvite(org_id=org_id, email="j@x.com", role="superuser", token="t" * 64,
+        db.add(OrgInvite(org_id=org_id, email="j@x.com", role="superuser", token_hash=hash_token("t" * 64),
                          expires_at=datetime.now(UTC) + timedelta(days=1)))
         await db.commit()
     r = await client.post(f"{P}/org/invite/accept", json={"token": "t" * 64, "password": PAROLA})
