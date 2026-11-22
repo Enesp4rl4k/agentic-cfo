@@ -337,6 +337,7 @@ async def _outbox_rows(client):
 async def test_an_unlinked_sender_gets_no_reply_at_all(client, monkeypatch):
     """No verified chat-to-user link exists: nobody is answered, nothing reaches the outbox."""
     monkeypatch.setattr(get_settings(), "whatsapp_app_secret", "s3cret")
+    monkeypatch.setattr(get_settings(), "whatsapp_verify_token", "vt")
     monkeypatch.setattr(get_settings(), "slack_signing_secret", "slacksecret")
     wa = _wa_payload("905551112233", "nakit")
     r = await client.post(f"{P}/webhooks/whatsapp", content=wa,
@@ -359,6 +360,7 @@ async def test_a_linked_member_gets_one_figure_free_reply_through_the_outbox(cli
 
     monkeypatch.setattr(bot_webhooks, "resolve_linked_member", linked)
     monkeypatch.setattr(get_settings(), "whatsapp_app_secret", "s3cret")
+    monkeypatch.setattr(get_settings(), "whatsapp_verify_token", "vt")
     monkeypatch.setattr(get_settings(), "slack_signing_secret", "slacksecret")
     wa = _wa_payload("905551112233", "nakit")
     for _ in range(2):  # Meta retries: one reply

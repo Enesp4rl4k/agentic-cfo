@@ -7,7 +7,9 @@ own: missing data is shown as missing. This guard fails on a NEW
 * sample company or person name (`Acme`, `TechNova`, `Örnek A.Ş.` ...),
 * constant "healthy" status: a dict value, for a status-like key, that is the literal `healthy`,
   `Stabil`, `implemented`, ... (a computed or conditional status is not constant),
-* `random` / `faker` import (a stochastic model seeded from real inputs is the only legitimate use).
+* `random` / `faker` import (a stochastic model seeded from real inputs is the only legitimate use),
+* numeric default-on-missing for a business input (`x.get("revenue", 50000)`, `... or 12.0`,
+  `a if known else 50000`): a missing input stays missing and the computation says "cannot compute".
 
 Docstrings and comments are not scanned. Demo modules (the labelled sample company) and
 `app/services/eval_harness.py` (test cases for the evaluator) are exempt by path. Like the other fitness
@@ -32,8 +34,13 @@ _NAME = re.compile(r"\bAcme\b|\bTechNova\b|Örnek (?:A\.Ş|Şirket|Ltd)|\bFoo\s?
 _STATUS_KEYS = {"status", "health", "health_status", "state", "financial_health", "durum", "saglik"}
 _CONSTANT_OK = {"healthy", "stabil", "stabil ✅", "stable", "implemented", "secure", "all good", "passed"}
 _RANDOM = {"random", "faker"}
+_BUSINESS_KEY = re.compile(
+    r"revenue|opex|cash|runway|burn|salary|headcount|churn|roas|cac|margin|balance|turnover|attrition|"
+    r"cost|price|income|expense|ebitda|debt|payroll|employees|health|waste|fx|rate|tax|amount",
+    re.I,
+)
 
-# Each entry: path -> {rule: reason}. Rules: "amount", "name", "status", "random".
+# Each entry: path -> {rule: reason}. Rules: "amount", "name", "status", "random", "default".
 ALLOWED: dict[str, dict[str, str]] = {
     "app/services/monte_carlo.py": {"random": "Monte Carlo draws from the caller's real inputs and volatility"},
     "app/agents/orchestration/anomaly_ml_service.py": {"random": "seeded bootstrap of real anomaly scores"},
@@ -43,6 +50,10 @@ ALLOWED: dict[str, dict[str, str]] = {
     "app/config.py": {"name": "demo_company_name default; used only when demo mode is switched on by the environment"},
     "app/services/agent_memory.py": {"amount": "false positive: SQL text with a column list, no amount"},
     "app/services/ocr_service.py": {"amount": "regex replacement that normalises 'TL' in scanned text"},
+    "app/agents/orchestration/auto_chain.py": {"default": "default chosen so a missing value never fires the feedback rule"},
+    "app/agents/pnl_agent.py": {"default": "confidence of the computation itself, not a company figure"},
+    "app/services/cascade_simulator.py": {"default": "confidence label of the simulation, not a company figure"},
+    "app/services/multidomain_counterfactual.py": {"default": "role coefficient table of the model, not company data"},
 }
 
 
@@ -56,8 +67,16 @@ def _docstrings(tree: ast.AST) -> set[int]:
     return ids
 
 
+def _is_number(node: ast.AST) -> bool:
+    return (
+        isinstance(node, ast.Constant) and isinstance(node.value, (int, float))
+        and not isinstance(node.value, bool) and node.value not in (0, 1, -1)
+    )
+
+
 def _scan(path: Path) -> dict[str, list[tuple[int, str]]]:
-    tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"), str(path))
+    text = path.read_text(encoding="utf-8", errors="replace")
+    tree = ast.parse(text, str(path))
     docs = _docstrings(tree)
     hits: dict[str, list[tuple[int, str]]] = {}
 
@@ -78,7 +97,16 @@ def _scan(path: Path) -> dict[str, list[tuple[int, str]]]:
                     and value.value.lower() in _CONSTANT_OK
                 ):
                     add("status", value, f"{key.value}: {value.value}")
-        elif isinstance(node, ast.Import):
+        if (
+            (isinstance(node, ast.BoolOp) and isinstance(node.op, ast.Or) and _is_number(node.values[-1]))
+            or (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "get"
+                and len(node.args) == 2 and _is_number(node.args[1]))
+            or (isinstance(node, ast.Assign) and isinstance(node.value, ast.IfExp) and _is_number(node.value.orelse))
+        ):
+            segment = ast.get_source_segment(text, node) or ""
+            if _BUSINESS_KEY.search(segment):
+                add("default", node, segment)
+        if isinstance(node, ast.Import):
             for alias in node.names:
                 if alias.name.split(".")[0] in _RANDOM:
                     add("random", node, alias.name)
@@ -131,3 +159,12 @@ def test_the_guard_catches_what_the_bot_gateway_used_to_say(tmp_path: Path) -> N
         encoding="utf-8",
     )
     assert set(_scan(sample)) == {"amount", "name", "status", "random"}
+    stand_in = tmp_path / "stand_in.py"
+    stand_in.write_text(
+        "def f(chro):\n"
+        "    a = chro.get('avg_monthly_salary_try', 30000)\n"
+        "    b = chro.get('total_headcount') or 50\n"
+        "    return a, b\n",
+        encoding="utf-8",
+    )
+    assert [line for line, _ in _scan(stand_in)["default"]] == [2, 3]

@@ -136,6 +136,36 @@ describe("Karar Paketi paneli", () => {
     dec.measureOutcome.mockReset();
   });
 
+  it("shows an option the data cannot answer as unavailable, with its reason and no figure", async () => {
+    packet.getDecisionPacket.mockResolvedValue({
+      ...full,
+      options: [
+        ...full.options,
+        {
+          id: "preset_9",
+          label: "Fiyat Artışı Örneği",
+          description: "x",
+          baseline: false,
+          available: false,
+          unavailable_reason: "Beklenen müşteri kaybı varsayımı sizden gelmeli",
+          base_net_impact: null,
+          breakeven_months: null,
+          cashflow_risk: null,
+          runway_after: null,
+          assumptions: [],
+          recommendation: null,
+          engine: "counterfactual",
+          scenarios: [],
+        },
+      ],
+    });
+    renderWithQuery(<DecisionPacketPanel jobId="job-1" />);
+    const optionsSection = within(await screen.findByLabelText("Seçenekler"));
+    expect(optionsSection.getByText("Fiyat Artışı Örneği")).toBeInTheDocument();
+    expect(optionsSection.getByText(/Hesaplanamadı: Beklenen müşteri kaybı/)).toBeInTheDocument();
+    expect(optionsSection.getByText("Hesaplanamadı")).toBeInTheDocument();
+  });
+
   it("answers the four questions on one screen", async () => {
     packet.getDecisionPacket.mockResolvedValue(full);
     renderWithQuery(<DecisionPacketPanel jobId="job-1" />);

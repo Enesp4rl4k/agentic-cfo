@@ -771,11 +771,10 @@ async def _purge_expired_guests(db: Any, *, ttl_hours: int) -> int:
     """
     from datetime import UTC, datetime, timedelta
 
-    from sqlalchemy import or_, select
+    from sqlalchemy import select
 
     from app.models.organization import Organization
     from app.services.demo_template import (
-        GUEST_DESCRIPTION,
         GUEST_SLUG_RE,
         is_guest_org,
         purge_demo_workspace,
@@ -786,10 +785,7 @@ async def _purge_expired_guests(db: Any, *, ttl_hours: int) -> int:
         await db.execute(
             select(Organization).where(
                 Organization.created_at < cutoff,
-                or_(
-                    Organization.slug.like("demo-%"),
-                    Organization.description == GUEST_DESCRIPTION,
-                ),
+                Organization.is_demo_guest.is_(True),
             )
         )
     ).scalars().all()

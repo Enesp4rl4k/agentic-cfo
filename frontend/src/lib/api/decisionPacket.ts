@@ -22,8 +22,11 @@ export interface PacketOption {
   label: string;
   description: string;
   baseline: boolean;
-  /** 12-month net effect in kuruş (0 for the baseline by definition). */
-  base_net_impact: number;
+  /** False when the company's data cannot answer this option; `unavailable_reason` says why. */
+  available?: boolean;
+  unavailable_reason?: string | null;
+  /** 12-month net effect in kuruş (0 for the baseline by definition; null when unavailable). */
+  base_net_impact: number | null;
   breakeven_months: number | null;
   cashflow_risk: string | null;
   /** Only the baseline carries a runway figure — the engine never guesses one. */

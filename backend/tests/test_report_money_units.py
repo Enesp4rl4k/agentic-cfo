@@ -73,7 +73,7 @@ def test_cascade_simulator_reads_report_scalars_as_lira() -> None:
     )
     assert sim.monthly_revenue == 1_000_000      # 12M lira / 12 — not 10_000
     assert sim.monthly_opex == 500_000           # 6M lira / 12 — not 5_000
-    assert sim.cash_balance == 1_800_000         # |−300k| × 6 ay, lira — not 18_000
+    assert sim.cash_balance is None              # never derived as |net change| × runway: cash comes from the proven balance
 
 
 def test_cascade_simulator_kwargs_are_kurus() -> None:

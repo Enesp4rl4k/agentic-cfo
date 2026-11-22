@@ -48,6 +48,10 @@ async def test_dashboard_has_no_invented_iso_score_and_unreadable_data_is_unknow
     assert data["frameworks"]["sox"] == {"score": None, "status": "unknown"}
     sox = (await client.get(f"{P}/compliance/sox/status", headers=headers)).json()["data"]
     assert sox["section_404"]["status"] == "unknown" and sox["sox_score"] is None
+    # Unknown means unknown everywhere: no zero count, no "no control gap" next to it.
+    assert sox["section_404"]["critical_anomalies"] is None
+    assert sox["section_404"]["internal_control_gap"] is None and sox["section_404"]["action_required"] is None
+    assert sox["section_409"]["action_required"] is None
     assert sox["section_409"]["status"] == "unknown"
 
 

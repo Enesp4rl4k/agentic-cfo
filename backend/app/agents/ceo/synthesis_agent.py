@@ -89,11 +89,12 @@ def _detect_cross_risks(
 
     # Internal Audit inputs (optional)
     audit                   = audit or {}
-    audit_health_score      = audit.get("audit_health_score", 100.0)
-    audit_maturity          = audit.get("maturity_level", "optimised")
+    # No audit data is "unknown", never a perfect audit: a risk rule fires only on a measured value.
+    audit_health_score      = audit.get("audit_health_score")
+    audit_maturity          = audit.get("maturity_level") or "unknown"
     open_critical_findings  = audit.get("open_critical_findings", 0)
     ineffective_controls    = audit.get("ineffective_controls_count", 0)
-    audit_coverage          = audit.get("coverage_rate", 1.0)
+    audit_coverage          = audit.get("coverage_rate")
 
     # ── Risk 1: Infra waste while cash is short ────────────────────────────────
     if infra_waste > 0 and runway is not None and runway <= 6:
@@ -475,7 +476,7 @@ def _detect_cross_risks(
         })
 
     # ── Risk 22 (Internal Audit): Low audit coverage + high-risk business ─────
-    if audit_coverage < 0.60 and fin.get("revenue_cents", 0) > 1_000_000 * 100:
+    if audit_coverage is not None and audit_coverage < 0.60 and fin.get("revenue_cents", 0) > 1_000_000 * 100:
         risks.append({
             "risk_id": "cross-audit-coverage-revenue",
             "title": "Insufficient audit coverage for revenue-generating business size",
@@ -698,8 +699,8 @@ def _condense_audit_summary(audit_state: dict[str, Any]) -> dict[str, Any]:
     summary  = audit_state.get("audit_summary") or {}
 
     return {
-        "audit_health_score":        summary.get("audit_health_score", 100.0),
-        "maturity_level":            summary.get("maturity_level", "optimised"),
+        "audit_health_score":        summary.get("audit_health_score"),
+        "maturity_level":            summary.get("maturity_level"),
         "open_critical_findings":    findings.get("open_critical", 0),
         "overdue_findings":          findings.get("overdue_count", 0),
         "repeat_findings":           findings.get("repeat_findings", 0),

@@ -167,8 +167,10 @@ class Settings(BaseSettings):
     twilio_auth_token: str = ""
     twilio_whatsapp_from: str = ""  # e.g. "whatsapp:+14155238886"
 
-    # WhatsApp webhook verification token (self-chosen, set same in Meta console)
-    whatsapp_verify_token: str = "agentic-cfo-verify"
+    # WhatsApp webhook verification token (self-chosen, set same in Meta console). No default: a public
+    # default let anyone pass the verification handshake. Unset (or no app secret) = the WhatsApp webhook is
+    # disabled (404) and startup says so.
+    whatsapp_verify_token: str = ""
 
     # Slack Bot (for Events API and chat.postMessage)
     slack_bot_token: str = ""  # xoxb-...

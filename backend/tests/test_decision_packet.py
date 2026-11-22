@@ -226,7 +226,7 @@ async def test_packet_and_scenarios_endpoint_agree(client):
     packet_presets = [
         (o["label"], o["base_net_impact"])
         for o in packet.json()["data"]["options"]
-        if not o["baseline"]
+        if not o["baseline"] and o.get("available", True)
     ]
     endpoint_presets = [
         (s["label"], s["base_net_impact"])
@@ -235,6 +235,10 @@ async def test_packet_and_scenarios_endpoint_agree(client):
     # Aynı paylaşılan preset kurucusu → aynı etiketler ve aynı sonuçlar.
     assert packet_presets == endpoint_presets
     assert len(packet_presets) >= 1
+    # What the data cannot answer is listed with its reason by both, never as a figure.
+    unavailable = [o for o in packet.json()["data"]["options"] if o.get("available") is False]
+    assert unavailable and all(o["unavailable_reason"] and o["base_net_impact"] is None for o in unavailable)
+    assert len(scenarios.json()["data"]["unavailable"]) == len(unavailable)
 
 
 # ── Birim sınırı: saklanan rapor lira, bu yol kuruş ─────────────────────────

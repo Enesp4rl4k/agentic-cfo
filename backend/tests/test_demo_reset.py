@@ -187,6 +187,7 @@ async def test_ttl_purge_only_expired_guests(test_client):
             name="TechNova Yazılım A.Ş.",
             slug="demo-0123456789ab",
             description=GUEST_DESCRIPTION,
+            is_demo_guest=True,
             created_at=datetime.now(UTC) - timedelta(hours=48),
             **_regional_defaults("TR"),
         )
@@ -242,6 +243,7 @@ async def test_ttl_purge_only_expired_guests(test_client):
             name="TechNova Yazılım A.Ş.",
             slug="demo-fedcba987654",
             description=GUEST_DESCRIPTION,
+            is_demo_guest=True,
             **_regional_defaults("TR"),
         )
         db.add(fresh_guest)

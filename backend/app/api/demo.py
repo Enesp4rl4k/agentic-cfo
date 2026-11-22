@@ -132,6 +132,7 @@ async def create_demo_guest(db: AsyncSession = Depends(get_db)) -> dict[str, Any
         name=settings.demo_company_name,
         slug=f"demo-{suffix}",
         description=GUEST_DESCRIPTION,
+        is_demo_guest=True,
         **_regional_defaults("TR"),
     )
     db.add(org)
@@ -379,8 +380,15 @@ async def get_demo_status(
     except Exception:
         job = None
 
+    from app.config import get_settings
+    from app.models.organization import Organization
+    from app.services.demo_template import is_guest_org
+
+    org = await db.get(Organization, org_id)
     return {
         "data": {
+            # The one-click demo is offered only when demo mode is on AND this is a guest workspace.
+            "demo_available": bool(get_settings().demo_mode and org is not None and is_guest_org(org)),
             "has_demo":  job is not None,
             "job_id":    job.id if job else None,
             "status":    job.status if job else None,

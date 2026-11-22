@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Loader2, ArrowRight, FileSpreadsheet, Activity } from "lucide-react";
@@ -8,6 +8,10 @@ import { useI18n } from "@/hooks/useI18n";
 
 export function QuickDemoBanner({ accessToken }: { accessToken?: string }) {
   const [loading, setLoading] = useState(false);
+  // The banner exists only for a guest demo workspace with demo mode on: the API says so
+  // (`demo_available`); it never shows for a real company's workspace.
+  const [available, setAvailable] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   const { t } = useI18n();
   // Parent-provided token wins; otherwise fall back to the NextAuth session.
@@ -18,8 +22,25 @@ export function QuickDemoBanner({ accessToken }: { accessToken?: string }) {
 
   const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    fetch(`${API_BASE}/api/v1/demo/status`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => {
+        if (!cancelled) setAvailable(json?.data?.demo_available === true);
+      })
+      .catch(() => {
+        if (!cancelled) setAvailable(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, API_BASE]);
+
   const handleStartDemo = async () => {
     setLoading(true);
+    setError(null);
     try {
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (token) headers.Authorization = `Bearer ${token}`;
@@ -37,14 +58,18 @@ export function QuickDemoBanner({ accessToken }: { accessToken?: string }) {
           return;
         }
       }
-      router.push("/cfo");
+      // A refusal is said, not hidden behind a redirect to an empty page.
+      setError("Demo başlatılamadı.");
     } catch (err) {
       console.error("Demo seed failed", err);
-      router.push("/cfo");
+      setError("Demo başlatılamadı.");
     } finally {
       setLoading(false);
     }
   };
+
+  // Hidden unless the API says the demo applies here (after every hook).
+  if (!available) return null;
 
   return (
     <div className="rounded-lg border border-border bg-card p-6 shadow-sm">
@@ -75,7 +100,12 @@ export function QuickDemoBanner({ accessToken }: { accessToken?: string }) {
           </div>
         </div>
 
-        <div className="flex shrink-0 items-center">
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          {error && (
+            <p role="alert" className="text-xs text-red-500">
+              {error}
+            </p>
+          )}
           <button
             onClick={handleStartDemo}
             disabled={loading}

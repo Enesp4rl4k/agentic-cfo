@@ -12,6 +12,7 @@ import hashlib
 import hmac
 import json
 import logging
+import time
 import uuid
 from typing import Any
 
@@ -29,6 +30,12 @@ logger = logging.getLogger(__name__)
 
 # ── WhatsApp Hub Verification ─────────────────────────────────────────────────
 
+def _require_whatsapp_enabled(settings: Any) -> None:
+    """Closed, not open: without a verify token and an app secret the WhatsApp webhook does not exist."""
+    if not (settings.whatsapp_verify_token and settings.whatsapp_app_secret):
+        raise HTTPException(status_code=404, detail="Not found")
+
+
 @router.get("/webhooks/whatsapp")
 async def whatsapp_verify(
     hub_mode: str = Query(None, alias="hub.mode"),
@@ -40,7 +47,8 @@ async def whatsapp_verify(
     Meta calls this GET endpoint once when you register the webhook URL.
     """
     settings = get_settings()
-    if hub_mode == "subscribe" and hub_verify_token == settings.whatsapp_verify_token:
+    _require_whatsapp_enabled(settings)
+    if hub_mode == "subscribe" and hmac.compare_digest(hub_verify_token or "", settings.whatsapp_verify_token):
         logger.info("WhatsApp webhook verified.")
         return Response(content=hub_challenge, media_type="text/plain")
     raise HTTPException(status_code=403, detail="Verification failed.")
@@ -58,10 +66,8 @@ async def whatsapp_inbound(request: Request, db: AsyncSession = Depends(get_db))
     anyone could post a message as any sender and have the bot answer it.
     """
     settings = get_settings()
+    _require_whatsapp_enabled(settings)
     body_bytes = await request.body()
-    if not settings.whatsapp_app_secret:
-        # Closed, not open: an unconfigured secret is not permission to skip it.
-        raise HTTPException(status_code=503, detail="WhatsApp webhook yapılandırılmamış (WHATSAPP_APP_SECRET).")
     expected = "sha256=" + hmac.new(
         settings.whatsapp_app_secret.encode(), body_bytes, hashlib.sha256
     ).hexdigest()
@@ -114,8 +120,16 @@ async def whatsapp_inbound(request: Request, db: AsyncSession = Depends(get_db))
 
 # ── Slack Events API ──────────────────────────────────────────────────────────
 
+SLACK_MAX_SKEW_SECONDS = 300  # Slack's own guidance: refuse a request older (or newer) than five minutes
+
+
 def _verify_slack_signature(request_body: bytes, timestamp: str, signature: str, signing_secret: str) -> bool:
-    """Verify Slack request using HMAC-SHA256 signing secret."""
+    """Verify a Slack request: HMAC-SHA256 over the body, and a timestamp within ±5 minutes (replay protection)."""
+    try:
+        if abs(time.time() - int(timestamp)) > SLACK_MAX_SKEW_SECONDS:
+            return False
+    except ValueError:
+        return False
     base = f"v0:{timestamp}:{request_body.decode('utf-8')}"
     expected = "v0=" + hmac.new(
         signing_secret.encode(), base.encode(), hashlib.sha256

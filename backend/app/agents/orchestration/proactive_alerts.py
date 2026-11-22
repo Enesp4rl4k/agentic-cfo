@@ -261,32 +261,46 @@ class ProactiveAlertOrchestrator:
     async def _run_cascade_and_alert(
         self, org_id: str, kri: dict[str, Any]
     ) -> AlertEvent | None:
-        """KRI icin cascade simülasyonu calistir, alert olustur."""
+        """KRI icin cascade simulasyonu calistir, alert olustur.
+
+        An alert is raised only from measured inputs. When the simulation lacks one the scan records
+        "skipped: missing <inputs>" (visible to owner/admin in the alert history) and sends nothing.
+        """
         try:
-            from app.services.cascade_simulator import TriggerType, get_cascade_simulator
+            from app.services.cascade_inputs import measured_baseline
+            from app.services.cascade_simulator import (
+                CascadeInputsMissing,
+                TriggerType,
+                get_cascade_simulator,
+            )
             trigger_str = kri.get("cascade_trigger", "")
             try:
                 trigger = TriggerType(trigger_str)
             except ValueError:
                 return None
 
-            # CompanyContext'ten veri al
             from app.services.company_context import get_company_context
-            ctx      = await get_company_context(org_id) or {}
-            results  = ctx.get("agent_results") or {}
-            cfo_r    = results.get("cfo") or {}
-            sim      = get_cascade_simulator(
+            ctx = await get_company_context(org_id, self.db)
+            cfo_r = (getattr(ctx, "last_cfo_result", None) or {}) if ctx else {}
+            cfo_r = cfo_r.get("dashboard") or cfo_r
+            baseline = await measured_baseline(self.db, org_id) if self.db is not None else {}
+            sim = get_cascade_simulator(
                 pnl      = cfo_r.get("pnl"),
                 cashflow = cfo_r.get("cashflow"),
                 forecast = cfo_r.get("forecast"),
-                chro_data = results.get("chro"),
-                cto_data  = results.get("cto"),
-                cmo_data  = results.get("cmo"),
-                coo_data  = results.get("coo"),
+                chro_data = getattr(ctx, "last_chro_result", None) if ctx else None,
+                cto_data  = getattr(ctx, "last_cto_result", None) if ctx else None,
+                cmo_data  = getattr(ctx, "last_cmo_result", None) if ctx else None,
+                coo_data  = getattr(ctx, "last_coo_result", None) if ctx else None,
+                **baseline,
             )
-            params   = kri.get("cascade_params") or {}
-            cascade  = sim.simulate(trigger, **params)
-            base_sc  = cascade.base_scenario
+            params = kri.get("cascade_params") or {}
+            try:
+                cascade = sim.simulate(trigger, **params)
+            except CascadeInputsMissing as exc:
+                await self._record_skipped(org_id, kri, exc.missing)
+                return None
+            base_sc = cascade.base_scenario
 
             if base_sc.overall_risk_score < 40:
                 return None  # Dusuk risk → alert olusturma
@@ -295,6 +309,10 @@ class ProactiveAlertOrchestrator:
             body  = cascade.executive_summary + "\n\n**Acil Aksiyonlar:**\n"
             for a in cascade.immediate_actions[:3]:
                 body += f"• {a}\n"
+            body += (
+                "\nDayanak: şirketin kanıtlı kasa bakiyesi ve ledger verisi; çalışan sayısı veya maaş "
+                "verisi yoksa o kısımlar hesaba katılmadı."
+            )
 
             return AlertEvent(
                 alert_id   = str(uuid.uuid4()),
@@ -312,8 +330,15 @@ class ProactiveAlertOrchestrator:
                 created_at = time.time(),
             )
         except Exception as exc:
-            logger.debug("Cascade alert olusturma hatasi: %s", exc)
+            logger.warning("Cascade alert olusturma hatasi: %s", exc)
             return None
+
+    async def _record_skipped(self, org_id: str, kri: dict[str, Any], missing: list[str]) -> None:
+        """Log "skipped: missing <inputs>" (owner/admin see it in the alert history). Nothing is sent."""
+        if self.db:
+            from app.services.scan_skips import record_skipped
+
+            await record_skipped(self.db, org_id, str(kri.get("name", "")), missing)
 
     async def _create_upcoming_alert(
         self, org_id: str, kri: dict[str, Any]

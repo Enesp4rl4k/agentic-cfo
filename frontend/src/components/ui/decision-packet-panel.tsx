@@ -202,6 +202,11 @@ function OptionsTable({ options }: { options: PacketOption[] }) {
                       </Badge>
                     )}
                   </span>
+                  {o.available === false && (
+                    <span className="mt-0.5 block text-[11px] font-normal leading-snug text-muted-foreground">
+                      Hesaplanamadı: {o.unavailable_reason ?? "veri yok"}
+                    </span>
+                  )}
                   {o.assumptions.length > 0 && (
                     <span className="mt-0.5 block text-[11px] font-normal leading-snug text-muted-foreground">
                       {o.assumptions.join(" · ")}
@@ -212,10 +217,15 @@ function OptionsTable({ options }: { options: PacketOption[] }) {
                   className={cn(
                     "px-3 py-2 text-right tabular-nums",
                     !o.baseline &&
+                      o.base_net_impact != null &&
                       (o.base_net_impact >= 0 ? "text-emerald-500" : "text-red-400")
                   )}
                 >
-                  {o.baseline ? `${fmtTL(0)} (referans)` : fmtTL(o.base_net_impact)}
+                  {o.baseline
+                    ? `${fmtTL(0)} (referans)`
+                    : o.base_net_impact == null
+                      ? "Hesaplanamadı"
+                      : fmtTL(o.base_net_impact)}
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">
                   {o.breakeven_months != null ? `${o.breakeven_months} ay` : "—"}
@@ -456,7 +466,7 @@ function DecisionRecorder({
             className="h-8 rounded-md border bg-background px-2 text-xs"
           >
             <option value="">Seçenek seçin…</option>
-            {options.map((o) => (
+            {options.filter((o) => o.available !== false).map((o) => (
               <option key={o.id} value={o.id}>
                 {o.label}
               </option>

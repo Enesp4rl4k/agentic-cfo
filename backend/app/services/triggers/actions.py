@@ -178,7 +178,12 @@ async def _cascade_simulate(
     ``action_params.trigger``. Trigger-specific params (``runway_months``,
     ``drop_pct``, ``role``, …) are passed through to the simulator.
     """
-    from app.services.cascade_simulator import TriggerType, get_cascade_simulator
+    from app.services.cascade_inputs import measured_baseline
+    from app.services.cascade_simulator import (
+        CascadeInputsMissing,
+        TriggerType,
+        get_cascade_simulator,
+    )
     from app.services.company_context import get_company_context
 
     raw_trigger = str(definition.action_params.get("trigger") or "").strip()
@@ -204,9 +209,12 @@ async def _cascade_simulate(
         "cmo_data": (ctx_obj.last_cmo_result or {}) if ctx_obj else {},
         "coo_data": (ctx_obj.last_coo_result or {}) if ctx_obj else {},
     }
-    sim = get_cascade_simulator(**ctx)
+    sim = get_cascade_simulator(**ctx, **await measured_baseline(db, org_id))
     kwargs = {k: definition.action_params[k] for k in _SIMULATE_KWARGS if k in definition.action_params}
-    result = sim.simulate(trigger, **kwargs)
+    try:
+        result = sim.simulate(trigger, **kwargs)
+    except CascadeInputsMissing as exc:
+        return {"trigger": trigger.value, "result": None, "unavailable": exc.missing}
     return {"trigger": trigger.value, "result": result.to_dict()}
 
 

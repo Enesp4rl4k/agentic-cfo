@@ -360,11 +360,13 @@ def _build_slides(
                 "label": "Cloud Israfı",
                 "value": _fmt_currency(infra_waste),
                 "sub": waste_opp.get("opportunity", ""),
-                "confidence": waste_opp.get("confidence", 0.82),
+                "confidence": waste_opp.get("confidence"),
             },
             {
                 "label": "Teknik Borç",
-                "value": f"{tech.get('debt_score', 5.0):.1f}/10",
+                "value": (
+                    f"{tech['debt_score']:.1f}/10" if tech.get("debt_score") is not None else "bilinmiyor"
+                ),
             },
             {
                 "label": "MTTR",

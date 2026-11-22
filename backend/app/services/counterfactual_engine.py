@@ -90,6 +90,14 @@ class CounterfactualResult:
 
 # ── Counterfactual Engine ─────────────────────────────────────────────────────
 
+class CounterfactualInputsMissing(Exception):
+    """A what-if cannot run: the company's data lacks inputs it needs (`missing` names them)."""
+
+    def __init__(self, missing: list[str]) -> None:
+        super().__init__("hesaplanamıyor, eksik: " + ", ".join(missing))
+        self.missing = missing
+
+
 class CounterfactualEngine:
     """
     Şirket verisine dayalı "ne olurdu?" simülasyonu.
@@ -107,23 +115,39 @@ class CounterfactualEngine:
         self.cashflow = cashflow or {}
         self.forecast = forecast or {}
 
-        # Temel metrikler (kuruş → TRY dönüşümü)
-        self.monthly_revenue  = (self.pnl.get("revenue", 0) or 0) / 100 / 12
-        self.monthly_opex     = (self.pnl.get("total_opex", 0) or 0) / 100 / 12
-        self.net_margin       = self.pnl.get("net_margin", 0) or 0
-        self.monthly_net_cash = (self.cashflow.get("net_change", 0) or 0) / 100 / 12
+        # Temel metrikler (kuruş → TRY dönüşümü). A figure the data does not carry is missing, not zero:
+        # `_need` refuses to compute from it.
+        self.absent: set[str] = set()
+
+        def known(source: dict[str, Any], key: str, name: str) -> float:
+            value = source.get(key)
+            if value is None:
+                self.absent.add(name)
+                return 0.0
+            return float(value)
+
+        self.monthly_revenue  = known(self.pnl, "revenue", "gelir") / 100 / 12
+        self.monthly_opex     = known(self.pnl, "total_opex", "gider") / 100 / 12
+        self.net_margin       = float(self.pnl.get("net_margin") or 0)
+        self.monthly_net_cash = known(self.cashflow, "net_change", "nakit akışı") / 100 / 12
 
         # Nakit ömrü (runway)
         base_sc = (self.forecast.get("scenarios") or {}).get("base") or {}
         self.runway_months = base_sc.get("runway_months")
+
+    def _need(self, *names: str) -> None:
+        """Refuse to compute from inputs the company's data does not carry."""
+        missing = [n for n in names if n in self.absent]
+        if missing:
+            raise CounterfactualInputsMissing(missing)
 
     # ── S6-2: Personel değişimi simülasyonu ──────────────────────────────────
 
     def simulate_headcount_change(
         self,
         delta: int,                        # pozitif = artış, negatif = azaltım
-        avg_monthly_salary_try: float,     # brüt aylık maaş
-        productivity_gain_pct: float = 0.10,  # verimlilik/gelir artışı tahmini
+        avg_monthly_salary_try: float,     # brüt aylık maaş (kullanıcı girdisi)
+        productivity_gain_pct: float,      # verimlilik/gelir artışı varsayımı (kullanıcı girdisi)
         onboarding_months: int = 2,        # tam verime ulaşma süresi
         horizon_months: int = 12,
     ) -> CounterfactualResult:
@@ -135,6 +159,7 @@ class CounterfactualEngine:
           Gelir artışı = mevcut_gelir × productivity_gain × ramp_up_faktörü
           Net etki = Gelir artışı - Maliyet artışı
         """
+        self._need("gelir", "gider")
         SGK_RATE = 0.225  # işveren SGK payı
         monthly_cost = delta * avg_monthly_salary_try * (1 + SGK_RATE)
         total_cost_12m = monthly_cost * horizon_months
@@ -189,7 +214,7 @@ class CounterfactualEngine:
 
         # Cashflow risk
         new_monthly_cash = self.monthly_net_cash + scenarios[1].cashflow_impact_monthly
-        if new_monthly_cash < 0 and (self.runway_months or 12) < 3:
+        if new_monthly_cash < 0 and self.runway_months is not None and self.runway_months < 3:
             cf_risk = "critical"
         elif new_monthly_cash < 0:
             cf_risk = "high"
@@ -229,9 +254,9 @@ class CounterfactualEngine:
             cashflow_risk=cf_risk,
             recommendation=recommendation,
             assumptions=[
-                f"Brüt maaş: ₺{avg_monthly_salary_try:,.0f}/ay",
+                f"Brüt maaş (girdi): ₺{avg_monthly_salary_try:,.0f}/ay",
                 f"SGK işveren payı: %{SGK_RATE*100:.0f}",
-                f"Verimlilik etkisi: %{productivity_gain_pct*100:.0f}",
+                f"Verimlilik etkisi (varsayım): %{productivity_gain_pct*100:.0f}",
                 f"Onboarding süresi: {onboarding_months} ay",
                 f"Ramp-up faktörü: {ramp_factor:.2f}",
             ],
@@ -260,8 +285,8 @@ class CounterfactualEngine:
         category_cost_monthly = (category_costs.get(target_category, 0) or 0) / 100 / 12
 
         if category_cost_monthly == 0:
-            # Kategori bulunamadı — toplam opex'in oransal payını varsay
-            category_cost_monthly = self.monthly_opex * 0.15
+            # No such category in the P&L: no share of total opex is guessed in its place.
+            raise CounterfactualInputsMissing([f"'{target_category}' gider kalemi"])
 
         monthly_saving = category_cost_monthly * reduction_pct
         total_saving_12m = monthly_saving * horizon_months - one_time_cost_try
@@ -329,10 +354,11 @@ class CounterfactualEngine:
     def simulate_price_increase(
         self,
         increase_pct: float,               # fiyat artışı (0.0-1.0)
-        churn_rate_increase: float = 0.05, # beklenen müşteri kaybı
+        churn_rate_increase: float,        # beklenen müşteri kaybı (kullanıcı varsayımı)
         horizon_months: int = 12,
     ) -> CounterfactualResult:
         """Fiyat artışı simülasyonu — gelir artışı vs. müşteri kaybı dengesi."""
+        self._need("gelir")
         current_monthly_revenue = self.monthly_revenue
 
         # Net gelir etkisi = (1 + fiyat_artışı) × (1 - churn) - 1
@@ -371,7 +397,7 @@ class CounterfactualEngine:
             recommendation=recommendation,
             assumptions=[
                 f"Fiyat artışı: %{increase_pct*100:.0f}",
-                f"Beklenen churn artışı: %{churn_rate_increase*100:.0f}",
+                f"Beklenen churn artışı (varsayım): %{churn_rate_increase*100:.0f}",
                 "Mevcut müşteri tabanı korunuyor varsayıldı",
                 "Rekabet tepkisi modellenmedi",
             ],
@@ -392,52 +418,61 @@ def get_counterfactual_engine(
     return CounterfactualEngine(pnl=pnl, cashflow=cashflow, forecast=forecast)
 
 
+@dataclass
+class PresetOutcome:
+    """One preset: its result, or why the data cannot answer it. Never a result built on a stand-in."""
+
+    label: str
+    result: CounterfactualResult | None
+    unavailable_reason: str | None = None
+
+
+def compute_presets(
+    pnl: dict[str, Any],
+    cashflow: dict[str, Any],
+    forecast: dict[str, Any],
+) -> list[PresetOutcome]:
+    """The "ne olurdu?" presets the product puts in front of a manager, each computed or marked unavailable.
+
+    Shared by the simulate endpoints and the decision packet: one definition of *which* options we offer.
+    A preset needs the company's own figures, and an assumption (a salary, a churn rate) is only ever the
+    user's input: none is filled in here. So:
+
+    - hiring needs the people's salary and a productivity assumption; the product holds neither: unavailable;
+    - the cost cut runs on the largest real opex line, the cut being the scenario named in its label;
+    - the price increase needs a churn assumption: unavailable.
+    """
+    engine = CounterfactualEngine(pnl=pnl, cashflow=cashflow, forecast=forecast)
+    opex = pnl.get("opex") or {}
+    outcomes: list[PresetOutcome] = [
+        PresetOutcome(
+            "2 Kişi İşe Alma", None,
+            "Çalışan sayısı, ortalama maaş ve verimlilik varsayımı gerekir; bu veri sistemde yok. "
+            "Maaşı ve varsayımı kendiniz girerek simülasyon çalıştırabilirsiniz.",
+        ),
+    ]
+    if opex:
+        top_cat = max(opex, key=lambda k: opex[k])
+        label = f"{top_cat.title()} %20 Kesinti"
+        try:
+            outcomes.append(PresetOutcome(
+                label, engine.simulate_cost_reduction(target_category=top_cat, reduction_pct=0.20),
+            ))
+        except CounterfactualInputsMissing as exc:
+            outcomes.append(PresetOutcome(label, None, str(exc)))
+    else:
+        outcomes.append(PresetOutcome("Gider Kesintisi", None, "Gider kalemleri (P&L) bulunamadı."))
+    outcomes.append(PresetOutcome(
+        "%10 Fiyat Artışı", None,
+        "Beklenen müşteri kaybı bir varsayımdır ve sizden gelmelidir; girerek simülasyon çalıştırabilirsiniz.",
+    ))
+    return outcomes
+
+
 def compute_preset_results(
     pnl: dict[str, Any],
     cashflow: dict[str, Any],
     forecast: dict[str, Any],
 ) -> list[tuple[str, CounterfactualResult]]:
-    """The three "ne olurdu?" presets the product puts in front of a manager.
-
-    Shared by the simulate endpoints and the decision packet — one
-    definition of *which* options we offer, so a packet row and its
-    deep-dive simulation can never disagree. A preset the data cannot
-    answer (missing category, degenerate inputs) is skipped, not fatal:
-    an option list shorter by one beats a 500 on the review screen.
-    """
-    engine = CounterfactualEngine(pnl=pnl, cashflow=cashflow, forecast=forecast)
-
-    # Average salary estimate — from the salary opex line and a headcount
-    # derived from total opex (kaba ama deterministik tahmin).
-    monthly_salary_total = (pnl.get("opex", {}).get("salary", 0) or 0) / 100 / 12
-    headcount_est = max(1, round(engine.monthly_opex * 0.4 / 30000))
-    avg_salary = monthly_salary_total / headcount_est if headcount_est > 0 else 50000
-
-    # Largest opex category — the cost-cut preset targets reality, not a
-    # hardcoded "rent".
-    opex = pnl.get("opex") or {}
-    top_cat = max(opex, key=lambda k: opex[k]) if opex else "rent"
-
-    presets: list[tuple[str, Any]] = [
-        (
-            "2 Kişi İşe Alma",
-            lambda: engine.simulate_headcount_change(
-                delta=2, avg_monthly_salary_try=max(avg_salary, 20000)
-            ),
-        ),
-        (
-            f"{top_cat.title()} %20 Kesinti",
-            lambda: engine.simulate_cost_reduction(
-                target_category=top_cat, reduction_pct=0.20
-            ),
-        ),
-        ("%10 Fiyat Artışı", lambda: engine.simulate_price_increase(increase_pct=0.10)),
-    ]
-
-    results: list[tuple[str, CounterfactualResult]] = []
-    for label, run in presets:
-        try:
-            results.append((label, run()))
-        except Exception:
-            continue
-    return results
+    """Only the presets the data can answer (see `compute_presets` for the others and their reasons)."""
+    return [(o.label, o.result) for o in compute_presets(pnl, cashflow, forecast) if o.result is not None]

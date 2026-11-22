@@ -211,10 +211,10 @@ async def sox_status(
             "unknown" if not critical_known
             else "clean" if critical_cnt == 0 else "material_weakness"
         ),
-        "critical_anomalies":   critical_cnt,
+        "critical_anomalies":   anomaly_data["critical_unacked"],   # None = unknown, not zero
         "medium_anomalies":     anomaly_data["medium_count"],
-        "internal_control_gap": critical_cnt > 0,
-        "action_required":      critical_cnt > 0,
+        "internal_control_gap": (critical_cnt > 0) if critical_known else None,
+        "action_required":      (critical_cnt > 0) if critical_known else None,
         "description": (
             "Anomali verisi okunamadı; iç kontrol durumu bilinmiyor" if not critical_known
             else "Son 30 günde kritik anomali yok" if critical_cnt == 0
@@ -227,7 +227,7 @@ async def sox_status(
         "status":          "no_triggers" if critical_known else "unknown",
         "triggers":        [],
         "disclosure_window_days": 4,
-        "action_required": False,
+        "action_required": False if critical_known else None,
     }
     if critical_cnt > 0:
         section_409["triggers"].append({
@@ -241,8 +241,8 @@ async def sox_status(
     # Overall SOX score
     issues = sum([
         section_302["action_required"],
-        section_404["action_required"],
-        section_409["action_required"],
+        bool(section_404["action_required"]),
+        bool(section_409["action_required"]),
     ])
     sox_score = round(100 - issues * 33.3) if critical_known else None
 
