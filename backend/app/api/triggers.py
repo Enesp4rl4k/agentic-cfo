@@ -31,8 +31,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.access import ensure_tenant, require_writer
 from app.api.auth import get_current_user
 from app.database import get_db
+from app.models.decision import DecidedVia, DecisionKind
 from app.models.trigger import TriggerDefinitionRow, TriggerRunRow
 from app.models.user import User
+from app.services.acting_role import acting_role
+from app.services.decisions import record_decision
 from app.services.semantic.catalog import METRIC_CATALOG
 from app.services.triggers import (
     ActionKind,
@@ -87,6 +90,36 @@ class _DryRunBody(BaseModel):
 def _org_id(user: User) -> str:
     """The org a caller's rows live under (solo users fall back to their id)."""
     return str(user.org_id) if user.org_id else str(user.id)
+
+
+_MAX_CONDITION_JSON = 1500
+
+
+def _rule_view(row: TriggerDefinitionRow) -> dict[str, Any]:
+    """What the decision shows: when the rule fires and what it does. The action's parameters can hold
+    addresses or webhook URLs, so only their names are kept."""
+    condition = row.condition
+    if len(condition or "") > _MAX_CONDITION_JSON:
+        condition = None   # still on the rule itself; the record stays small
+    params = json.loads(row.action_params or "{}")
+    return {
+        "name": row.name, "events": json.loads(row.events or "[]"), "condition": condition,
+        "action_kind": row.action_kind, "action_param_keys": sorted(params) if isinstance(params, dict) else [],
+        "cooldown_minutes": row.cooldown_minutes, "enabled": bool(row.enabled),
+    }
+
+
+async def _record_rule_decision(
+    db: AsyncSession, user: User, row: TriggerDefinitionRow, *, outcome: str,
+    before: dict[str, Any] | None, after: dict[str, Any] | None,
+) -> None:
+    """A standing trigger is an automation that acts without asking again: an `automation_rule_change`,
+    written in the same transaction as the change."""
+    await record_decision(
+        db, org_id=str(row.org_id), kind=DecisionKind.AUTOMATION_RULE_CHANGE, target_type="trigger",
+        target_id=str(row.id), outcome=outcome, decided_via=DecidedVia.HUMAN, decided_by=str(user.id),
+        before=before, after=None if after is None else {**after, "acting_role": await acting_role(db, user)},
+    )
 
 
 def _validated(payload: dict[str, Any]) -> TriggerDefinition:
@@ -217,6 +250,9 @@ async def create_trigger(
         enabled=definition.enabled,
     )
     db.add(row)
+    await db.flush()
+    await _record_rule_decision(
+        db, user, row, outcome="enabled" if row.enabled else "created_disabled", before=None, after=_rule_view(row))
     await db.commit()
     await db.refresh(row)
     return {"data": {**row.to_dict(), "org_id": row.org_id}, "error": None}
@@ -291,6 +327,7 @@ async def update_trigger(
         if value is not None:
             merged[key] = value
     definition = _validated(merged)
+    before = _rule_view(row)
     row.name = definition.name
     row.events = json.dumps(definition.events)
     row.condition = json.dumps(condition_to_dict(definition.condition))
@@ -298,6 +335,12 @@ async def update_trigger(
     row.action_params = json.dumps(definition.action_params)
     row.cooldown_minutes = definition.cooldown_minutes
     row.enabled = definition.enabled
+    after = _rule_view(row)
+    if after != before:
+        outcome = "changed"
+        if before["enabled"] != after["enabled"]:
+            outcome = "enabled" if after["enabled"] else "disabled"
+        await _record_rule_decision(db, user, row, outcome=outcome, before=before, after=after)
     await db.commit()
     await db.refresh(row)
     return {"data": {**row.to_dict(), "org_id": row.org_id}, "error": None}
@@ -311,6 +354,7 @@ async def delete_trigger(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     row = await _owned_row(db, trigger_id, user)
+    await _record_rule_decision(db, user, row, outcome="revoked", before=_rule_view(row), after=None)
     await db.delete(row)
     await db.commit()
     return {"data": {"deleted": True, "trigger_id": trigger_id}, "error": None}

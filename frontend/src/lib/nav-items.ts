@@ -37,6 +37,7 @@ export const NAV_GROUPS: {
       { href: "/iliskili-taraf", labelKey: "iliskiliTaraf",  icon: Users },
       { href: "/pnl", labelKey: "dashboard",      icon: LayoutDashboard },
       { href: "/upload", labelKey: "upload",         icon: Upload },
+      { href: "/kararlar", labelKey: "kararlar",     icon: ShieldCheck },
     ],
   },
   {

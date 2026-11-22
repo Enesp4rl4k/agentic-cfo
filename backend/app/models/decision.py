@@ -75,10 +75,88 @@ class DecisionKind(StrEnum):
     AGENT_CONFLICT_RESOLUTION = "agent_conflict_resolution"
     # A person makes a finished analysis the company's picture (the system did not apply it alone).
     COMPANY_VIEW_ADOPTION = "company_view_adoption"
+    # An owner/admin changes a security setting (the IP allow-list: who can reach the company at all).
+    SECURITY_SETTING_CHANGE = "security_setting_change"
+    # A decider wipes the company's derived agent context (every agent result, the working picture).
+    CONTEXT_RESET = "context_reset"
+    # A decider files or certifies something outward: a breach record or its notification to the authority,
+    # a SOX 302 certification.
+    COMPLIANCE_FILING = "compliance_filing"
+    # A person confirms how the columns of an uploaded file are read (which one is the amount, the date).
+    COLUMN_MAPPING_ACCEPTANCE = "column_mapping_acceptance"
+    # An owner/admin changes a fact about the company that decides how its documents are read:
+    # tax number, country, regional packs, legal title.
+    ORG_IDENTITY_CHANGE = "org_identity_change"
+
     # The amount above which a decision needs a senior person: acknowledged as proposed, or set by the owner.
     MATERIALITY = "materiality"
     # Who else receives the Monday briefing (the owner's standing choice about the accountant).
     BRIEFING_RECIPIENTS = "briefing_recipients"
+
+
+class ReadClass(StrEnum):
+    """The least role that may READ a decision of a kind: it follows who may see the thing it is about.
+
+    The guards live in `app.api.access` (`READ_ROLES`); this table only names the class, next to the kinds.
+    """
+
+    MEMBER = "member"            # any member of the organisation (the object itself is open to them)
+    CONTRIBUTOR = "contributor"  # owner, admin, cfo, smmm, analyst
+    WRITER = "writer"            # owner, admin, cfo, smmm
+    DECIDER = "decider"          # owner, admin
+
+
+_K = DecisionKind
+_R = ReadClass
+# EVERY kind has an entry (tests/test_decision_read_scope.py fails when one is missing). A kind that is not
+# here, or a stored kind this code no longer knows, is read as DECIDER: fail closed.
+DECISION_READ: dict[DecisionKind, ReadClass] = {
+    # money objects every member can already open
+    _K.CATEGORY_CORRECTION: _R.MEMBER,
+    _K.DUPLICATE_RESOLUTION: _R.MEMBER,
+    _K.SETTLEMENT_MATCH: _R.MEMBER,
+    _K.HELD_RUN_RELEASE: _R.MEMBER,
+    _K.HELD_ROW_RESOLUTION: _R.MEMBER,
+    _K.BALANCE_REVERIFICATION: _R.MEMBER,
+    _K.ACCOUNT_IDENTITY: _R.MEMBER,
+    _K.BASE_CURRENCY_CONFIRMATION: _R.MEMBER,
+    _K.FILE_DIRECTION_ANSWER: _R.MEMBER,
+    _K.DIRECTION_MAPPING: _R.MEMBER,
+    _K.PLAN_CHANGE: _R.MEMBER,
+    _K.COUNTERPARTY_ALIAS: _R.MEMBER,
+    _K.COMPANY_VIEW_ADOPTION: _R.MEMBER,
+    _K.COLUMN_MAPPING_ACCEPTANCE: _R.CONTRIBUTOR,
+    # the books' own people
+    _K.SMMM_ONAY: _R.WRITER,
+    _K.MONTH_CLOSE: _R.WRITER,
+    _K.PACKET_FINALIZATION: _R.WRITER,
+    _K.ACTION_DECISION: _R.WRITER,
+    _K.AGENT_CONFLICT_RESOLUTION: _R.WRITER,
+    _K.AUTOMATION_RULE_CHANGE: _R.WRITER,
+    _K.BRIEFING_RELEASE: _R.WRITER,
+    _K.OWNER_STATEMENT: _R.WRITER,
+    _K.SIZE_PROFILE: _R.WRITER,
+    _K.AUTHORITY_POLICY_CHANGE: _R.WRITER,
+    _K.MEMBER_CHANGE: _R.WRITER,
+    _K.ORG_IDENTITY_CHANGE: _R.WRITER,
+    # owner-decided settings whose current value every member can read (GET /org/me/materiality and
+    # /org/me/briefing-recipients are `require_member`): their decisions follow the same visibility
+    _K.MATERIALITY: _R.MEMBER,
+    _K.BRIEFING_RECIPIENTS: _R.MEMBER,
+    # access, security and outward filings: the deciders only
+    _K.SECURITY_SETTING_CHANGE: _R.DECIDER,
+    _K.CONTEXT_RESET: _R.DECIDER,
+    _K.COMPLIANCE_FILING: _R.DECIDER,
+    _K.ERASURE: _R.DECIDER,
+}
+
+
+def read_class(kind: str) -> ReadClass:
+    """The read class of a stored kind; anything unknown is DECIDER (fail closed)."""
+    try:
+        return DECISION_READ[DecisionKind(kind)]
+    except (ValueError, KeyError):
+        return ReadClass.DECIDER
 
 
 class DecidedVia(StrEnum):

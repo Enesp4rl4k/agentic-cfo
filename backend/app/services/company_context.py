@@ -411,6 +411,32 @@ async def invalidate_company_context(org_id: str, db: Any = None) -> None:
             logger.warning("DB context delete failed: %s", exc)
 
 
+async def reset_company_context_row(org_id: str, db: Any) -> None:
+    """Delete the organisation's stored context snapshot in the CALLER's transaction: raises on failure and
+    never commits, so a decision recorded beside it commits or rolls back with it. The cache entry is
+    dropped by `drop_cached_context` after the commit (a cache is never the record)."""
+    from sqlalchemy import select
+
+    from app.models.company_context import CompanyContextSnapshot
+
+    snapshot = (await db.execute(
+        select(CompanyContextSnapshot).where(CompanyContextSnapshot.org_id == org_id)
+    )).scalar_one_or_none()
+    if snapshot is not None:
+        await db.delete(snapshot)
+        await db.flush()
+
+
+async def drop_cached_context(org_id: str) -> None:
+    """Best-effort removal of the cached copy (Redis); a miss only means the next read rebuilds from the DB."""
+    redis = await _get_redis()
+    if redis:
+        try:
+            await redis.delete(_redis_key(org_id))
+        except Exception:
+            logger.warning("context cache drop failed for org=%s", org_id)
+
+
 async def get_cache_stats(org_id: str) -> dict:
     """
     Return cache diagnostics for an org.

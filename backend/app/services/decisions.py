@@ -11,7 +11,7 @@ recommendations and their measured outcomes (`DecisionLog`).
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from datetime import datetime
 from typing import Any
 
@@ -146,9 +146,19 @@ async def record_decision(
 
 
 def _filters(
-    org_id: str, kind: str | None, target_type: str | None, target_id: str | None
+    org_id: str, kind: str | None, target_type: str | None, target_id: str | None,
+    decided_by: str | None = None, since: datetime | None = None, until: datetime | None = None,
+    kinds: Collection[str] | None = None,
 ) -> list[Any]:
     clauses: list[Any] = [Decision.org_id == org_id]
+    if kinds is not None:   # the caller's readable kinds: a decision of any other kind is not there for them
+        clauses.append(Decision.kind.in_(list(kinds)))
+    if decided_by is not None:
+        clauses.append(Decision.decided_by == decided_by)
+    if since is not None:
+        clauses.append(Decision.decided_at >= since)
+    if until is not None:
+        clauses.append(Decision.decided_at < until)
     if kind is not None:
         clauses.append(Decision.kind == kind)
     if target_type is not None:
@@ -161,13 +171,15 @@ def _filters(
 async def list_decisions(
     db: AsyncSession, org_id: str, *, kind: str | None = None, target_type: str | None = None,
     target_id: str | None = None, current_only: bool = False, limit: int = 50, offset: int = 0,
+    decided_by: str | None = None, since: datetime | None = None, until: datetime | None = None,
+    kinds: Collection[str] | None = None,
 ) -> tuple[list[Decision], int]:
     """One organisation's decisions, newest first, and the total before paging.
 
     `current_only` hides decisions that a later one supersedes, leaving the
     standing decision of each chain.
     """
-    clauses = _filters(org_id, kind, target_type, target_id)
+    clauses = _filters(org_id, kind, target_type, target_id, decided_by, since, until, kinds)
     if current_only:
         replaced = select(Decision.supersedes_id).where(
             Decision.org_id == org_id, Decision.supersedes_id.is_not(None)

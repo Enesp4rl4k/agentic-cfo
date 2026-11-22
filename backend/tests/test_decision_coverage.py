@@ -149,24 +149,9 @@ for _routes, _why in (
     for _route in _routes:
         NOT_A_DECISION[_route] = _why
 
-# Decision points whose record is still owed. Each names who owes it. The test below makes this list shrink only.
-KNOWN_GAPS: dict[Route, str] = {
-    ("POST", "/api/v1/ledger/settlements/{match_id}/resolve"):
-        "settlement match confirm / reject lives in api/ledger.py (PR #114/#115); `undo` already records, and so must this",
-    ("POST", "/api/v1/data-quality/accept-mapping"): "a person's acceptance of the proposed column mapping, before the analysis starts",
-    ("PATCH", "/api/v1/org/me"): "organisation profile; the base-currency rule is PR #116's (the currency decision itself records via /org/base-currency)",
-    ("POST", "/api/v1/related-parties"): "a related-party flag changes how transactions are treated: should be an automation_rule_change",
-    ("PATCH", "/api/v1/related-parties/{party_id}"): "same",
-    ("DELETE", "/api/v1/related-parties/{party_id}"): "same",
-    ("PUT", "/api/v1/security/ip-whitelist"): "a security setting changed by an owner or admin",
-    ("POST", "/api/v1/tetikler"): "a standing trigger is an automation: automation_rule_change",
-    ("PATCH", "/api/v1/tetikler/{trigger_id}"): "same",
-    ("DELETE", "/api/v1/tetikler/{trigger_id}"): "same",
-    ("DELETE", "/api/v1/context/{org_id}"): "a decider resets the company context",
-    ("POST", "/api/v1/compliance/gdpr/breach-notification"): "a decider files a breach notification",
-    ("POST", "/api/v1/compliance/gdpr/breach/{breach_id}/notify"): "a decider marks a breach as notified",
-    ("POST", "/api/v1/compliance/sox/certify"): "a decider certifies",
-}
+# Decision points whose record is still owed. Each names who owes it (and the open PR that blocks it). Empty today:
+# every deciding route records. The last test below keeps it from growing back unnoticed.
+KNOWN_GAPS: dict[Route, str] = {}
 
 
 def _inventory() -> dict[Route, object]:
@@ -247,6 +232,21 @@ def test_a_route_that_records_is_not_excused() -> None:
         ("DELETE", "/api/v1/org/members/{user_id}"),
         ("POST", "/api/v1/actions/{action_id}/approve"),
         ("POST", "/api/v1/actions/{action_id}/reject"),
+        ("POST", "/api/v1/ledger/settlements/{match_id}/resolve"),
+        ("POST", "/api/v1/ledger/settlements/{match_id}/undo"),
+        ("POST", "/api/v1/data-quality/accept-mapping"),
+        ("PATCH", "/api/v1/org/me"),
+        ("POST", "/api/v1/related-parties"),
+        ("PATCH", "/api/v1/related-parties/{party_id}"),
+        ("DELETE", "/api/v1/related-parties/{party_id}"),
+        ("PUT", "/api/v1/security/ip-whitelist"),
+        ("POST", "/api/v1/tetikler"),
+        ("PATCH", "/api/v1/tetikler/{trigger_id}"),
+        ("DELETE", "/api/v1/tetikler/{trigger_id}"),
+        ("DELETE", "/api/v1/context/{org_id}"),
+        ("POST", "/api/v1/compliance/gdpr/breach-notification"),
+        ("POST", "/api/v1/compliance/gdpr/breach/{breach_id}/notify"),
+        ("POST", "/api/v1/compliance/sox/certify"),
     ],
 )
 def test_the_named_decision_points_record(route: Route) -> None:
