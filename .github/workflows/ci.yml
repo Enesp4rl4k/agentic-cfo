@@ -200,19 +200,14 @@ jobs:
       # A backup nobody has restored is a hope. Dump a migrated database, restore it into a fresh one,
       # check every table and file came back, run the schema preflight on it (and one migration behind),
       # then the smoke test on an API over the restored database. scripts/restore-roundtrip.sh.
-      - name: PostgreSQL client tools
-        run: |
-          sudo apt-get update
-          # The server is 16. ubuntu-latest has moved past the release that packages client 16;
-          # a newer pg_dump/pg_restore reads and writes a 16 server fine.
-          sudo apt-get install -y --no-install-recommends postgresql-client-16             || sudo apt-get install -y --no-install-recommends postgresql-client
-          pg_dump --version
-
       - name: Backup and restore roundtrip (dump, restore, migrate, preflight, smoke test)
         env:
-          PGHOST: localhost
           PGUSER: aicfo
-        run: bash scripts/restore-roundtrip.sh
+        # The dump and restore run with the server container's own pg_dump/pg_restore (version 16).
+        run: |
+          RT_PG_CONTAINER="$(docker ps -q --filter "ancestor=pgvector/pgvector:pg16" | head -n1)"
+          export RT_PG_CONTAINER
+          bash scripts/restore-roundtrip.sh
 
   # ── Optional load baseline (non-blocking artifact) ────────────────────────
   load-baseline:

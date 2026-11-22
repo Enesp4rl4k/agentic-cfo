@@ -13,7 +13,8 @@
 #      back up to head: it is accepted again and /api/v1/ready is not a 503
 #   7. scripts/smoke-test.sh passes against the API running on the restored database
 #
-# Tools: psql, pg_dump, pg_restore, createdb, dropdb (PostgreSQL 16 client), python with the backend's
+# Tools: psql, pg_dump, pg_restore, createdb, dropdb (PostgreSQL 16 client, or RT_PG_CONTAINER=<id of a
+# Postgres container> to use the ones inside it), python with the backend's
 # requirements, tar, sha256sum, curl. The backend dependencies must be installed.
 #
 # Environment (defaults suit the CI service container):
@@ -28,18 +29,26 @@ SRC_DB="aicfo_rt_src_$$"
 DST_DB="aicfo_rt_dst_$$"
 WORK="$(mktemp -d)"
 API_PID=""
+# PostgreSQL tools. With RT_PG_CONTAINER set they run inside that container (the server's own version:
+# a newer client dumps `SET transaction_timeout`, which a 16 server refuses, so CI uses this), the way
+# scripts/backup.sh does on the staging stack; without it, the client tools on PATH are used.
+pgx() {
+  if [[ -n "${RT_PG_CONTAINER:-}" ]]; then docker exec -i "$RT_PG_CONTAINER" "$@"; else "$@"; fi
+}
 log() { printf '%s roundtrip: %s\n' "$(date -u +%FT%TZ)" "$*"; }
 die() { printf '%s roundtrip: FAIL %s\n' "$(date -u +%FT%TZ)" "$*" >&2; exit 1; }
 
 cleanup() {
   [[ -n "$API_PID" ]] && kill "$API_PID" 2>/dev/null || true
-  dropdb --if-exists "$SRC_DB" >/dev/null 2>&1 || true
-  dropdb --if-exists "$DST_DB" >/dev/null 2>&1 || true
+  pgx dropdb -U "$PGUSER" --if-exists "$SRC_DB" >/dev/null 2>&1 || true
+  pgx dropdb -U "$PGUSER" --if-exists "$DST_DB" >/dev/null 2>&1 || true
   rm -rf "$WORK"
 }
 trap cleanup EXIT
 
-for bin in psql pg_dump pg_restore createdb dropdb python tar sha256sum curl; do
+tools=(python tar sha256sum curl)
+if [[ -n "${RT_PG_CONTAINER:-}" ]]; then tools+=(docker); else tools+=(psql pg_dump pg_restore createdb dropdb); fi
+for bin in "${tools[@]}"; do
   command -v "$bin" >/dev/null || die "missing '$bin'"
 done
 
@@ -59,7 +68,7 @@ app_env() {
 in_backend() { (cd "$REPO_ROOT/backend" && "$@"); }
 count_rows() {
   local db="$1"
-  psql -d "$db" -At -F $'\t' -c "
+  pgx psql -U "$PGUSER" -d "$db" -At -F $'\t' -c "
     SELECT table_name,
            (xpath('/row/c/text()',
                   query_to_xml(format('SELECT count(*) AS c FROM %I.%I', table_schema, table_name),
@@ -70,11 +79,11 @@ count_rows() {
 }
 
 # 1. Source database: migrated, with known content ---------------------------------------------
-createdb "$SRC_DB"
+pgx createdb -U "$PGUSER" "$SRC_DB"
 (app_env "$SRC_DB"; in_backend alembic upgrade head) >/dev/null
-HEAD_REV="$(psql -d "$SRC_DB" -At -c 'SELECT version_num FROM alembic_version')"
+HEAD_REV="$(pgx psql -U "$PGUSER" -d "$SRC_DB" -At -c 'SELECT version_num FROM alembic_version')"
 [[ -n "$HEAD_REV" ]] || die "source database has no alembic revision"
-psql -d "$SRC_DB" -v ON_ERROR_STOP=1 -q <<'SQL'
+pgx psql -U "$PGUSER" -d "$SRC_DB" -v ON_ERROR_STOP=1 -q <<'SQL'
 INSERT INTO outbox_messages (id, key, org_id, channel, recipient, subject, body, source, source_ref,
                              delivery_class, status, attempts, created_at)
 VALUES ('00000000-0000-0000-0000-0000000000a1', 'roundtrip:sentinel-1', 'org-roundtrip', 'email',
@@ -89,7 +98,7 @@ printf 'report\n' > "$WORK/uploads/reports/job-1/report.xlsx"
 log "source at $HEAD_REV with 2 sentinel rows and 3 files"
 
 # 2. Back up -----------------------------------------------------------------------------------
-pg_dump -d "$SRC_DB" -Fc --no-owner > "$WORK/db.dump"
+pgx pg_dump -U "$PGUSER" -d "$SRC_DB" -Fc --no-owner > "$WORK/db.dump"
 [[ -s "$WORK/db.dump" ]] || die "pg_dump produced an empty file"
 tar -C "$WORK" -czf "$WORK/uploads.tar.gz" uploads
 count_rows "$SRC_DB" > "$WORK/src_counts.tsv"
@@ -97,14 +106,14 @@ count_rows "$SRC_DB" > "$WORK/src_counts.tsv"
 log "dumped $(du -h "$WORK/db.dump" | cut -f1), uploads archived"
 
 # 3. Restore into an empty database --------------------------------------------------------------
-createdb "$DST_DB"
-pg_restore -d "$DST_DB" --no-owner --exit-on-error "$WORK/db.dump"
+pgx createdb -U "$PGUSER" "$DST_DB"
+pgx pg_restore -U "$PGUSER" -d "$DST_DB" --no-owner --exit-on-error < "$WORK/db.dump"
 log "pg_restore ok"
 
 # 4. Same rows, same files ---------------------------------------------------------------------
 count_rows "$DST_DB" > "$WORK/dst_counts.tsv"
 if ! diff -u "$WORK/src_counts.tsv" "$WORK/dst_counts.tsv"; then die "row counts differ after restore"; fi
-[[ "$(psql -d "$DST_DB" -At -c "SELECT count(*) FROM outbox_messages WHERE source = 'roundtrip'")" == 2 ]] \
+[[ "$(pgx psql -U "$PGUSER" -d "$DST_DB" -At -c "SELECT count(*) FROM outbox_messages WHERE source = 'roundtrip'")" == 2 ]] \
   || die "sentinel rows did not come back"
 mkdir "$WORK/restored"
 tar -C "$WORK/restored" -xzf "$WORK/uploads.tar.gz"
@@ -114,7 +123,7 @@ log "$(wc -l < "$WORK/dst_counts.tsv" | tr -d ' ') tables and $(wc -l < "$WORK/d
 
 # 5. The application accepts the restored database ---------------------------------------------
 app_env "$DST_DB"
-[[ "$(psql -d "$DST_DB" -At -c 'SELECT version_num FROM alembic_version')" == "$HEAD_REV" ]] \
+[[ "$(pgx psql -U "$PGUSER" -d "$DST_DB" -At -c 'SELECT version_num FROM alembic_version')" == "$HEAD_REV" ]] \
   || die "restored alembic revision differs"
 in_backend python -m app.core.preflight --db || die "preflight refused the restored database"
 
