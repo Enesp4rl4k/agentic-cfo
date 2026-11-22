@@ -67,6 +67,11 @@ const briefing = (over: Record<string, unknown> = {}) => ({
   balance_as_of: "2025-01-30",
   balance_age_days: 2,
   balance_stale: false,
+  runway_status: "computed",
+  runway_months: 4,
+  runway_level: "warning",
+  runway_basis: "known",
+  runway_line: "Uyarı: Nakit pisti yaklaşık 4,0 ay (31 Mart 2026 ekstresindeki kasa ₺120.000,00).",
   fingerprint: "fp-seen",
   ...over,
 });
@@ -255,5 +260,46 @@ describe("Pazartesi bülteni", () => {
     const loop = await screen.findByRole("contentinfo", { name: "Haftalık döngü" });
     expect(loop.querySelectorAll("a")).toHaveLength(4);
     expect(loop.querySelector("[aria-current='page']")).toBeNull();
+  });
+
+  it("says a measured runway with its months, beside the week's answer", async () => {
+    getMondayBriefing.mockResolvedValue(briefing());
+    show();
+    expect(await screen.findByTestId("runway-text")).toHaveProperty("textContent", expect.stringContaining("yaklaşık 4,0 ay"));
+    expect(screen.getByTestId("runway-value").textContent).toBe("4 ay");
+    expect(screen.queryByTestId("runway-assumed")).toBeNull();
+  });
+
+  it("puts a critical runway above everything else", async () => {
+    getMondayBriefing.mockResolvedValue(
+      briefing({ runway_level: "critical", runway_months: 1.7, runway_line: "KRİTİK: Nakit pisti yaklaşık 1,7 ay." }),
+    );
+    show();
+    const card = await screen.findByRole("alert");
+    expect(card.textContent).toContain("KRİTİK: Nakit pisti yaklaşık 1,7 ay.");
+    const heading = screen.getByRole("heading", { level: 1 });
+    // The runway card precedes the week's first sentence in the page.
+    expect(card.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("badges an assumed basis where the number is", async () => {
+    getMondayBriefing.mockResolvedValue(briefing({ runway_basis: "assumed" }));
+    show();
+    expect(await screen.findByTestId("runway-assumed")).toBeTruthy();
+  });
+
+  it("says unknown, with no figure, when the balance is not known", async () => {
+    getMondayBriefing.mockResolvedValue(
+      briefing({
+        runway_status: "no_balance",
+        runway_months: null,
+        runway_level: null,
+        runway_basis: null,
+        runway_line: "Kasa bakiyesi bilinmiyor — nakit pisti hesaplanamadı.",
+      }),
+    );
+    show();
+    expect(await screen.findByText("Kasa bakiyesi bilinmiyor — nakit pisti hesaplanamadı.")).toBeTruthy();
+    expect(screen.getByTestId("runway-value").textContent).toBe("Bilinmiyor");
   });
 });

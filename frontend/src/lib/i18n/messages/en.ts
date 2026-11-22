@@ -174,6 +174,22 @@ export type MessageTree = {
     awaitingDocuments: string;
     awaitingOpen: string;
     heldReview: string;
+    runwayTitle: string;
+    runwayMonths: string;
+    runwayBeyond: string;
+    runwayUnknown: string;
+    runwayCritical: string;
+    runwayWarning: string;
+    runwayAssumed: string;
+    runwayAssumedHint: string;
+    runwayDetails: string;
+    accountsTitle: string;
+    accountBehind: string;
+    otherCurrencyBalancesTitle: string;
+    otherCurrencyBalancesNote: string;
+    unprovenTitle: string;
+    unprovenNote: string;
+    openingAssumed: string;
   };
   takvim: {
     title: string;
@@ -3030,6 +3046,22 @@ export const en: MessageTree = {
     awaitingDocuments: "Possible duplicate documents",
     awaitingOpen: "Decide",
     heldReview: "Review the documents and decide",
+    runwayTitle: "Cash runway",
+    runwayMonths: "{n} months",
+    runwayBeyond: "longer than {n} months",
+    runwayUnknown: "Unknown",
+    runwayCritical: "Critical",
+    runwayWarning: "Warning",
+    runwayAssumed: "Assumption",
+    runwayAssumedHint: "Part of this figure rests on an assumption, stated below. It is not a measurement.",
+    runwayDetails: "How it was worked out",
+    accountsTitle: "Accounts in the starting cash",
+    accountBehind: "{days} days older than the newest statement",
+    otherCurrencyBalancesTitle: "Bank balances in other currencies",
+    otherCurrencyBalancesNote: "Shown on their own, not converted and not added to the cash above.",
+    unprovenTitle: "Statements left out of the balance",
+    unprovenNote: "Their running balances could not be proven, so they are not counted. Answer the waiting rows or upload a statement that reconciles.",
+    openingAssumed: "The balance rests on weak evidence and is taken as an assumption:",
   },
   takvim: {
     title: "Payment calendar",

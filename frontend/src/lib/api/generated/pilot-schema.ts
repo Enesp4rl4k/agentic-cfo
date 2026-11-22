@@ -204,6 +204,50 @@ export interface components {
             /** Text */
             text: string;
         };
+        /**
+         * BalanceAccountOut
+         * @description One account's latest proven balance, with its own date: the starting cash is their sum.
+         */
+        BalanceAccountOut: {
+            /** As Of */
+            as_of: string;
+            /** Balance Cents */
+            balance_cents: number;
+            /**
+             * Basis
+             * @default known
+             * @enum {string}
+             */
+            basis: "known" | "assumed";
+            /** Basis Note */
+            basis_note?: string | null;
+            /**
+             * Behind Days
+             * @default 0
+             */
+            behind_days: number;
+            /** Currency */
+            currency: string;
+            /**
+             * Currency Assumed
+             * @default false
+             */
+            currency_assumed: boolean;
+            /** Job Id */
+            job_id?: string | null;
+            /**
+             * Lagging
+             * @default false
+             */
+            lagging: boolean;
+            /** Name */
+            name?: string | null;
+            /**
+             * Statements
+             * @default 1
+             */
+            statements: number;
+        };
         /** BasisSplitOut */
         BasisSplitOut: {
             /**
@@ -306,6 +350,11 @@ export interface components {
             /** Not Included */
             not_included: string[];
             opening_cash?: components["schemas"]["OpeningCashOut"] | null;
+            /**
+             * Other Currency Balances
+             * @default []
+             */
+            other_currency_balances: components["schemas"]["OtherCurrencyBalanceOut"][];
             /** Other Currency Items */
             other_currency_items: number;
             /**
@@ -322,6 +371,7 @@ export interface components {
              * @default 0
              */
             recurring_payables_cents: number;
+            runway?: components["schemas"]["RunwayOut"] | null;
             shortfall: components["schemas"]["ShortfallOut"] | null;
             /** Starting Cash As Of */
             starting_cash_as_of: string | null;
@@ -336,6 +386,11 @@ export interface components {
             undated_payables_cents: number;
             /** Undated Receivables Cents */
             undated_receivables_cents: number;
+            /**
+             * Unproven Statements
+             * @default []
+             */
+            unproven_statements: components["schemas"]["UnprovenStatementOut"][];
             /** Weeks */
             weeks: components["schemas"]["RadarWeekOut"][];
         };
@@ -644,6 +699,22 @@ export interface components {
             net_change_cents: number;
             /** Org Id */
             org_id: string;
+            /** Runway Basis */
+            runway_basis?: string | null;
+            /** Runway Level */
+            runway_level?: string | null;
+            /**
+             * Runway Line
+             * @default
+             */
+            runway_line: string;
+            /** Runway Months */
+            runway_months?: number | null;
+            /**
+             * Runway Status
+             * @default no_balance
+             */
+            runway_status: string;
             /** Sentence Action */
             sentence_action: string;
             /** Sentence Obligation */
@@ -675,12 +746,25 @@ export interface components {
         };
         /** OpeningCashOut */
         OpeningCashOut: {
+            /**
+             * Accounts
+             * @default []
+             */
+            accounts: components["schemas"]["BalanceAccountOut"][];
             /** Age Days */
             age_days: number;
             /** As Of */
             as_of: string;
             /** Balance Cents */
             balance_cents: number;
+            /**
+             * Basis
+             * @default known
+             * @enum {string}
+             */
+            basis: "known" | "assumed";
+            /** Basis Note */
+            basis_note?: string | null;
             /** Source Filename */
             source_filename: string | null;
             /** Source Job Id */
@@ -689,6 +773,20 @@ export interface components {
             stale: boolean;
             /** Stale After Days */
             stale_after_days: number;
+        };
+        /**
+         * OtherCurrencyBalanceOut
+         * @description A bank balance in a currency other than the radar's: shown with its own total, never converted.
+         */
+        OtherCurrencyBalanceOut: {
+            /** Accounts */
+            accounts: number;
+            /** As Of */
+            as_of: string;
+            /** Balance Cents */
+            balance_cents: number;
+            /** Currency */
+            currency: string;
         };
         /**
          * OtherCurrencyTotalOut
@@ -850,6 +948,76 @@ export interface components {
             /** Week */
             week: number;
         };
+        /** RunwayMonthOut */
+        RunwayMonthOut: {
+            /** Month */
+            month: string;
+            /** Net Cents */
+            net_cents: number;
+        };
+        /**
+         * RunwayOut
+         * @description The measured runway (`services.runway`), or the reason there is none. No number without a basis.
+         */
+        RunwayOut: {
+            /**
+             * Accounts
+             * @default []
+             */
+            accounts: components["schemas"]["BalanceAccountOut"][];
+            /** Age Days */
+            age_days?: number | null;
+            /** As Of */
+            as_of?: string | null;
+            /**
+             * Assumptions
+             * @default []
+             */
+            assumptions: {
+                [key: string]: unknown;
+            }[];
+            /** Avg Monthly Net Cents */
+            avg_monthly_net_cents?: number | null;
+            /** Balance Basis */
+            balance_basis?: ("known" | "assumed") | null;
+            /** Basis */
+            basis?: ("known" | "assumed") | null;
+            /**
+             * Beyond Horizon
+             * @default false
+             */
+            beyond_horizon: boolean;
+            /** Currency */
+            currency?: string | null;
+            /** Level */
+            level?: ("critical" | "warning") | null;
+            /** Message */
+            message: string;
+            /**
+             * Months
+             * @default []
+             */
+            months: components["schemas"]["RunwayMonthOut"][];
+            /** Months Needed */
+            months_needed: number;
+            /** Months Used */
+            months_used: number;
+            /** Opening Cash Cents */
+            opening_cash_cents?: number | null;
+            /**
+             * Other Currencies
+             * @default []
+             */
+            other_currencies: components["schemas"]["OtherCurrencyBalanceOut"][];
+            /** Runway Months */
+            runway_months?: number | null;
+            /** Source Filename */
+            source_filename?: string | null;
+            /** Stale */
+            stale?: boolean | null;
+            /** Status */
+            status: string;
+        };
         /** ShortfallOut */
         ShortfallOut: {
             /** Actions */
@@ -885,6 +1053,18 @@ export interface components {
             olusturma: string | null;
             /** Onay Bekliyor */
             onay_bekliyor: boolean;
+        };
+        /**
+         * UnprovenStatementOut
+         * @description A statement with balances that could not be proven: left out of the starting cash, named with why.
+         */
+        UnprovenStatementOut: {
+            /** Filename */
+            filename?: string | null;
+            /** Job Id */
+            job_id?: string | null;
+            /** Reason */
+            reason: string;
         };
         /** ValidationError */
         ValidationError: {

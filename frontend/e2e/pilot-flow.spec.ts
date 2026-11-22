@@ -280,6 +280,16 @@ test.describe("Pilot flow", () => {
     expect(critical[0].message).toContain("ortalama aylık net nakit çıkışı ₺30.000,00");
     expect(critical[0].message).toContain("yaklaşık 0,3 ay");
     expect(critical[0].message).toContain("(varsayım)");
+
+    // The Monday briefing says it too, and first: the same measured runway, not a second computation.
+    const briefing = (await (await request.get(`${API}/briefing/monday`, { headers: bearer(owner.token) })).json()).data;
+    expect(briefing.runway_status).toBe("computed");
+    expect(briefing.runway_level).toBe("critical");
+    expect(briefing.runway_months).toBe(0.3);
+    expect(briefing.full_text.startsWith("KRİTİK: Nakit pisti yaklaşık 0,3 ay")).toBe(true);
+    const radar = (await (await request.get(`${API}/ledger/cash-radar`, { headers: bearer(owner.token) })).json()).data;
+    expect(radar.runway.level).toBe("critical");
+    expect(radar.runway.runway_months).toBe(0.3);
   });
 
   test("4. the setup page now shows the proven opening balance with its date", async ({ page }) => {
@@ -302,6 +312,14 @@ test.describe("Pilot flow", () => {
     await expect(main.getByText(/Mavi Tekstil Ltd/).first()).toBeVisible();
     // Estimated rows (rent seen in three months, projected forward) carry the "tahmini" tag.
     await expect(main.getByRole("button", { name: /tahmini/i }).first()).toBeVisible();
+    // The summary carries the measured runway: 116.500 over the three whole months' 5.333,33 burn, with
+    // its basis sentence, and the assumption (the statement starts on the 2nd) marked beside the number.
+    await expect(main.getByTestId("runway-value")).toHaveText("21,8 ay");
+    await expect(main.getByTestId("runway-text")).toContainText(
+      new RegExp(`${asOfLong} \\d{4} ekstresindeki bakiyeye göre kasa ₺116\\.500,00`),
+    );
+    await expect(main.getByTestId("runway-text")).toContainText("Bu hızla nakit yaklaşık 21,8 ay yeter.");
+    await expect(main.getByTestId("runway-assumed")).toBeVisible();
   });
 
   test("6. the Monday briefing answers the week and names the date of the data", async ({ page }) => {
@@ -311,8 +329,14 @@ test.describe("Pilot flow", () => {
     await expect(main.getByText(/bu haftanın cevabı/i)).toBeVisible({ timeout: 60_000 });
     await expect(main.getByText(new RegExp(`${asOfLong} ekstresine göre`)).first()).toBeVisible();
     await expect(main.getByText(`${asOfLong} ekstresine göre kasa`)).toBeVisible();
-    await expect(main.getByText("₺116.500")).toBeVisible();
+    // The stat card, exactly: the runway line below also writes the balance, so a substring would match twice.
+    await expect(main.getByText(/^₺116\.500,00$/)).toBeVisible();
     await expect(main.getByText(/Tahsilat takibi: Mavi Tekstil Ltd/)).toBeVisible();
+    // The runway is in the briefing, from the same computation as the forecast and the radar.
+    await expect(main.getByTestId("runway-value")).toHaveText("21,8 ay");
+    await expect(main.getByTestId("runway-text")).toContainText("Nakit pisti yaklaşık 21,8 ay");
+    await expect(main.getByTestId("runway-text")).toContainText("ortalama net çıkışı ₺5.333,33/ay");
+    await expect(main.getByTestId("runway-assumed")).toBeVisible();
   });
 
   test("7. the owner corrects a transaction's category and the ledger summary follows", async ({ page }) => {
@@ -405,6 +429,7 @@ test.describe("Pilot flow", () => {
     expect(mail.subject).toMatch(/^Pazartesi bülteni/);
     expect(mail.body).toContain(`${todayLong} tarihli verilere göre`);
     expect(mail.body).toContain("₺");
+    expect(mail.body).toContain("Nakit pisti yaklaşık 21,8 ay"); // the runway is in the e-mail, through the same outbox
   });
 
   test("12. a viewer is invited from the workspace page; the viewer cannot correct a category or release the briefing", async ({ browser, request }) => {

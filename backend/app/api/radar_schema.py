@@ -37,6 +37,69 @@ class BasisSplitOut(BaseModel):
     assumed_cents: int = 0
 
 
+class BalanceAccountOut(BaseModel):
+    """One account's latest proven balance, with its own date: the starting cash is their sum."""
+
+    name: str | None = None
+    job_id: str | None = None
+    as_of: str
+    balance_cents: int
+    currency: str
+    currency_assumed: bool = False
+    basis: Literal["known", "assumed"] = "known"
+    basis_note: str | None = None
+    statements: int = 1
+    behind_days: int = 0
+    lagging: bool = False
+
+
+class OtherCurrencyBalanceOut(BaseModel):
+    """A bank balance in a currency other than the radar's: shown with its own total, never converted."""
+
+    currency: str
+    balance_cents: int
+    as_of: str
+    accounts: int
+
+
+class UnprovenStatementOut(BaseModel):
+    """A statement with balances that could not be proven: left out of the starting cash, named with why."""
+
+    job_id: str | None = None
+    filename: str | None = None
+    reason: str
+
+
+class RunwayMonthOut(BaseModel):
+    month: str
+    net_cents: int
+
+
+class RunwayOut(BaseModel):
+    """The measured runway (`services.runway`), or the reason there is none. No number without a basis."""
+
+    status: str
+    message: str
+    currency: str | None = None
+    opening_cash_cents: int | None = None
+    as_of: str | None = None
+    age_days: int | None = None
+    stale: bool | None = None
+    source_filename: str | None = None
+    balance_basis: Literal["known", "assumed"] | None = None
+    accounts: list[BalanceAccountOut] = []
+    months_needed: int
+    months_used: int
+    months: list[RunwayMonthOut] = []
+    basis: Literal["known", "assumed"] | None = None
+    assumptions: list[dict[str, Any]] = []
+    avg_monthly_net_cents: int | None = None
+    runway_months: float | None = None
+    beyond_horizon: bool = False
+    level: Literal["critical", "warning"] | None = None
+    other_currencies: list[OtherCurrencyBalanceOut] = []
+
+
 class OpeningCashOut(BaseModel):
     balance_cents: int
     as_of: str
@@ -45,6 +108,10 @@ class OpeningCashOut(BaseModel):
     stale_after_days: int
     source_job_id: str | None
     source_filename: str | None
+    # "assumed" when the proof is thin or the accounts are not certain (`basis_note` says why).
+    basis: Literal["known", "assumed"] = "known"
+    basis_note: str | None = None
+    accounts: list[BalanceAccountOut] = []
 
 
 class RadarWeekOut(BaseModel):
@@ -147,3 +214,6 @@ class CashRadarOut(BaseModel):
     currency: str = "TRY"
     base_state: str = "confirmed"
     other_currency_totals: list[OtherCurrencyTotalOut] = []
+    other_currency_balances: list[OtherCurrencyBalanceOut] = []
+    unproven_statements: list[UnprovenStatementOut] = []
+    runway: RunwayOut | None = None

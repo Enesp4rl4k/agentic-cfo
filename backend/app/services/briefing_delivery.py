@@ -70,12 +70,16 @@ async def has_accountant(db: AsyncSession, org_id: str) -> bool:
 def _message(briefing: MondayBriefing, data_date: date) -> tuple[str, str]:
     subject = f"Pazartesi bülteni — {briefing.week_start}"
     link = f"{get_settings().frontend_url.rstrip('/')}/bulten"
+    runway = [briefing.runway_line] if briefing.runway_line else []
+    critical = briefing.runway_level == "critical"
     body = "\n\n".join(
         [
             f"Hafta: {briefing.week_start} – {briefing.week_end}",
+            *(runway if critical else []),  # cash running out is the first thing the e-mail says
             briefing.sentence_radar,
             briefing.sentence_obligation,
             briefing.sentence_action,
+            *([] if critical else runway),
             f"{_tr_date(data_date.isoformat())} tarihli verilere göre hazırlanmıştır.",
             f"Ayrıntılar ve yanıt: {link}",
         ]
@@ -117,6 +121,7 @@ async def collect_facts(
         "receivable_count": len(receivable_ids),
         "payable_count": len(payable_ids),
         "items_sha": _sha([receivable_ids, payable_ids]),
+        "runway_line": briefing.runway_line,
         "headline": briefing.full_text[:600],
         "headline_sha": _sha(briefing.full_text),
     }
@@ -125,14 +130,14 @@ async def collect_facts(
 # The fields that make two sets of facts "the same"; the dates of reading are not among them.
 _COMPARED = (
     "opening_cash_cents", "opening_as_of", "week_start", "week_end", "inflow_cents",
-    "outflow_cents", "net_change_cents", "end_balance_cents", "items_sha", "headline_sha",
+    "outflow_cents", "net_change_cents", "end_balance_cents", "items_sha", "runway_line", "headline_sha",
 )
 _LABELS = {
     "opening_cash_cents": "Açılış bakiyesi", "opening_as_of": "Bakiye tarihi",
     "week_start": "Hafta başı", "week_end": "Hafta sonu",
     "inflow_cents": "Haftalık giriş", "outflow_cents": "Haftalık çıkış",
     "net_change_cents": "Net değişim", "end_balance_cents": "Hafta sonu bakiyesi",
-    "items_sha": "Haftanın kalemleri", "headline_sha": "Özet cümleler",
+    "items_sha": "Haftanın kalemleri", "runway_line": "Nakit pisti", "headline_sha": "Özet cümleler",
 }
 
 

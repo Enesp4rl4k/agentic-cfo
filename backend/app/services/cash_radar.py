@@ -34,18 +34,13 @@ from app.core.currency_totals import (
     fmt_money,
     normalise,
 )
-from app.models.canonical_transaction import CanonicalTransaction, money_rows
 from app.models.open_item import OpenItem
-from app.services.bank_balance import balance_age, proven_balance
+from app.services.bank_accounts import proven_balances
+from app.services.bank_balance import balance_age
 from app.services.briefing_held import held_line as _held_line
-from app.services.ledger_documents import (
-    DOCUMENT,
-    POSSIBLE_DUPLICATE,
-    hold_reason,
-    load_aliases,
-    source_transaction,
-)
+from app.services.company_runway import company_runway
 from app.services.payment_plan import effective_dates
+from app.services.radar_held import BasisSplit, HeldDocuments, held_documents
 from app.services.reconciliation import payment_behaviour
 
 HORIZON_WEEKS = 13
@@ -91,53 +86,11 @@ class RadarItem:
     rules_verified: bool | None = None  # tax rows only: due-day rules checked against the official text
 
 
-@dataclass(frozen=True)
-class BasisSplit:
-    """One side of a week (money in or money out) by how well each part is known."""
-
-    known_cents: int = 0
-    estimated_cents: int = 0
-    assumed_cents: int = 0
-
-
 def _split(items: list[RadarItem]) -> BasisSplit:
     totals = {KNOWN: 0, ESTIMATED: 0, ASSUMED: 0}
     for it in items:
         totals[it.basis] += it.amount_cents
     return BasisSplit(totals[KNOWN], totals[ESTIMATED], totals[ASSUMED])
-
-
-@dataclass(frozen=True)
-class HeldWeek:
-    week: int
-    payable_cents: int
-    receivable_cents: int
-
-
-@dataclass(frozen=True)
-class HeldDocuments:
-    """Documents waiting for a person's answer (possible duplicates): not in the radar, and said so.
-
-    A held row opens no open item, so the radar cannot see it; without this entry an unresolved queue
-    quietly under-counts outflows. Placed as the item would be if kept: on its due date (basis
-    `known`), an overdue payable in week 1 (`assumed`, as the radar places it), no date in `undated_*`.
-    Foreign currency is counted, never converted.
-    """
-
-    count: int
-    payable_cents: int
-    receivable_cents: int
-    weeks: list[HeldWeek]
-    payable_basis: BasisSplit
-    week1_payable_cents: int
-    undated_payable_cents: int
-    undated_receivable_cents: int
-    beyond_horizon_payable_cents: int
-    other_currency_count: int
-    other_currency_payable_count: int
-    review_path: str = "/onay"  # the screen where a person answers (frontend route)
-    # Why they are held: `hold_reason` code -> how many (the words are `HOLD_REASONS_TR`).
-    by_reason: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -151,6 +104,12 @@ class OpeningCash:
     stale_after_days: int
     source_job_id: str | None
     source_filename: str | None
+    # "known", or "assumed" when the proof is thin (a statement with one or two balance steps) or the
+    # accounts are not certain; `basis_note` says why. `accounts`: the latest proven balance of each
+    # account in the radar's currency that the starting cash adds up, each with its own date.
+    basis: str = "known"
+    basis_note: str | None = None
+    accounts: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -204,6 +163,12 @@ class CashRadar:
     currency: str = "TRY"
     base_state: str = "confirmed"
     other_currency_totals: list[dict[str, Any]] = field(default_factory=list)
+    # Bank balances the starting cash does not hold: other currencies (listed, never converted) and
+    # statements whose balance could not be proven (named with the reason).
+    other_currency_balances: list[dict[str, Any]] = field(default_factory=list)
+    unproven_statements: list[dict[str, Any]] = field(default_factory=list)
+    # The measured runway (`services.runway`, the forecast's own computation) or why there is none.
+    runway: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -223,6 +188,9 @@ def _opening_cash(balance: dict[str, Any] | None, anchor: date) -> OpeningCash |
         stale_after_days=limit,
         source_job_id=balance.get("job_id"),
         source_filename=balance.get("filename"),
+        basis=balance.get("basis") or "known",
+        basis_note="; ".join(sorted({a["basis_note"] for a in balance.get("accounts") or [] if a.get("basis_note")})) or None,
+        accounts=[dict(a) for a in balance.get("accounts") or []],
     )
 
 
@@ -305,7 +273,8 @@ async def compute_cash_radar(
 
     effective = await effective_base_of(db, org_id)
     cur = effective.run_currency or DEFAULT_BASE
-    balance = await proven_balance(db, org_id)
+    balances = await proven_balances(db, org_id, cur)
+    balance = balances["opening"]
     moved = await effective_dates(db, org_id)
     delays = {
         (d["counterparty"], d["direction"]): max(0, round(d["average_delay_days"]))
@@ -463,7 +432,7 @@ async def compute_cash_radar(
         # Extracted rows a person has not yet accepted: not in any figure here.
         not_included.append(f"{waiting} kayıt incelemenizi bekliyor")
     not_included.extend(currency_notes(effective.state, cur, foreign_items))
-    held = await _held_documents(db, org_id, anchor, ranges, cur)
+    held = await held_documents(db, org_id, anchor, ranges, cur)
     if held is not None:
         not_included.append(_held_line(held, cur))
 
@@ -531,66 +500,12 @@ async def compute_cash_radar(
         recurring_payables_cents=total_recurring_cents,
         tax_obligations_cents=total_tax_cents,
         opening_cash=_opening_cash(balance, anchor),
+        other_currency_balances=balances["other_currencies"],
+        unproven_statements=balances["excluded"],
+        runway=await company_runway(db, org_id, anchor, balances=balances),
         held_documents=held,
         currency=cur,
         base_state=effective.state,
         other_currency_totals=[{"currency": c, **v} for c, v in sorted(foreign_items.items())],
         awaiting_decision=block(waiting, held, _held_line(held, cur) if held else ""),
-    )
-
-
-async def _held_documents(
-    db: AsyncSession, org_id: str, anchor: date, ranges: list[tuple[date, date]], currency: str = DEFAULT_BASE
-) -> HeldDocuments | None:
-    """Held invoices, by the week they would fall in if kept; None when nothing is held."""
-    rows = (await db.execute(
-        select(CanonicalTransaction).where(
-            CanonicalTransaction.org_id == org_id,
-            CanonicalTransaction.ledger_status == POSSIBLE_DUPLICATE,
-            CanonicalTransaction.basis == DOCUMENT,
-            CanonicalTransaction.amount_cents > 0,
-            money_rows(),
-        )
-    )).scalars().all()
-    rows = [r for r in rows if r.source_record_id.startswith(("doc:", "inv:"))]
-    if not rows:
-        return None
-    aliases, cache = await load_aliases(db, org_id), {}
-    horizon_end = ranges[-1][1]
-    weeks: dict[int, list[int]] = {}
-    known = assumed = week1 = undated_pay = undated_rec = beyond = foreign = foreign_pay = pay = rec = 0
-    by_reason: dict[str, int] = {}
-    for row in rows:
-        reason = await hold_reason(db, row, aliases, cache)
-        by_reason[reason] = by_reason.get(reason, 0) + 1
-        payable = row.direction != "income"
-        if normalise(row.currency) != currency:
-            foreign += 1
-            foreign_pay += int(payable)
-            continue
-        pay, rec = pay + (row.amount_cents if payable else 0), rec + (0 if payable else row.amount_cents)
-        tx = await source_transaction(db, row, aliases, cache)
-        due = tx.due_date if tx else None
-        if due is None:
-            undated_pay += row.amount_cents if payable else 0
-            undated_rec += 0 if payable else row.amount_cents
-        elif due > horizon_end:
-            beyond += row.amount_cents if payable else 0
-        else:
-            overdue = due < anchor
-            index = 0 if overdue else (due - anchor).days // 7
-            slot = weeks.setdefault(index, [0, 0])
-            slot[0 if payable else 1] += row.amount_cents
-            if payable and overdue:
-                assumed += row.amount_cents
-            elif payable:
-                known += row.amount_cents
-            week1 += row.amount_cents if payable and index == 0 else 0
-    return HeldDocuments(
-        count=len(rows), payable_cents=pay, receivable_cents=rec,
-        weeks=[HeldWeek(week=i + 1, payable_cents=v[0], receivable_cents=v[1]) for i, v in sorted(weeks.items())],
-        payable_basis=BasisSplit(known_cents=known, estimated_cents=0, assumed_cents=assumed),
-        week1_payable_cents=week1, undated_payable_cents=undated_pay, undated_receivable_cents=undated_rec,
-        beyond_horizon_payable_cents=beyond, other_currency_count=foreign, other_currency_payable_count=foreign_pay,
-        by_reason=by_reason,
     )

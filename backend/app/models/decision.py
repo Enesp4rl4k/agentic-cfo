@@ -38,6 +38,9 @@ class DecisionKind(StrEnum):
     HELD_RUN_RELEASE = "held_run_release"
     # A person's answer to one extracted row the system would not book alone.
     HELD_ROW_RESOLUTION = "held_row_resolution"
+    # The system re-read a statement's balance chain after a person answered its held rows: what it
+    # now proves (or why not), linking the answers that caused it.
+    BALANCE_REVERIFICATION = "balance_reverification"
     # An owner/admin confirms the company's currency: the one fact that lets a
     # currency-less document be read in it.
     BASE_CURRENCY_CONFIRMATION = "base_currency_confirmation"

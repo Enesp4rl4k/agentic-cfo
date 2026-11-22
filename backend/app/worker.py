@@ -354,7 +354,7 @@ async def run_cfo_analysis(
 
             # The balance the cash radar starts from, loaded here (the nodes hold no session):
             # the forecast's runway counts down from it, never from zero.
-            from app.services.bank_balance import proven_balance
+            from app.services.bank_accounts import proven_balance
 
             opening_cash = await proven_balance(db, org_id_str) if org_id_str else None
             await db.commit()
@@ -494,7 +494,17 @@ async def run_cfo_analysis(
             )
             if closing is not None:
                 meta["closing_balance"] = closing
-            from app.services.bank_balance import statement_extent
+            # How far those balances are believed, and why not when they are not (what the radar and
+            # the runway read); for a statement with held rows, the chain a person's answer re-reads.
+            from app.parsers.direction import statement_identity
+            from app.services.bank_balance import assess, statement_extent
+
+            meta["balance_proof"] = result.get("balance_proof") or assess(
+                list(result.get("transactions") or []), result.get("ingest_counts"),
+                identity=statement_identity(str(result.get("raw_text") or "")) or None,
+            )
+            if result.get("statement_chain"):
+                meta["statement_chain"] = {**result["statement_chain"], "period": result.get("statement_period")}
 
             # The days the statement covers (and the balances it opens and closes on): which
             # months of the company's cash are complete is read from these later.
