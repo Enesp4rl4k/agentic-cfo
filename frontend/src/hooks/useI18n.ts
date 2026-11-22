@@ -2,6 +2,7 @@
 
 import { useContext, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import {
+  DEFAULT_APP_LOCALE,
   detectInitialLocale,
   getMessages,
   LOCALE_COOKIE_KEY,
@@ -57,7 +58,7 @@ export function useI18n(): { locale: AppLocale; t: MessageTree } {
     setBootLocale(detectInitialLocale(readCachedLocale(), browserLanguages()));
   }, []);
 
-  const locale = org ? resolveAppLocale(org.locale) : (bootLocale ?? "en");
+  const locale = org ? resolveAppLocale(org.locale) : (bootLocale ?? DEFAULT_APP_LOCALE);
 
   // The org row is authoritative — remember it for the next paint (and, via
   // the cookie, for the server's next render).

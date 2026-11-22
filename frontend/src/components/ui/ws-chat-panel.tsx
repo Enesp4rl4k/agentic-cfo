@@ -2,6 +2,7 @@
 
 import { useRef, useEffect, useState } from "react";
 import { Send, Wifi, WifiOff, Loader2, RotateCcw, Zap } from "lucide-react";
+import { useI18n } from "@/hooks/useI18n";
 import { cn } from "@/lib/utils";
 import { useWSChat } from "@/hooks/useWSChat";
 import { useCompanyContextStore } from "@/store/companyContext";
@@ -77,6 +78,7 @@ interface WSChatPanelProps {
 }
 
 export function WSChatPanel({ jobId, className }: WSChatPanelProps) {
+  const { t } = useI18n();
   const { orgId, activeCFOJobId } = useCompanyContextStore();
   const effectiveJobId = jobId ?? activeCFOJobId;
 
@@ -119,7 +121,7 @@ export function WSChatPanel({ jobId, className }: WSChatPanelProps) {
       <div className="flex items-center justify-between border-b border-border px-3 py-2 shrink-0">
         <div className="flex items-center gap-2">
           <Zap className="h-4 w-4 text-primary" />
-          <span className="text-sm font-semibold">AI Chat</span>
+          <span className="text-sm font-semibold">{t.sweepMisc.aiChat}</span>
           <span className="text-[10px] text-muted-foreground bg-primary/10 text-primary px-1.5 py-0.5 rounded">WS</span>
         </div>
         <div className="flex items-center gap-2">

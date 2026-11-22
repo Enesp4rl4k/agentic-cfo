@@ -79,6 +79,6 @@ export function useOrgSettings() {
     focusMode: Boolean(org?.focus_mode),
     sizeProfile: org?.size_profile ?? null,
     baseCurrency: effectiveCurrencyOf(org),
-    locale: org?.locale || "en-US",
+    locale: org?.locale || "tr-TR",
   };
 }

@@ -433,7 +433,7 @@ export default function NakitRadariPage() {
   const copy = t.cashRadar;
   const orgFmt = useCurrencyFormat();
   const { org } = useOrgSettings();
-  const locale = org?.locale || "en-US";
+  const locale = org?.locale || "tr-TR";
   const [viewMode, setViewMode] = useState<"individual" | "consolidated">("individual");
   const [pickedWeek, setPickedWeek] = useState<number | null>(null);
 
