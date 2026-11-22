@@ -1,0 +1,66 @@
+# Caddy — TLS edge for the single-VPS staging stack (docker-compose.prod.yml).
+#
+# Two hostnames, not one with path routing: the frontend owns /api/auth/*
+# (NextAuth) and the backend owns /api/v1/*, so a "/api → backend" rule would
+# break login. Certificates come from Let's Encrypt automatically once DNS for
+# both names points at this server and ports 80/443 are reachable.
+{
+	email {$ACME_EMAIL}
+	servers {
+		timeouts {
+			# Slow-client limits at the edge. read_body bounds one upload (12 MB
+			# at even 0.5 Mbit/s fits in 200 s); idle keeps SSE streams open
+			# (the app pings) but drops dead connections.
+			read_header 10s
+			read_body 300s
+			idle 5m
+		}
+	}
+}
+
+(common) {
+	encode zstd gzip
+	header {
+		# Always HSTS, one year. No includeSubDomains: the parent domain may
+		# host things that are not behind TLS.
+		Strict-Transport-Security "max-age=31536000"
+		# Defaults only where the app (Next.js, FastAPI) did not already set them.
+		?X-Content-Type-Options "nosniff"
+		?X-Frame-Options "DENY"
+		?Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+	log {
+		output stdout
+		format json
+	}
+}
+
+{$APP_DOMAIN} {
+	import common
+	reverse_proxy frontend:3000
+}
+
+{$API_DOMAIN} {
+	import common
+	# Uploads are capped at max_upload_size_mb = 10 MB by the app (Settings,
+	# MAX_UPLOAD_SIZE_MB); leave headroom for multipart overhead and refuse
+	# anything larger at the edge. If MAX_UPLOAD_SIZE_MB is raised, raise this.
+	request_body {
+		max_size 12MB
+	}
+	# SSE (/api/v1/.../stream) must not be buffered.
+	reverse_proxy backend:8000 {
+		flush_interval -1
+		# The ONE proxy hop the app is told about (TRUSTED_PROXY_COUNT=1): the
+		# header is overwritten with the address that connected to Caddy, so
+		# a client-supplied X-Forwarded-For is never passed on and the
+		# rightmost entry the app reads is always the real client.
+		header_up X-Forwarded-For {remote_host}
+		transport http {
+			dial_timeout 5s
+			# Slow analyses and large uploads: answer headers within 5 minutes.
+			response_header_timeout 300s
+		}
+	}
+}
