@@ -20,7 +20,13 @@ from typing import Any
 
 from app.config import get_settings
 from app.core.currency_totals import fmt_money
-from app.services.bank_balance import assess, balance_age, closing_balance, latest_balance
+from app.services.bank_balance import (
+    aged_basis,
+    assess,
+    balance_age,
+    closing_balance,
+    latest_balance,
+)
 from app.services.coverage import gaps, usable_months
 
 RUNWAY_MIN_MONTHS = 3  # months of cash movement the burn average needs (the forecast's baseline window)
@@ -67,6 +73,7 @@ def opening_cash_for(state: dict[str, Any], anchor: date | None = None) -> dict[
     today = anchor or datetime.now(UTC).date()
     limit = get_settings().radar_balance_stale_after_days
     age, stale = balance_age(str(chosen["date"]), today, limit)
+    basis, basis_note = aged_basis(chosen.get("basis"), chosen.get("basis_note"), age)
     return {
         "balance_cents": int(chosen["balance_cents"]),
         "as_of": str(chosen["date"])[:10],
@@ -75,8 +82,8 @@ def opening_cash_for(state: dict[str, Any], anchor: date | None = None) -> dict[
         "stale_after_days": limit,
         "filename": chosen.get("filename"),
         # "known", or "assumed" when the proof is thin (`bank_balance.assess`): said wherever it is shown.
-        "basis": chosen.get("basis") or "known",
-        "basis_note": chosen.get("basis_note"),
+        "basis": basis,
+        "basis_note": basis_note,
         "accounts": list(chosen.get("accounts") or []),
         "excluded": list(chosen.get("excluded") or []),
     }
@@ -94,7 +101,8 @@ def _balance_notes(opening: dict[str, Any], money: Any) -> str:
         if a.get("lagging") and len(accounts) > 1:
             parts.append(f"{a['name'] or 'adsız ekstre'} bakiyesi {_date_tr(a['as_of'])} tarihli, diğerlerinden {a['behind_days']} gün eski")
     if opening.get("basis") == "assumed":
-        why = "; ".join(sorted({a["basis_note"] for a in accounts if a.get("basis_note")} or {opening.get("basis_note") or "zayıf kanıt"}))
+        notes = {a["basis_note"] for a in accounts if a.get("basis_note")} | ({opening["basis_note"]} if opening.get("basis_note") else set())
+        why = "; ".join(sorted(notes or {"zayıf kanıt"}))
         parts.append(f"Bakiye zayıf kanıta dayanıyor ({why}), varsayım olarak alındı")
     if opening.get("identity_note"):
         parts.append(str(opening["identity_note"]))

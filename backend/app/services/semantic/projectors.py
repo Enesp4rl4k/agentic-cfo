@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from app.services.runway_display import runway_for_display
 from app.services.semantic.types import EvidenceRef, MetricPoint, MetricUnit
 
 
@@ -58,10 +59,10 @@ def project_from_cfo(
     forecast = dash.get("forecast") or {}
     anomalies = last_cfo.get("anomalies") or dash.get("anomalies") or []
 
-    runway = None
-    scenarios = forecast.get("scenarios") or {}
-    base = scenarios.get("base") or {}
-    runway = base.get("runway_months")
+    # The CFO summary other agents read (their prompts rank risks on it) carries a runway only when it is KNOWN: an
+    # assumed or unverified one is not a figure to hand on without its basis (`runway_display`).
+    view = runway_for_display(forecast)
+    runway = view.months if view.proven else None
 
     critical = sum(1 for a in anomalies if isinstance(a, dict) and a.get("severity") == "critical")
 

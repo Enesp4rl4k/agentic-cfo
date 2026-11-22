@@ -37,7 +37,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.core.currency_totals import DEFAULT_BASE, normalise
 from app.models.analysis_job import AnalysisJob, JobStatus
-from app.services.bank_balance import basis_of, proof_reason
+from app.services.bank_balance import aged_basis, basis_of, proof_reason
 from app.services.statement_account import kind, mask
 
 UNCERTAIN_NOTE = (
@@ -236,10 +236,12 @@ def _account(group: list[dict[str, Any]], newest: str, limit: int, names: dict[s
     ident = next((r["identity"] for r in group if _stated(r)), None)
     behind = (date.fromisoformat(newest) - date.fromisoformat(last["date"])).days
     name = next((names[r["job_id"]] for r in group if r["job_id"] in names), None) or last["filename"]
+    # An account whose newest balance is older than the burn window against the other accounts' is only assumed.
+    basis, note = aged_basis(last["basis"], last["reason"], behind)
     return {
         "name": name, "job_id": last["job_id"], "as_of": last["date"],
-        "balance_cents": last["balance_cents"], "currency": last["currency"], "basis": last["basis"],
-        "basis_note": last["reason"], "identity": ident, "identity_hint": mask(ident), "statements": len(group),
+        "balance_cents": last["balance_cents"], "currency": last["currency"], "basis": basis,
+        "basis_note": note, "identity": ident, "identity_hint": mask(ident), "statements": len(group),
         "behind_days": behind, "lagging": behind > limit, "gaps": _gaps(group),
         "job_ids": [r["job_id"] for r in group], "extent": _union_extent(group, name),
     }
