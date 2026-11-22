@@ -216,32 +216,15 @@ def current(org: Organization | None) -> dict[str, Any]:
     }
 
 
-def default_rules(org: Organization | None, rules: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """The default policy with its high-value rule at the org's acknowledged threshold, and saying why.
-
-    Untouched when nobody acknowledged a threshold: the policy then reads as it always did.
-    """
-    applied = org.materiality_applied if org is not None else None
-    if not applied:
-        return rules
-    out = []
-    for rule in rules:
-        if rule.get("id") == "high_value":
-            rule = {
-                **rule,
-                "when": {"amount_kurus_gt": int(applied["amount_cents"])},
-                "note": f"Yüksek tutarlı işlem: {basis_text(applied)}",
-            }
-        out.append(rule)
-    return out
-
-
 async def _apply(
     db: AsyncSession, org: Organization, user: User, value: dict[str, Any], *, outcome: str, reason: str | None
 ) -> None:
     before = {"amount_cents": threshold_cents(org), "source": (org.materiality_applied or {}).get("source", LEGACY)}
     stored = {
         **value,
+        # Said once, here, and stored with the value: the authority policy (a lower layer) reads it without
+        # importing this module, and every place that applies the threshold shows the same sentence.
+        "basis_text": basis_text(value),
         "acknowledged_by": str(user.id),
         "acknowledged_at": datetime.now(UTC).isoformat(),
     }
