@@ -54,16 +54,20 @@ _STATE_MESSAGES = {
 
 
 def _client_ip(request: Request) -> str | None:
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else None
+    from app.core.client_ip import UNKNOWN, client_ip
+
+    address = client_ip(request)
+    return None if address == UNKNOWN else address
 
 
-async def address_allowed(scope: str, address: str) -> bool:
-    """Count one request against the per-address hourly limit (the address is hashed in the key)."""
+async def address_allowed(scope: str, address: str, ip: str | None) -> bool:
+    """Count one request against the hourly limit of this address FROM this IP (both hashed in the key).
+
+    Keyed on the pair so one IP cannot use up the allowance of an address for everyone else; the
+    flood of mail itself is stopped by the per-address cool-down (settings.auth_mail_cooldown_minutes)."""
     digest = hashlib.sha256(address.encode("utf-8")).hexdigest()[:32]
-    return await consume(f"{scope}:{digest}", get_settings().password_reset_per_email_per_hour, 3600)
+    where = hashlib.sha256((ip or "unknown").encode("utf-8")).hexdigest()[:16]
+    return await consume(f"{scope}:{digest}:{where}", get_settings().password_reset_per_email_per_hour, 3600)
 
 
 async def hold_to_floor(started: float) -> None:
@@ -82,9 +86,10 @@ async def forgot_password(
     """Ask for a reset link. The answer never depends on the account."""
     started = time.monotonic()
     address = normalize_email(str(body.email))
-    allowed = await address_allowed("pwreset", address)
+    ip = _client_ip(request)
+    allowed = await address_allowed("pwreset", address, ip)
     outcome = await request_reset(
-        db, email=address, ip=_client_ip(request), user_agent=request.headers.get("User-Agent"),
+        db, email=address, ip=ip, user_agent=request.headers.get("User-Agent"),
         rate_limited=not allowed,
     )
     if outcome == "sent":

@@ -145,12 +145,10 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
 
     @staticmethod
     def _get_ip(request: Request) -> str | None:
-        forwarded = request.headers.get("X-Forwarded-For")
-        if forwarded:
-            return forwarded.split(",")[0].strip()
-        if request.client:
-            return request.client.host
-        return None
+        from app.core.client_ip import UNKNOWN, client_ip
+
+        address = client_ip(request)
+        return None if address == UNKNOWN else address
 
     @staticmethod
     async def _write_audit(data: dict) -> None:

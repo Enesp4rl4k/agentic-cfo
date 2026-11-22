@@ -119,11 +119,9 @@ def _get_client_key(request: Request) -> str:
         pass
 
     # Fall back to IP
-    forwarded = request.headers.get("X-Forwarded-For")
-    ip = forwarded.split(",")[0].strip() if forwarded else (
-        request.client.host if request.client else "unknown"
-    )
-    return f"ip:{ip}"
+    from app.core.client_ip import client_ip
+
+    return f"ip:{client_ip(request)}"
 
 
 def _check_rate_limit(key: str, max_requests: int, window: int) -> tuple[bool, int, int]:

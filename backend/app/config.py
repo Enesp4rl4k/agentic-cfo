@@ -213,9 +213,22 @@ class Settings(BaseSettings):
     email_verification_required: bool = True
     email_verification_expire_hours: int = 48
 
+    # Client address (app/core/client_ip.py). Default: trust no proxy, use the socket peer and ignore
+    # X-Forwarded-For. Behind a reverse proxy set TRUSTED_PROXY_CIDRS (its network) or
+    # TRUSTED_PROXY_COUNT (how many proxies sit in front of the app).
+    trusted_proxy_count: int = 0
+    trusted_proxy_cidrs: str = ""
+
     # Password reset (POST /auth/forgot-password, /auth/reset-password)
     password_reset_expire_minutes: int = 30
+    # Per (address, client IP) per hour. The address alone is not a key: one IP could use up the
+    # allowance a real owner needs. Mail flooding is stopped by the cool-down below instead.
     password_reset_per_email_per_hour: int = 3
+    # At most one reset / verification / "you already have an account" mail per address and kind
+    # in this many minutes, however many requests arrive from however many IPs. The answer is the
+    # same; the earlier mail's link is still valid (reset 30 min, verification 48 h), so the owner
+    # is never locked out by someone else's requests. Keep it below the reset lifetime.
+    auth_mail_cooldown_minutes: int = 15
     # A request takes at least this long whether or not the account exists.
     password_reset_response_floor_seconds: float = 0.5
 

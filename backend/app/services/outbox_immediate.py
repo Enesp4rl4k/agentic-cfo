@@ -23,11 +23,14 @@ E-mail verification (`email_verification`) is one of them: the address is the re
 from __future__ import annotations
 
 import json
+import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import outbound
 from app.core.email_address import normalize_email
 from app.models.outbox_message import IMMEDIATE, OutboxMessage
 from app.services import outbox
@@ -51,6 +54,9 @@ IMMEDIATE_KINDS: dict[str, Kind] = {
     "org_invite": Kind(frozenset({"email"}), scrub=True),
     "password_reset": Kind(frozenset({"email"}), scrub=True),
     "email_verification": Kind(frozenset({"email"}), scrub=True),
+    # Sent to an address that tried to register while it already has an account: no token, only the
+    # sign-in and reset pages, so there is nothing to scrub.
+    "account_exists": Kind(frozenset({"email"}), scrub=False),
     "connection_test": Kind(frozenset({"email", "slack", "webhook"}), scrub=False),
     "bot_reply": Kind(frozenset({"whatsapp", "slack_bot"}), scrub=False),
 }
@@ -145,6 +151,45 @@ async def enqueue_email_verification(
     )
 
 
+async def enqueue_account_exists(
+    db: AsyncSession, *, user_id: str, org_id: str | None, email: str, login_url: str, reset_url: str,
+) -> OutboxMessage:
+    """The "you already have an account" mail, to the address that someone tried to register again.
+
+    Replaces the "already registered" error of /auth/register, so the page itself cannot tell a
+    stranger which addresses exist. Contains no token: the reset page proves the mailbox itself."""
+    body = (
+        "Bu e-posta adresiyle zaten bir hesabınız var, bu yüzden yeni bir hesap açılmadı.\n"
+        "An account already exists for this e-mail address, so a new one was not created.\n\n"
+        f"Giriş / Sign in: {login_url}\n"
+        f"Şifrenizi mi unuttunuz? / Forgot your password? {reset_url}\n\n"
+        "Bu isteği siz yapmadıysanız bu e-postayı yok sayın; hesabınızda hiçbir şey değişmedi. "
+        "If this was not you, ignore this e-mail: nothing changed on your account."
+    )
+    return await _write(
+        db, kind="account_exists", key=f"account_exists:{user_id}:{uuid.uuid4().hex}",
+        org_id=org_id or SYSTEM_ORG, channel="email", recipient=normalize_email(email),
+        subject="Hesabınız zaten var / You already have an account", body=body, source_ref=user_id,
+    )
+
+
+async def mailed_recently(db: AsyncSession, *, kind: str, email: str, minutes: int) -> bool:
+    """Whether this kind of mail went (or is queued) to this address inside the cool-down."""
+    since = datetime.now(UTC) - timedelta(minutes=minutes)
+    found = (
+        await db.execute(
+            select(OutboxMessage.id)
+            .where(
+                OutboxMessage.kind == kind,
+                OutboxMessage.recipient == normalize_email(email),
+                OutboxMessage.created_at > since,
+            )
+            .limit(1)
+        )
+    ).first()
+    return found is not None
+
+
 _TEST_TEXT = "Bağlantı testi: bu mesajı görüyorsanız bağlantınız çalışıyor. / Connection test: this message arrived."
 
 
@@ -160,7 +205,7 @@ async def enqueue_connection_test(
             raise ImmediateKindRefused("recipient_not_allowed")
         recipient, body = normalize_email(destination), _TEST_TEXT
     else:
-        problem = outbox.destination_problem(destination)
+        problem = await outbound.destination_problem(destination)
         if problem:
             raise ImmediateKindRefused(problem)
         recipient = outbox.destination_host(destination)

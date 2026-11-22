@@ -30,8 +30,6 @@ _MONEY_WORDS = ("amount", "total_price", "payable", "tutar", "gross", "salary", 
 _NOT_A_SOURCE: dict[str, str] = {
     "app/mcp/server.py": "the MCP server calls this API on behalf of an agent; it fetches nothing into the books",
     "app/services/benchmark.py": "peer benchmark figures (metrics of other companies), not this company's money rows",
-    "app/services/connectors/crm_export.py": "emits a CSV that scheduled_sync reads through data_plane.normalization_service (counted there)",
-    "app/services/connectors/hr_export.py": "emits a CSV that scheduled_sync reads through data_plane.normalization_service (counted there)",
 }
 
 # 2. Who may write to the books / hand rows to the ingest pipeline, and why that is safe.

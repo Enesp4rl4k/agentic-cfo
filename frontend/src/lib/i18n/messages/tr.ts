@@ -3680,8 +3680,8 @@ export const tr: MessageTree = {
     sentBody: "Bu adreste doğrulanmayı bekleyen bir hesap varsa yeni bir bağlantı yolda.",
     tooMany: "Çok fazla deneme yapıldı. Biraz bekleyip yeniden deneyin.",
     registered: {
-      title: "Bitirmek için e-postanızı kontrol edin",
-      body: "Adresinize bir doğrulama bağlantısı gönderdik. Bağlantıyı açın, sonra giriş yapın. Bundan önce hesabınızla giriş yapılamaz.",
+      title: "E-postanızı kontrol edin",
+      body: "Bu adrese bir e-posta gönderdik. Yeni bir hesap açtıysanız içindeki bağlantıyı açın, sonra giriş yapın; bundan önce giriş yapılamaz. Bu adreste zaten bir hesap varsa e-posta size giriş ve şifre sıfırlama bağlantılarını içerir.",
       resend: "Gelmedi mi? Bağlantıyı yeniden gönderin",
     },
     unverified: {

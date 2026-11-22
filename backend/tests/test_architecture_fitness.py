@@ -278,6 +278,7 @@ _HTTP_VERBS = frozenset({"post", "put", "patch", "delete", "request", "send"})
 # exchange with a system the company connects, or our own API. Each says why it is not an outward
 # effect. A new entry needs the same sentence; a module that notifies a person is not one.
 _HTTP_WRITERS: dict[str, str] = {
+    "app.core.outbound": "the one guarded client for a URL a user typed (https, public addresses only, pinned)",
     "app.mcp.server": "client of our own API at a configured base URL",
     "app.services.erp.parasut_connector": "OAuth token exchange with the ERP the company connected (pull)",
     "app.services.gib_efatura": "login and queries against GIB (pull)",
@@ -329,6 +330,35 @@ def test_f3_no_module_outside_the_outbox_sender_talks_to_a_provider() -> None:
         "(app.services.outbox / outbox_immediate), or, for a pull from a system the company connected, "
         "list the module in _HTTP_WRITERS with the reason (F3, ADR 0003)."
     )
+
+
+# Modules that import httpx. Each talks to a FIXED, code-owned host (or an operator-set base URL),
+# never to a URL a user typed; a user-supplied URL goes through app.core.outbound (SSRF guard).
+_FIXED_HOST_HTTP_CLIENTS = frozenset({
+    "app.core.outbound", "app.mcp.server", "app.services.alert_dispatcher", "app.services.benchmark",
+    "app.services.erp.parasut_connector", "app.services.gib_edefter_ws", "app.services.gib_efatura",
+    "app.services.github_connector", "app.services.integrations", "app.services.open_banking.base",
+    "app.services.outbox_transport", "app.services.sso", "app.services.tcmb_macro",
+})
+
+
+def test_f3_user_supplied_urls_never_reach_a_raw_http_client() -> None:
+    """A new module that imports httpx must be classified: fixed host, or use app.core.outbound."""
+    modules = _modules()
+    clients = {
+        n for n, path in modules.items()
+        if _imports_httpx(ast.parse(path.read_text(encoding="utf-8", errors="replace")))
+        or "import httpx" in path.read_text(encoding="utf-8", errors="replace")
+    }
+    unknown = sorted(clients - _FIXED_HOST_HTTP_CLIENTS)
+    assert not unknown, (
+        f"{unknown} import httpx. A URL a user typed (webhook, CSV import, base URL) must go through "
+        "app.core.outbound.request; if the host is fixed in code, add the module to "
+        "_FIXED_HOST_HTTP_CLIENTS with that reason."
+    )
+    # The two CSV connectors take a user URL: they must use the guard, not a client of their own.
+    for name in ("app.services.connectors.crm_export", "app.services.connectors.hr_export"):
+        assert "outbound.fetch_import" in modules[name].read_text(encoding="utf-8")
 
 
 def test_f3_the_http_write_allowlist_has_no_dead_entries() -> None:
