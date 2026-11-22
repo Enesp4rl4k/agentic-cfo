@@ -90,9 +90,13 @@ class Sahip:
 
 
 async def _finansal_ekle(
-    veri: bytes, dosya_adi: str, tanima: Tanima, sahip: Sahip, db: AsyncSession,
+    veri: bytes, dosya_adi: str, tanima: Tanima, sahip: Sahip, db: AsyncSession, besleme: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """A financial file becomes an analysis job, exactly as the upload page makes one."""
+    """A financial file becomes an analysis job, exactly as the upload page makes one.
+
+    `besleme` is the provenance of a job made by OUR OWN fetch code (`feed.FeedResult.feed_meta`): it is written onto
+    the job here, out of band, and is passed only by `islemleri_ekle`. The upload page, the mail inbox and every other
+    caller of `dosyalari_ekle` never pass it, and nothing in a file's content can set it."""
     uzanti = _uzanti(dosya_adi)
     if tanima.tur == S.BANKA_EKSTRESI and uzanti in ("csv", "xlsx", "txt"):
         # The statement as its parser reads it: the header row found under the
@@ -104,9 +108,7 @@ async def _finansal_ekle(
             csv_text = standart_csv(tablo, S.BANKA_EKSTRESI)[0]
             # The bank's title rows say which account this is; the normalised table has no room for them,
             # so the account travels as a first line the table reader skips as a title row.
-            from app.services.ingest.feed import has_coverage_header
-
-            if statement_identity(tablo.ust_metin) or has_coverage_header(tablo.ust_metin):
+            if statement_identity(tablo.ust_metin):
                 csv_text = '"' + tablo.ust_metin[:400].replace('"', "") + '"' + chr(10) + csv_text
             veri, uzanti = csv_text.encode("utf-8"), "csv"
     try:
@@ -128,6 +130,9 @@ async def _finansal_ekle(
                             original_name=dosya_adi),
         user_id=sahip.user_id, org_id=sahip.org_id, db=db,
     )
+    if besleme:
+        job.result_metadata = {**(job.result_metadata or {}), "feed": besleme}
+        await db.commit()
     if sahip.org_id:
         await record_usage_event(sahip.org_id, "upload", db=db)
 
@@ -225,6 +230,7 @@ async def dosyalari_ekle(
     gelen: list[tuple[str, bytes]],
     secim: dict[str, str] | None = None,
     istenen: AnalysisJob | None = None,
+    besleme: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Recognise each file and put it where it belongs. Shared by the page and the mail inbox."""
     secim = secim or {}
@@ -289,7 +295,7 @@ async def dosyalari_ekle(
             else:
                 gorulen.add(imza)
                 if hedef_finansal is None:
-                    sonuc.update(await _finansal_ekle(veri, ad, tanima, sahip, db))
+                    sonuc.update(await _finansal_ekle(veri, ad, tanima, sahip, db, besleme))
                     if sonuc["durum"] == EKLENDI:
                         yeni_is = sonuc["job_id"]
                         hedef_finansal = await db.get(AnalysisJob, yeni_is)
@@ -332,7 +338,7 @@ def _fatura_mi(t: dict[str, Any]) -> bool:
     return bool(t.get("document_id"))
 
 
-def islemler_csv(islemler: list[dict[str, Any]], kapsam: str | None = None) -> bytes:
+def islemler_csv(islemler: list[dict[str, Any]]) -> bytes:
     """Connector transactions as a file the ingestion reads: signed amounts, ISO dates.
 
     An invoice carries three more columns (number, counterparty, due date): without
@@ -340,8 +346,6 @@ def islemler_csv(islemler: list[dict[str, Any]], kapsam: str | None = None) -> b
     """
     out = io.StringIO()
     w = csv.writer(out, lineterminator="\n")
-    if kapsam:
-        w.writerow([kapsam])      # what the pull received: read back as the file's stated period (stated_period)
     faturali = any(_fatura_mi(t) for t in islemler)
     # The currency a source stated travels with the row; a source that states none leaves the cell empty (the
     # pipeline's own rule applies: the document's, else the confirmed base currency marked as assumed, else held).
@@ -372,7 +376,7 @@ def islemler_csv(islemler: list[dict[str, Any]], kapsam: str | None = None) -> b
 
 
 async def islemleri_ekle(
-    db: AsyncSession, sahip: Sahip, islemler: list[dict[str, Any]], kaynak: str, kapsam: str | None = None,
+    db: AsyncSession, sahip: Sahip, islemler: list[dict[str, Any]], kaynak: str, besleme: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """A connector's pull becomes an ordinary analysis the pages can show."""
     ad = f"{kaynak}_{datetime.now(UTC):%Y%m%d_%H%M}.csv"
@@ -380,4 +384,4 @@ async def islemleri_ekle(
     # schema keeps only date, description, amount and type, which is how an invoice
     # used to lose its number and become cash (G22).
     tur = FINANSAL_BELGE if any(_fatura_mi(t) for t in islemler) else S.BANKA_EKSTRESI
-    return await dosyalari_ekle(db, sahip, [(ad, islemler_csv(islemler, kapsam))], {ad: tur})
+    return await dosyalari_ekle(db, sahip, [(ad, islemler_csv(islemler))], {ad: tur}, besleme=besleme)

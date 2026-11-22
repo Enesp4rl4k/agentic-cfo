@@ -40,7 +40,7 @@ from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Any
 
-from app.services.ingest.feed import FeedFailed, coverage_header
+from app.services.ingest.feed import FeedFailed, pull_coverage
 
 logger = logging.getLogger(__name__)
 
@@ -464,10 +464,11 @@ class ScheduledSyncRunner:
                 else:
                     cfg = schedule.source_config or {}
                     window = (str(cfg["from_date"])[:10], str(cfg["to_date"])[:10]) if cfg.get("from_date") and cfg.get("to_date") else None
-                    stated = coverage_header(window, [r["date"] for r in normalized.feed.rows], partial)
+                    stated = pull_coverage(window, [r["date"] for r in normalized.feed.rows], partial)
                     job_id = await self._create_job(
-                        # The pull's own statement of what it received heads the file: coverage reads it like a period.
-                        csv_bytes=(('"' + str(stated) + '"' + chr(10)).encode() + normalized.job_csv) if stated else normalized.job_csv,
+                        csv_bytes=normalized.job_csv,
+                        # Out of band: what this pull received is job metadata, never a line inside the file.
+                        feed_meta={"source": str(schedule.source_type), "pull_coverage": stated},
                         filename=filename,
                         org_id=schedule.org_id,
                         column_mapping=validation.column_mapping,
@@ -798,6 +799,7 @@ class ScheduledSyncRunner:
         quality_meta: dict[str, Any] | None,
         db: Any,
         settings: Any,
+        feed_meta: dict[str, Any] | None = None,
     ) -> str | None:
         """Create an AnalysisJob from the pulled CSV data."""
         import io
@@ -867,6 +869,8 @@ class ScheduledSyncRunner:
                 if column_mapping:
                     meta["column_mapping"] = column_mapping
                 meta["sync_auto"] = True
+                if feed_meta:
+                    meta["feed"] = feed_meta
                 if quality_meta:
                     meta.update(quality_meta)
                 await db.execute(
@@ -967,11 +971,11 @@ def _outcome_note(outcome: dict[str, Any]) -> str | None:
 def feed_row_for_csv(row: dict[str, Any]) -> dict[str, Any]:
     """A pulled row as a CSV line the canonical normalisation reads: a value the source did not state stays EMPTY.
 
-    The amount is signed by the direction the source stated; an unknown direction is written "?" (held), an
+    The amount is the magnitude and the direction is the explicit `type` column; an unknown direction is written "?" (held), an
     unknown amount, date or currency is an empty cell (held). Nothing is filled in.
     """
     cents, kind = row.get("amount_cents"), row.get("type")
-    amount: Any = "" if cents is None else (-cents if kind == "expense" else cents) / 100
+    amount: Any = "" if cents is None else cents / 100       # the magnitude: the direction is the `type` column
     return {
         "date": row.get("date") or "", "amount": amount, "description": row.get("description") or "",
         "type": kind or "?", "currency": row.get("currency") or row.get("currency_raw") or "", "reference": row.get("reference") or "",

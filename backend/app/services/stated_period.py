@@ -31,9 +31,6 @@ _LABELLED = re.compile(
     r"[^\n\d]{0,30}" + _D + _DASH + _D,
     re.IGNORECASE,
 )
-_PULL = re.compile(
-    r"çekim\s+(tamamlandı|yarıda\s+kaldı)(?:[^\d]{0,40}" + _D + r")?", re.IGNORECASE,
-)
 _START = re.compile(r"(?:başlangıç|baslangic|başlama|baslama|start|from)\s*tarihi?[\s:;=,\"]*" + _D, re.IGNORECASE)
 _END = re.compile(r"(?:bitiş|bitis|bitim|end|to)\s*tarihi?[\s:;=,\"]*" + _D, re.IGNORECASE)
 
@@ -87,11 +84,9 @@ def stated_period(text: str, transaction_dates: list[str] | None = None) -> dict
     dates = sorted(str(d)[:10] for d in (transaction_dates or []) if d)
     if dates and (dates[0] < start.isoformat() or dates[-1] > end.isoformat()):
         return None
-    period: dict[str, Any] = {"start": start.isoformat(), "end": end.isoformat()}
-    # A sync's own statement of what it received (`feed.coverage_header`): proof of the span, not a header claim.
-    if pull := _PULL.search("\n".join(header)):
-        period["pulled"] = "complete" if pull.group(1).lower().startswith("tamam") else "partial"
-    return period
+    # Only what the file's text says, checked against its rows by `coverage.apply_period`. The text can never carry
+    # `pulled`: that is set from the job's own metadata (`services.pull_coverage`), never from content.
+    return {"start": start.isoformat(), "end": end.isoformat()}
 
 
 def attach_period(patch: dict[str, Any]) -> dict[str, Any]:
@@ -107,3 +102,13 @@ def attach_period(patch: dict[str, Any]) -> dict[str, Any]:
     if out.get("statement_extent"):
         out["statement_extent"] = apply_period(out["statement_extent"], period)
     return out
+
+
+async def attach_periods(patch: dict[str, Any], state: Any) -> dict[str, Any]:
+    """`attach_period` for a single document (its header may state the period it covers), then the pull coverage a job
+    made by our own fetch code carries as metadata (`services.pull_coverage`): never text from the file."""
+    from app.services.pull_coverage import attach_pull
+
+    if not state.get("ek_belgeler"):
+        patch = attach_period(patch)
+    return await attach_pull(patch, state)

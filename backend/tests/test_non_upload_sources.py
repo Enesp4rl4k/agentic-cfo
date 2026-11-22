@@ -428,9 +428,9 @@ def test_direction_is_never_assumed_to_be_income() -> None:
     # a file with both signs is NOT "signed": no contract and no type field means every row is held
     n = normalize_csv_transactions(csv_bytes=_csv("2026-01-05,-100.00,x,R1,,TRY", "2026-01-06,40.00,y,R2,,TRY"))
     assert n.rows == [] and len(n.held) == 2
-    # the source's own semantics (payroll is an expense) decide only when the file states nothing
+    # not even a source name is evidence (no source is declared by contract): an untyped payroll row is held
     n = normalize_csv_transactions(csv_bytes=_csv("2026-01-05,100.00,x,R1,,TRY"), source="hr_export")
-    assert [r.direction for r in n.rows] == ["expense"]
+    assert n.rows == [] and len(n.held) == 1
     # an unknown type word is held, not read as income
     n = normalize_csv_transactions(csv_bytes=_csv("2026-01-05,100.00,x,R1,transfer,TRY"), source="crm_export")
     assert n.rows == [] and len(n.held) == 1

@@ -482,7 +482,7 @@ async def parasut_al(db: Any, integration: Any, sahip: Any, http: httpx.AsyncCli
     if cekilen.complete and cfg.get("son_ozet") == ozet:
         return {"durum": "degisiklik_yok", "sync_count": len(islemler), "job_id": cfg.get("son_is"), **sayilar,
                 "mesaj": "Son alımdan bu yana yeni ya da değişen fatura yok; son analiz güncel."}
-    out = await islemleri_ekle(db, sahip, islemler, "parasut", kapsam=cekilen.coverage_header())
+    out = await islemleri_ekle(db, sahip, islemler, "parasut", besleme=cekilen.feed_meta())
     if out.get("job_id") and cekilen.complete:
         cfg = _config(integration)
         cfg["son_ozet"], cfg["son_is"] = ozet, out["job_id"]

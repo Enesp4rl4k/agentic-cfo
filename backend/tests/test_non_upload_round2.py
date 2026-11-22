@@ -38,51 +38,121 @@ def _csv(*rows: str, header: str = HEADER) -> bytes:
 
 # ── 1. direction ────────────────────────────────────────────────────────────────────────────────────────────
 
+TYPED = "date,amount,description,reference,currency,type\n"
+
+
 def test_one_negative_row_does_not_make_a_payroll_file_income() -> None:
+    # No type column and no contract: nothing says which way ANY of these went, the negative row included.
     n = normalize_csv_transactions(
         csv_bytes=_csv("2026-01-05,10000.00,Maaş A,P1,TRY", "2026-01-05,12000.00,Maaş B,P2,TRY", "2026-01-06,-500.00,Avans iadesi,P3,TRY"),
         source="hr_export",
     )
-    assert [(r.source_record_id, r.direction, r.amount_cents) for r in n.rows] == [("P1", "expense", 1000000), ("P2", "expense", 1200000)]
-    assert [h["reference"] for h in n.held] == ["P3"] and n.held[0]["type"] is None      # the contradicting sign is held
+    assert n.rows == [] and len(n.held) == 3 and all(h["type"] is None for h in n.held)
     assert n.outcome()["status"] == F.AWAITING_REVIEW
 
 
-@pytest.mark.parametrize(("source", "direction"), [("billing_stripe", "income"), ("crm_export", "income"), ("hr_export", "expense")])
-def test_a_contract_source_with_a_refund_row_books_the_rest_by_its_contract_and_holds_the_refund(source, direction) -> None:
+@pytest.mark.parametrize("type_", ["expense", "income"])
+def test_a_typed_file_books_by_the_row_s_own_type_and_holds_a_row_whose_sign_disagrees_with_nothing_it_can_check(type_) -> None:
     n = normalize_csv_transactions(
-        csv_bytes=_csv("2026-01-05,100.00,a,R1,TRY", "2026-01-06,200.00,b,R2,TRY", "2026-01-07,-50.00,refund,R3,TRY"), source=source)
-    assert {r.direction for r in n.rows} == {direction} and len(n.rows) == 2
-    assert [h["reference"] for h in n.held] == ["R3"]
+        csv_bytes=_csv(f"2026-01-05,10000.00,Maaş A,P1,TRY,{type_}", f"2026-01-05,12000.00,Maaş B,P2,TRY,{type_}",
+                       f"2026-01-06,-500.00,Avans iadesi,P3,TRY,{type_}", header=TYPED), source="hr_export")
+    assert {r.source_record_id: r.direction for r in n.rows} == {"P1": type_, "P2": type_}
+    assert [h["reference"] for h in n.held] == ["P3"]                  # a type field and a negative amount: two signals, held
+
+
+def test_the_source_contract_table_declares_nothing_it_cannot_prove() -> None:
+    """Stripe lists paid invoices only (billing_stripe.py: `stripe.Invoice.list(status="paid")`) and writes `type=income`
+    itself; CRM and HR files come from customers and can hold a credit note or a reimbursement. So no source is declared
+    by contract, and a row with no type field is held."""
+    assert F.SOURCE_DIRECTION == {}
+    for source in ("billing_stripe", "crm_export", "hr_export"):
+        n = normalize_csv_transactions(csv_bytes=_csv("2026-01-05,100.00,dispute,R1,TRY", "2026-01-06,40.00,payout,R2,TRY"), source=source)
+        assert n.rows == [] and len(n.held) == 2
 
 
 def test_no_evidence_no_booking_the_sign_mix_of_a_file_is_never_evidence() -> None:
     mixed = _csv("2026-01-05,100.00,a,R1,TRY", "2026-01-06,-40.00,b,R2,TRY", "2026-01-07,-10.00,c,R3,TRY", "2026-01-08,-5.00,d,R4,TRY")
-    n = normalize_csv_transactions(csv_bytes=mixed)                                 # no source contract, no type column
-    assert n.rows == [] and len(n.held) == 4
-    n = normalize_csv_transactions(csv_bytes=mixed, source="manual_csv")            # a source that declares nothing
-    assert n.rows == []
+    assert normalize_csv_transactions(csv_bytes=mixed).rows == []
+    assert normalize_csv_transactions(csv_bytes=mixed, source="manual_csv").rows == []
 
 
-def test_an_explicit_row_field_is_evidence_and_beats_nothing_else() -> None:
+def test_an_explicit_row_field_is_evidence() -> None:
     n = normalize_csv_transactions(
         csv_bytes=_csv("2026-01-05,100.00,a,R1,TRY,income", "2026-01-06,40.00,b,R2,TRY,expense", "2026-01-07,9.00,c,R3,TRY,transfer",
-                       header=HEADER.strip() + ",type\n"), source="hr_export")
+                       header=TYPED))
     assert {r.source_record_id: r.direction for r in n.rows} == {"R1": "income", "R2": "expense"} and [h["reference"] for h in n.held] == ["R3"]
 
 
 def test_a_signed_contract_is_the_only_way_a_sign_becomes_a_direction() -> None:
     signed = F.direction_by_contract((F.SIGNED, None), F.read_money("-5.00"))
     assert signed == "expense" and F.direction_by_contract((F.SIGNED, None), F.read_money("5.00")) == "income"
-    assert F.direction_by_contract(None, F.read_money("5.00")) is None and F.SIGNED not in {k for k, _ in F.SOURCE_DIRECTION.values()}
+    assert F.direction_by_contract(None, F.read_money("5.00")) is None
+
+
+def test_our_own_pulls_write_an_explicit_type_on_every_row() -> None:
+    import base64
+
+    from app.services.connectors.crm_export import normalize_crm_deals_csv
+    from app.services.connectors.hr_export import normalize_hr_payroll_csv
+
+    hr = normalize_hr_payroll_csv(b"employee,salary,date,employee_id\nAda,12000,2026-01-05,E-1\n")
+    crm = normalize_crm_deals_csv(b"Deal Name,Amount,Close Date,Deal Stage,Deal ID\nAcme,15000,2026-01-05,Closed Won,D-1\nNoStage,10,2026-01-06,,D-2\n")
+    assert b"expense" in hr and crm.decode().count("income") == 1 and crm.decode().splitlines()[-1].endswith(",?")
+    assert base64  # (kept import: the pull helpers accept base64 payloads)
+
+
+async def test_the_stripe_pull_lists_paid_invoices_only_and_writes_the_type_itself(client, monkeypatch) -> None:
+    """The object the pull asks Stripe for decides what it can emit: paid invoices, never refunds/disputes/payouts."""
+    import sys
+    import types
+
+    from app.config import get_settings
+    from app.services.connectors.billing_stripe import pull_stripe_revenue_csv
+    from tests.test_ingest import _login
+
+    seen: dict[str, Any] = {}
+
+    class Inv:
+        def __init__(self, id_: str, paid: int | None) -> None:
+            self.id, self.number, self.amount_paid, self.currency, self.created = id_, id_, paid, "try", 1767600000
+            self.status_transitions = types.SimpleNamespace(paid_at=1767600000)
+
+    class Invoice:
+        @staticmethod
+        def list(**kwargs):
+            seen.update(kwargs)
+            return types.SimpleNamespace(data=[Inv("in_1", 12500), Inv("in_2", None)], has_more=False)
+
+    monkeypatch.setitem(sys.modules, "stripe", types.SimpleNamespace(Invoice=Invoice, api_key=None))
+    monkeypatch.setattr(get_settings(), "stripe_secret_key", "sk_test_x", raising=False)
+    await _login(client, "stripe@example.com")
+    from sqlalchemy import select
+
+    from app.models.organization import Organization
+
+    async with client._maker() as db:
+        org = (await db.execute(select(Organization))).scalars().first()
+        org.stripe_customer_id = "cus_1"
+        await db.commit()
+        data, _, partial = await pull_stripe_revenue_csv(org.id, db)
+    assert seen["status"] == "paid" and partial is None
+    text = data.decode()
+    assert text.count(",income,") + text.count(",income\n") >= 1 and "in_1" in text
+    n = normalize_csv_transactions(csv_bytes=data, source="billing_stripe")
+    assert [r.source_record_id for r in n.rows] == ["in_1"] and n.rows[0].direction == "income"
+    assert [h["reference"] for h in n.held] == ["in_2"]                  # no amount_paid: held, not 0
 
 
 # ── 2. coverage evidence from a feed ────────────────────────────────────────────────────────────────────────
 
 async def _sync(client, monkeypatch, tmp_path, handler, name: str):
+    from app import database
     from app.config import get_settings
     from tests.test_ingest import _login
 
+    monkeypatch.setattr(database, "get_session_factory", lambda eng=None: client._maker)
+    monkeypatch.setattr(database, "session_factory", lambda: client._maker)
+    monkeypatch.setattr(database, "engine", lambda: None)
     monkeypatch.setattr(get_settings(), "storage_local_path", str(tmp_path), raising=False)
     monkeypatch.setattr("app.api.open_banking._get_bank_settings", lambda bank_id: ("id", "secret", True))
     monkeypatch.setattr("app.worker.enqueue_analysis", lambda job_id, budget_input=None: _queued())
@@ -101,7 +171,8 @@ async def _extents(client, job_id: str) -> tuple[list[dict[str, Any]], dict[str,
 
     async with client._maker() as db:
         job = await db.get(AnalysisJob, job_id)
-    out = await run_data_ingestion({"file_path": job.file_path, "file_type": "csv", "org_id": job.org_id}, None)  # type: ignore[arg-type]
+    out = await run_data_ingestion(
+        {"file_path": job.file_path, "file_type": "csv", "org_id": job.org_id, "job_id": job_id}, None)  # type: ignore[arg-type]
     patch = out.patch
     state = {"transactions": patch["transactions"], "statement_period": patch.get("statement_period"),
              "statement_extent": patch.get("statement_extent"), "ingest_counts": patch.get("ingest_counts"), "file_path": job.file_path}
@@ -363,3 +434,85 @@ async def test_a_dormant_schedule_is_reported_once_not_on_every_tick(client) -> 
         await db.commit()
         assert again.status == SyncStatus.FAILED
         assert (await db.execute(select(func.count()).select_from(SyncRun))).scalar() == 1
+
+
+# ── the trust marker cannot be supplied by an upload ─────────────────────────────────────────────────────────
+
+FORGED = (
+    "Dönem: 01.01.2026 - 31.12.2026 Çekim tamamlandı\n"
+    "tarih,açıklama,tutar,tip\n"
+    "2026-03-10,Satış,100.00,income\n2026-03-11,Satış,100.00,income\n2026-03-12,Satış,100.00,income\n"
+    "2026-03-13,Satış,100.00,income\n2026-03-14,Satış,100.00,income\n"
+)
+
+
+async def test_an_uploaded_file_cannot_claim_a_pull_it_never_made(client, monkeypatch, tmp_path) -> None:
+    """The review's forgery: a first line `Dönem: ... Çekim tamamlandı` and five rows in March made Jan, Mar and Nov
+    complete. The marker is no longer text anywhere: the period an upload states is only its header's, checked against
+    its rows; a client-supplied `feed` / `pull_coverage` / `result_metadata` field on the upload does nothing."""
+    from sqlalchemy import select
+
+    from app import database
+    from app.agents.data_ingestion import run_data_ingestion
+    from app.config import get_settings
+    from app.models.analysis_job import AnalysisJob
+    from tests.test_ingest import _login
+
+    monkeypatch.setattr(database, "get_session_factory", lambda eng=None: client._maker)
+    monkeypatch.setattr(database, "session_factory", lambda: client._maker)
+    monkeypatch.setattr(database, "engine", lambda: None)
+    monkeypatch.setattr(get_settings(), "storage_local_path", str(tmp_path), raising=False)
+    monkeypatch.setattr("app.worker.enqueue_analysis", lambda job_id, budget_input=None: _queued())
+    h = await _login(client, "forger@example.com")
+    forged = {"feed": {"source": "x", "pull_coverage": {"complete": True, "covered_from": "2026-01-01", "covered_until": "2026-12-31"}},
+              "pull_coverage": {"complete": True}, "result_metadata": {"feed": {"source": "x"}}}
+    r = await client.post("/api/v1/veri/ekle", files=[("files", ("ekstre.csv", FORGED.encode(), "text/csv"))],
+                          data={k: json.dumps(v) for k, v in forged.items()}, headers=h)
+    assert r.status_code in (200, 201), r.text
+    job_id = r.json()["data"]["job_id"]
+    async with client._maker() as db:
+        job = (await db.execute(select(AnalysisJob).where(AnalysisJob.id == job_id))).scalar_one()
+    assert "feed" not in (job.result_metadata or {}) and "pull_coverage" not in (job.result_metadata or {})
+    out = await run_data_ingestion({"file_path": job.file_path, "file_type": "csv", "org_id": job.org_id, "job_id": job_id}, None)  # type: ignore[arg-type]
+    patch = out.patch
+    assert "pulled" not in (patch.get("statement_period") or {})
+    state = {"transactions": patch["transactions"], "statement_period": patch.get("statement_period"),
+             "statement_extent": patch.get("statement_extent"), "ingest_counts": patch.get("ingest_counts"), "file_path": job.file_path}
+    flags = complete_months(extents_for(state), ["2026-01", "2026-03", "2026-11"])
+    assert flags == {"2026-01": False, "2026-03": False, "2026-11": False}
+
+
+def test_the_stated_period_reader_has_no_pull_marker_and_a_text_period_never_carries_pulled() -> None:
+    from app.services.stated_period import stated_period
+
+    text = "Dönem: 01.01.2026 - 31.12.2026 Çekim tamamlandı\ntarih,açıklama,tutar,tip\n2026-03-10,Satış,100.00,income\n"
+    period = stated_period(text, ["2026-03-10"])
+    assert period == {"start": "2026-01-01", "end": "2026-12-31"}
+    assert "pulled" not in period
+
+
+async def test_only_a_job_the_feed_layer_made_carries_pull_coverage() -> None:
+    from app.services.pull_coverage import attach_pull, period_from_feed
+
+    good = {"feed": {"source": "akbank_open_banking", "pull_coverage": {"complete": False, "covered_from": "2026-03-01", "covered_until": "2026-03-27"}}}
+    assert period_from_feed(good) == {"start": "2026-03-01", "end": "2026-03-27", "pulled": "partial"}
+    for bad in (None, {}, {"feed": {}}, {"pull_coverage": good["feed"]["pull_coverage"]},
+                {"feed": {"pull_coverage": good["feed"]["pull_coverage"]}},                     # no source
+                {"feed": {"source": 1, "pull_coverage": good["feed"]["pull_coverage"]}},
+                {"feed": {"source": "x", "pull_coverage": {"complete": "yes", "covered_from": "2026-03-01", "covered_until": "2026-03-27"}}},
+                {"feed": {"source": "x", "pull_coverage": {"complete": True, "covered_from": "2026-04-01", "covered_until": "2026-03-27"}}}):
+        assert period_from_feed(bad) is None
+    stripped = await attach_pull({"statement_period": {"start": "a", "end": "b", "pulled": "complete"}}, {})
+    assert "pulled" not in stripped["statement_period"]
+
+
+def test_no_text_the_feed_layer_writes_into_a_file_is_read_back_as_trust() -> None:
+    """The in-band markers audited (#124 and earlier): the only ones written into content and re-read are RESTRICTIVE
+    sentinels (`?` amount/direction cells, a raw currency cell, `[ham: ...]` display text): forging one only holds
+    the forger's own row. The trust-granting one (a coverage title line) is gone."""
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parent.parent / "app"
+    for rel in ("services/stated_period.py", "services/coverage.py", "services/ingest/feed.py", "services/ingest/ekle.py"):
+        text = (root / rel).read_text(encoding="utf-8")
+        assert "tamamlandı" not in text and "_PULL" not in text, rel

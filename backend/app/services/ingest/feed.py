@@ -107,16 +107,16 @@ SIGNED = "signed"        # the source's contract: amounts are signed (negative =
 # direction/type field always comes first; with neither a field nor an entry here the row is HELD. There is no
 # file-level rule ("the file has a negative, so it is signed"): one refund row in a payroll or Stripe file must not
 # turn every other row into income.
-SOURCE_DIRECTION: dict[str, tuple[str, str | None]] = {
-    # A payroll export lists what the company pays its staff: outflows. A negative line (an advance returned) says
-    # nothing the contract allows, so it is held, not booked as income and not as more payroll.
-    "hr_export": (ONE_WAY, EXPENSE),
-    # A CRM deal export is filtered to closed-won deals: sales, inflows.
-    "crm_export": (ONE_WAY, INCOME),
-    # The Stripe pull is `status=paid` invoices: charges, inflows. A refund or credit note is not in this pull;
-    # one that appears (a negative amount) is held.
-    "billing_stripe": (ONE_WAY, INCOME),
-}
+#
+# The table is EMPTY on purpose. A contract is safe only for a source that can emit nothing but that kind of item, and
+# that is a fact about the API object the pull asks for, not about a file that reaches the normaliser by name:
+#   - Stripe: `stripe.Invoice.list(status="paid")` (billing_stripe.py) lists paid invoices only (never refunds, disputes,
+#     payouts, fees or credit notes, which are other objects) - and it still writes `type=income` on every row itself;
+#   - CRM and HR exports are CSV/URL files a customer supplies: a credit note or a reimbursement can sit in them with
+#     no field that tells it from a sale or a salary.
+# So each of our pulls writes an explicit `type` per row, and a row without one is HELD. A source may be added here only
+# with the code that proves it cannot emit the other direction.
+SOURCE_DIRECTION: dict[str, tuple[str, str | None]] = {}
 
 
 def direction_by_contract(contract: tuple[str, str | None] | None, money: MoneyRead) -> str | None:
@@ -188,35 +188,22 @@ def evidence_text(evidence: dict[str, Any]) -> str:
     return mask_secrets("; ".join(parts))
 
 
-def _tr_date(iso: str) -> str:
-    return f"{iso[8:10]}.{iso[5:7]}.{iso[:4]}"
+def pull_coverage(window: tuple[str, str] | None, row_dates: list[str | None], partial: str | None) -> dict[str, Any] | None:
+    """What a pull received, as STRUCTURED data for the job it becomes (never text inside the file).
 
-
-_COVERAGE_MARK = re.compile(r"çekim\s+(?:tamamlandı|yarıda\s+kaldı)", re.IGNORECASE)
-
-
-def has_coverage_header(text: str) -> bool:
-    """Whether a file's title rows carry a sync's own statement of what it received (`coverage_header`)."""
-    return bool(_COVERAGE_MARK.search(text or ""))
-
-
-def coverage_header(window: tuple[str, str] | None, row_dates: list[str | None], partial: str | None) -> str | None:
-    """The one title line a pulled file carries so coverage reads it like a statement's stated period.
-
-    A COMPLETED pull states the window it asked for and fully received ("Dönem: 01.03.2026 - 31.03.2026 Çekim
-    tamamlandı"): that is proof of the period, not a guess from the first and last row. A PARTIAL pull states only what
-    it received, from its first to its last row ("... Çekim yarıda kaldı: en son tam alınan gün 27.03.2026"); both
-    edges of that span are strict and the five-day edge tolerance never applies to them. No window and no rows:
-    nothing is stated.
-    """
+    A completed pull states the window it asked for and fully received; a partial pull states only the span of the
+    rows it received, with `covered_until` its last day. No window and no rows: nothing is stated. It travels on the
+    job as `result_metadata["feed"]` (set by the feed layer, see `ekle._finansal_ekle`); `services.pull_coverage` reads
+    it back. Content of an uploaded file can never state it."""
     days = sorted(str(d)[:10] for d in row_dates if d)
     if partial:
         if not days:
             return None
-        return (f"Dönem: {_tr_date(days[0])} - {_tr_date(days[-1])} "
-                f"Çekim yarıda kaldı: en son tam alınan gün {_tr_date(days[-1])}")
+        return {"complete": False, "requested_from": window[0] if window else None,
+                "requested_to": window[1] if window else None, "covered_from": days[0], "covered_until": days[-1]}
     if window:
-        return f"Dönem: {_tr_date(window[0])} - {_tr_date(window[1])} Çekim tamamlandı"
+        return {"complete": True, "requested_from": window[0], "requested_to": window[1],
+                "covered_from": window[0], "covered_until": window[1]}
     return None
 
 
@@ -230,11 +217,11 @@ class FeedResult:
     ignored: dict[str, int] = field(default_factory=dict)    # items the source marks as not (yet) money, by named rule
     window: tuple[str, str] | None = None                    # the days the pull asked for (ISO), when it asked for a range
 
-    def coverage_header(self) -> str | None:
-        """The title line for the file this pull becomes (see `coverage_header`)."""
+    def feed_meta(self) -> dict[str, Any] | None:
+        """The provenance the job of this pull carries (`result_metadata["feed"]`): its source and what it received."""
         if self.failed:
             return None
-        return coverage_header(self.window, [r.get("date") for r in self.rows], self.partial)
+        return {"source": self.source, "pull_coverage": pull_coverage(self.window, [r.get("date") for r in self.rows], self.partial)}
 
     @property
     def held_candidates(self) -> int:

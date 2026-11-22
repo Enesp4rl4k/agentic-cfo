@@ -95,7 +95,9 @@ def _direction(raw: dict[str, str], money: MoneyRead, contract: tuple[str, str |
     Never from the mix of signs in the file: a lone negative row says nothing about the others."""
     said = (raw.get("type") or raw.get("direction") or raw.get("tip") or "").strip().lower()
     if said:
-        return direction_from_code(said, _INCOME_WORDS, _EXPENSE_WORDS)     # an unknown word is held, not guessed
+        # A type field AND a negative amount are two signals: a refund in a payroll file, or a signed export, cannot be
+        # told apart, so the row is held. (Our own pulls write the magnitude with the type.)
+        return None if money.negative else direction_from_code(said, _INCOME_WORDS, _EXPENSE_WORDS)
     return direction_by_contract(contract, money)
 
 

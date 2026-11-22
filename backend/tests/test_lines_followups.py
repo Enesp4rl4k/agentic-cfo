@@ -169,3 +169,68 @@ def test_a_footer_year_is_exempt_only_beside_a_page_marker_or_a_rights_line() ->
     assert _held(BASE + "2026 Garanti BBVA. Tüm hakları saklıdır\n") == []
     assert len(_held(BASE + "2026\n")) == 1                    # a lone year with nothing around it may be an amount
     assert len(_held(BASE + "Kira 2026\n")) == 1
+
+
+# ── round 3: every exemption acts on its own TOKEN; any money token left on the line holds the line ───────────
+
+def _rows_for(line: str):
+    rows, ledger = _pipeline(GarantiParser, BASE + line + "\n")
+    return rows, ledger
+
+
+def _unread(line: str) -> int:
+    """Lines no row pattern took that the line accounting HELD (no parser rows: nothing can explain the line away)."""
+    from app.parsers.lines import account_for_lines
+
+    return account_for_lines(BASE + line + "\n", []).unread - account_for_lines(BASE, []).unread
+
+
+PAIRED = [
+    # (exempt token alone, the same line + a money token, cents of that money)
+    ("Düzenleme tarihi 01.02.2026 14:30", "Düzenleme tarihi 01.02.2026 14:30 komisyon 1.250,00", 125000),
+    ("Düzenleme tarihi: 01.02.2026 14:32", "Bu belge 01.02.2026 14:30 tarihinde düzenlenmiştir 1.250,00 TL", 125000),
+    ("Basım tarihi 01.02.2026", "Basım tarihi 01.02.2026 komisyon 1.250,00", 125000),
+    ("FTR 2025000123", "FTR 2025000123 1.250,00", 125000),
+    ("FTR 2025000123 nolu fatura tahsilati", "FTR 2025000123 nolu fatura tahsilati 5000", 500000),
+    ("Fatura No 2025000123", "Fatura No 2025000123 komisyon 250,50", 25050),
+    ("Fiş No: 12345678", "Fiş No: 12345678 masraf 1.250,00", 125000),
+    ("İrsaliye No 12345678", "İrsaliye No 12345678 1.250,00 TL", 125000),
+    ("Dekont No 12345678", "Dekont No 12345678 ücret 99,90", 9990),
+    ("Belge No 12345678", "Belge No 12345678 5000", 500000),
+    ("© 2026 Garanti BBVA", "© 2026 komisyon 1.250,00", 125000),
+    ("2026 Garanti BBVA. Tüm hakları saklıdır", "2026 Garanti BBVA. Tüm hakları saklıdır 1.250,00", 125000),
+    ("Sube 0123", "Sube 0123 1.250,00", 125000),
+    ("Ticaret Sicil No: 123456 © 2026 Garanti BBVA", "Ticaret Sicil No: 123456 1.250,00", 125000),
+]
+
+
+@pytest.mark.parametrize(("alone", "with_money", "cents"), PAIRED)
+def test_an_exempt_token_alone_is_not_held_and_the_same_line_with_money_is_never_lost(alone, with_money, cents) -> None:
+    assert _held(BASE + alone + "\n") == [] and _unread(alone) == 0
+    rows, _ = _rows_for(with_money)
+    kept = [r for r in rows if r["amount_cents"] == cents]
+    # the amount is either a row of its own (booked, or held at the hold step) or a held unread line: never a non-row
+    assert kept, (with_money, [(r["description"][:30], r["amount_cents"]) for r in rows])
+    assert _unread(with_money) == 1                       # with no parser row to explain it, the accounting holds the line
+
+
+def test_the_footer_year_beside_a_page_marker_is_a_token_exemption_too() -> None:
+    assert _held(BASE + "Sayfa 1 / 2\n2026\n") == []
+    for money in ("Sayfa 1 / 2\n2026 komisyon 1.250,00\n", "Sayfa 1 / 2\n2026 1.250,00\n"):
+        rows, _ = _pipeline(GarantiParser, BASE + money)
+        assert any(r["amount_cents"] == 125000 for r in rows), money
+
+
+@pytest.mark.parametrize("line", [
+    "Düzenleme tarihi 01.02.2026 14:30 komisyon 1.250,00",
+    "Bu belge 01.02.2026 14:30 tarihinde düzenlenmiştir 1.250,00 TL",
+])
+def test_the_reviewers_issue_date_lines_with_an_amount_are_never_counted_as_non_rows(line) -> None:
+    from tests.realistic_garanti_invoices import two_page_with_invoices
+
+    base_text = two_page_with_invoices()[0]
+    _, base_ledger = _pipeline(GarantiParser, base_text)
+    for text in (base_text + line + "\n", base_text.replace("Sayfa 2 / 2", line + "\nSayfa 2 / 2")):
+        rows, ledger = _pipeline(GarantiParser, text)
+        assert any(r["amount_cents"] == 125000 for r in rows)
+        assert ledger.non_row_lines == base_ledger.non_row_lines          # not one more line was written off
