@@ -27,7 +27,7 @@ import { cn } from "@/lib/utils";
 export default function TakvimPage() {
   const { t } = useI18n();
   const { org } = useOrgSettings();
-  const locale = org?.locale || "en-US";
+  const locale = org?.locale || "tr-TR";
   const copy = t.takvim;
   const weekCopy = t.cashRadar;
   const fmt = useCurrencyFormat();

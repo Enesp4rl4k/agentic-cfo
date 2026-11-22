@@ -15,6 +15,7 @@
  */
 
 import { CheckCircle, XCircle, Loader2, Clock, AlertTriangle, Zap } from "lucide-react";
+import { useI18n } from "@/hooks/useI18n";
 import { cn } from "@/lib/utils";
 import {
   useAgentStream,
@@ -173,6 +174,7 @@ export function AgentProgressPanel({
   compact = false,
   className,
 }: AgentProgressPanelProps) {
+  const { t } = useI18n();
   const { steps, status, currentAgent, progressPct, errorMessage } =
     useAgentStream(jobId, { autoConnect: !!jobId });
 
@@ -196,7 +198,7 @@ export function AgentProgressPanel({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Zap className="h-4 w-4 text-primary" aria-hidden="true" />
-          <h3 className="text-sm font-semibold">AI Agent Pipeline</h3>
+          <h3 className="text-sm font-semibold">{t.sweepMisc.aiPipeline}</h3>
         </div>
         <StatusBadge status={status} />
       </div>

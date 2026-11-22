@@ -92,6 +92,6 @@ export function useOrgSettings() {
     hasSmmm: org?.has_smmm ?? null,
     profileDefaults: org?.profile_defaults ?? null,
     baseCurrency: effectiveCurrencyOf(org),
-    locale: org?.locale || "en-US",
+    locale: org?.locale || "tr-TR",
   };
 }

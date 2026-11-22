@@ -31,7 +31,7 @@ import { formatCurrency, formatPercent, formatMonths } from "@/lib/utils";
 
 describe("formatCurrency", () => {
   it("formats positive USD amounts", () => {
-    expect(formatCurrency(1234567, "USD")).toContain("1,234,567");
+    expect(formatCurrency(1234567, "USD", "en-US")).toContain("1,234,567");
   });
 
   it("formats zero", () => {

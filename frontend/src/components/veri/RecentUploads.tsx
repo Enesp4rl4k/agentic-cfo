@@ -21,7 +21,7 @@ export function RecentUploads({ version }: { version: number }) {
   const { t } = useI18n();
   const copy = t.baglan.recent;
   const { org } = useOrgSettings();
-  const locale = org?.locale || "en-US";
+  const locale = org?.locale || "tr-TR";
   const [jobs, setJobs] = useState<JobSummary[] | null>(null);
   const [failed, setFailed] = useState(false);
 

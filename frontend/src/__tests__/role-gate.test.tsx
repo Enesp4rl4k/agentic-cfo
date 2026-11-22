@@ -90,7 +90,7 @@ const probe = async (role: string | null, action: GatedAction) => {
 
 describe("lib/roles: what a control may ask", () => {
   it("maps each action to the backend class that guards it", () => {
-    expect(ACTION_CLASS).toEqual({ upload: "contributor", analyze: "contributor", edit: "writer", decide: "decider" });
+    expect(ACTION_CLASS).toEqual({ upload: "contributor", analyze: "contributor", edit: "writer", decide: "decider", propose: "proposer" });
     expect(hasRoleClass("analyst", ACTION_CLASS.upload)).toBe(true);
     expect(hasRoleClass("analyst", ACTION_CLASS.edit)).toBe(false);
     expect(ROLE_CLASSES.decider).not.toContain("cfo");

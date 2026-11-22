@@ -1,5 +1,6 @@
 "use client";
 
+import { useI18n } from "@/hooks/useI18n";
 import { cn } from "@/lib/utils";
 
 export interface ChatEvidenceMeta {
@@ -17,6 +18,7 @@ export function ChatEvidenceChips({
   meta: ChatEvidenceMeta | null | undefined;
   className?: string;
 }) {
+  const { t } = useI18n();
   if (!meta) return null;
 
   const tx = meta.evidence_tx_count ?? 0;
@@ -27,7 +29,7 @@ export function ChatEvidenceChips({
     return (
       <div className={cn("flex flex-wrap gap-1.5 mt-2", className)}>
         <span className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-400">
-          no evidence · unverified
+          {t.evidenceUi.noEvidence}
         </span>
       </div>
     );
@@ -39,12 +41,12 @@ export function ChatEvidenceChips({
     <div className={cn("flex flex-wrap items-center gap-1.5 mt-2", className)}>
       {tx > 0 && (
         <span className="rounded-md bg-emerald-500/10 px-2 py-0.5 text-[10px] font-mono text-emerald-400">
-          tx ×{tx}
+          {t.evidenceUi.tx.replace("{n}", String(tx))}
         </span>
       )}
       {semantic > 0 && (
         <span className="rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-mono text-primary">
-          semantic ×{semantic}
+          {t.evidenceUi.semantic.replace("{n}", String(semantic))}
         </span>
       )}
       {meta.evidence_retriever_version && (
@@ -54,7 +56,7 @@ export function ChatEvidenceChips({
       )}
       {meta.grounding_validated === false && (
         <span className="rounded-md border border-amber-500/30 px-2 py-0.5 text-[10px] text-amber-400">
-          disclaimer applied
+          {t.evidenceUi.disclaimer}
         </span>
       )}
     </div>

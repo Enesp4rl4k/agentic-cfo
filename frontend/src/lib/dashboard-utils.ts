@@ -20,7 +20,7 @@ export function valueToColor(
 export function formatCurrency(
   value: number,
   currency: string,
-  locale: string = "en-US",
+  locale: string = "tr-TR",
 ): string {
   const resolved = currency === "₺" ? "TRY" : currency;
   try {
@@ -61,7 +61,7 @@ export function formatCompact(value: number, decimals = 1): string {
 /**
  * Format a number with locale-aware separators
  */
-export function formatNumber(value: number, decimals = 0, locale: string = "en-US"): string {
+export function formatNumber(value: number, decimals = 0, locale: string = "tr-TR"): string {
   return value.toLocaleString(locale, {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
@@ -136,9 +136,9 @@ export function healthScoreColor(score: number): string {
 }
 
 /**
- * Format a date string with locale (default en-US).
+ * Format a date string with locale (default tr-TR).
  */
-export function formatDateTR(dateString: string | null | undefined, locale: string = "en-US"): string {
+export function formatDateTR(dateString: string | null | undefined, locale: string = "tr-TR"): string {
   if (!dateString) return "—";
   try {
     const date = new Date(dateString);

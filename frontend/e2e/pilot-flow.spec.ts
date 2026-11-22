@@ -357,10 +357,13 @@ test.describe("Pilot flow", () => {
     await page.goto(`/transactions?job=${S.bankJob}`);
     const row = page.locator("tr", { hasText: "Personel maaş ödemesi" });
     await expect(row).toBeVisible({ timeout: 60_000 });
-    await row.getByRole("button", { name: /salary/ }).click();
-    await page.getByRole("listbox", { name: "Select category" }).getByRole("option", { name: "transfer" }).click();
-    await expect(page.getByText("Category updated", { exact: true })).toBeVisible();
-    await expect(row.getByRole("button", { name: /transfer/ })).toBeVisible();
+    // The category names are translated; the test addresses the category by its code, not its label.
+    const trigger = row.getByTestId("category-trigger");
+    await expect(trigger).toHaveAttribute("data-category", "salary");
+    await trigger.click();
+    await page.getByTestId("category-listbox").getByTestId("category-option-transfer").click();
+    await expect(page.getByTestId("category-updated-toast")).toBeVisible();
+    await expect(trigger).toHaveAttribute("data-category", "transfer");
 
     // The salary payment (30.000) is now a transfer between the company's own accounts: not an expense.
     await expect.poll(expenseOnCard, { timeout: 60_000 }).toBe(before - 30_000);
@@ -445,10 +448,12 @@ test.describe("Pilot flow", () => {
       await page.goto(`/transactions?job=${S.bankJob}`);
       const row = page.locator("tr", { hasText: "Danışmanlık geliri - Kara Holding" });
       await expect(row).toBeVisible({ timeout: 60_000 });
-      await row.getByRole("button", { name: /revenue/ }).click();
-      await page.getByRole("listbox", { name: "Select category" }).getByRole("option", { name: "other income" }).click();
-      await expect(page.getByText("Failed to update category", { exact: true })).toBeVisible();
-      await expect(row.getByRole("button", { name: /revenue/ })).toBeVisible();
+      const trigger = row.getByTestId("category-trigger");
+      await expect(trigger).toHaveAttribute("data-category", "revenue");
+      await trigger.click();
+      await page.getByTestId("category-listbox").getByTestId("category-option-other_income").click();
+      await expect(page.getByTestId("category-update-failed-toast")).toBeVisible();
+      await expect(trigger).toHaveAttribute("data-category", "revenue");
 
       // Briefing: the viewer has no release button, and the server refuses a direct attempt.
       await page.goto("/bulten");
