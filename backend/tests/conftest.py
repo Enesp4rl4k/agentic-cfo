@@ -127,6 +127,28 @@ def _alert_dispatcher_answers_200(monkeypatch):
         AlertDispatcher, "transport", httpx.MockTransport(lambda request: httpx.Response(200))
     )
 
+# ── 2c. A request does not start a background delivery ───────────────────────
+# `outbox.kick()` spawns a delivery on its own session after an invitation or a reset is
+# written. A test drives the outbox itself (`deliver_pending`), on its own database.
+@pytest.fixture(autouse=True)
+def _outbox_does_not_kick(monkeypatch):
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "outbox_kick_on_enqueue", False)
+
+
+# ── 2d. Verification is off unless a test is about it ─────────────────────────
+# A new account must verify its address before it can sign in. Most tests register and sign in at
+# once, so they run with it off; tests of verification turn it on (`email_verification_required`).
+@pytest.fixture(autouse=True)
+def _email_verification_off_by_default(monkeypatch, request):
+    from app.config import get_settings
+
+    if request.node.get_closest_marker("email_verification"):
+        return
+    monkeypatch.setattr(get_settings(), "email_verification_required", False)
+
+
 # ── 3. Shared HTTP client fixture ────────────────────────────────────────────
 # An in-memory FastAPI app with its own throwaway database, yielded per test.
 # Lives here (not in test_ingest) so every API test file can request `client`

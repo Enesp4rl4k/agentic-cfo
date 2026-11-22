@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import warnings
 from functools import lru_cache
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -195,6 +196,26 @@ class Settings(BaseSettings):
     smtp_user: str = ""
     smtp_password: str = ""
     notification_from: str = "noreply@aicfo.app"
+
+    # The outbox sender (app/services/outbox_transport.py), the only code that talks to a
+    # mail, WhatsApp, Slack or webhook endpoint. "auto": a recorded no-op in development
+    # (SQLite) and under pytest, live otherwise. "live" / "noop" force it.
+    outbox_transport: str = "auto"
+    # Deliver an immediate-class message (invite, password reset) as soon as it is written,
+    # instead of at the scheduler's next five-minute pass.
+    outbox_kick_on_enqueue: bool = True
+
+    # A new account cannot sign in or act until its address is verified (owner decision). Turned off
+    # by tests that are not about it; a deployment with no mail sender configured must also turn it off
+    # or nobody can verify (startup says so, see validate_production_security).
+    email_verification_required: bool = True
+    email_verification_expire_hours: int = 48
+
+    # Password reset (POST /auth/forgot-password, /auth/reset-password)
+    password_reset_expire_minutes: int = 30
+    password_reset_per_email_per_hour: int = 3
+    # A request takes at least this long whether or not the account exists.
+    password_reset_response_floor_seconds: float = 0.5
 
     # TCMB EVDS API (optional — benchmark data falls back to static if not set)
     # Get free key: https://evds2.tcmb.gov.tr/index.php?lang=tr
@@ -403,6 +424,22 @@ class Settings(BaseSettings):
                 "inside the API process when Redis is unreachable, with no retry and "
                 "lost on restart. Leave it unset; the worker owns analyses."
             )
+
+        if (
+            self.email_verification_required
+            and not self.use_sqlite
+            and self.outbox_transport != "noop"
+            and not (self.smtp_user and self.smtp_password)
+        ):
+            # Not a hard failure (a demo or staging may run without mail), but never silent: with
+            # verification required and no sender, a new account can never be verified.
+            message = (
+                "EMAIL_VERIFICATION_REQUIRED is on but no mail sender is configured (SMTP_USER / "
+                "SMTP_PASSWORD): new accounts will wait for a verification e-mail that cannot be sent. "
+                "Configure SMTP, or set EMAIL_VERIFICATION_REQUIRED=false for a deployment without mail."
+            )
+            logging.getLogger(__name__).error(message)
+            warnings.warn(f"Registration warning: {message}", stacklevel=3)
 
         if not self.use_sqlite and issues:
             # Production mode — hard fail

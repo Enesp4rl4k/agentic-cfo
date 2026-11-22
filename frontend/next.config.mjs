@@ -37,6 +37,15 @@ const nextConfig = {
           { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
         ],
       },
+      // The reset link carries a one-time token: never let the address leave in a Referer.
+      // Listed after the rule above, so for this path it replaces that rule's Referrer-Policy.
+      {
+        source: "/auth/:page(reset-password|verify-email)",
+        headers: [
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "Cache-Control", value: "no-store" },
+        ],
+      },
     ];
   },
 

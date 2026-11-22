@@ -12,14 +12,15 @@ import hashlib
 import hmac
 import json
 import logging
+import uuid
 from typing import Any
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.database import get_db
+from app.services import outbox, outbox_immediate
 from app.services.bot_gateways import OmnichannelCFOBotGateway
 
 router = APIRouter(tags=["bot-webhooks"])
@@ -51,7 +52,7 @@ async def whatsapp_verify(
 async def whatsapp_inbound(request: Request, db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
     """
     Receives inbound WhatsApp messages from Meta Cloud API.
-    Dispatches to OmnichannelCFOBotGateway and sends reply via httpx.
+    Dispatches to OmnichannelCFOBotGateway and queues the reply in the outbox (the sender delivers it).
 
     Meta signs each post with the App Secret. This route verified nothing, so
     anyone could post a message as any sender and have the bot answer it.
@@ -97,28 +98,14 @@ async def whatsapp_inbound(request: Request, db: AsyncSession = Depends(get_db))
             financial_context=financial_context,
         )
 
-        # Send reply via WhatsApp Cloud API
-        if settings.whatsapp_access_token and settings.whatsapp_phone_number_id:
-            wa_payload = {
-                "messaging_product": "whatsapp",
-                "to": sender_id,
-                "type": "text",
-                "text": {"body": bot_response.reply_text},
-            }
-            async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.post(
-                    f"https://graph.facebook.com/{settings.whatsapp_api_version}"
-                    f"/{settings.whatsapp_phone_number_id}/messages",
-                    headers={
-                        "Authorization": f"Bearer {settings.whatsapp_access_token}",
-                        "Content-Type": "application/json",
-                    },
-                    json=wa_payload,
-                )
-                resp.raise_for_status()
-            logger.info("WhatsApp reply sent to %s", sender_id)
-        else:
-            logger.warning("WhatsApp credentials not configured — skipping send. Reply: %s", bot_response.reply_text)
+        # The reply is an outbox row (immediate class, bot_reply): to the number that wrote to us, with
+        # the gateway's answer to a message that carries no company context. The sender delivers it.
+        await outbox_immediate.enqueue_bot_reply(
+            db, reply_id=f"wa:{msg.get('id') or uuid.uuid4().hex}", channel="whatsapp",
+            recipient=sender_id, text=bot_response.reply_text,
+        )
+        await db.commit()
+        outbox.kick()
 
         return {"status": "handled"}
 
@@ -183,19 +170,20 @@ async def slack_events(request: Request, db: AsyncSession = Depends(get_db)) -> 
             # Wire to action_runner for approve/reject
             if action_value.startswith(("approve_", "reject_")):
                 action_id = action_value.replace("approve_", "").replace("reject_", "")
+                # Nothing is approved or rejected from a chat button: the decision is made in the app, by a
+                # person with the authority for it, and recorded there. The reply says so.
                 reply_text = (
-                    f"✅ `{action_id}` onaylandı ve sisteme iletildi."
-                    if action_value.startswith("approve_")
-                    else f"❌ `{action_id}` reddedildi."
+                    f"`{action_id}` için kararınız alınmadı. Onay ve ret uygulamada, yetkili kişi tarafından "
+                    "verilir ve kayda geçer; lütfen uygulamayı açın."
                 )
-                # Reply in the same Slack channel
-                if settings.slack_bot_token and channel_id:
-                    async with httpx.AsyncClient(timeout=10) as client:
-                        await client.post(
-                            "https://slack.com/api/chat.postMessage",
-                            headers={"Authorization": f"Bearer {settings.slack_bot_token}"},
-                            json={"channel": channel_id, "text": reply_text},
-                        )
+                # Reply in the same Slack channel, through the outbox.
+                if channel_id:
+                    await outbox_immediate.enqueue_bot_reply(
+                        db, reply_id=f"slack-action:{payload.get('trigger_id') or uuid.uuid4().hex}:{action_id}",
+                        channel="slack_bot", recipient=channel_id, text=reply_text,
+                    )
+                    await db.commit()
+                    outbox.kick()
         return {"status": "ok"}
 
     # Message event
@@ -211,21 +199,13 @@ async def slack_events(request: Request, db: AsyncSession = Depends(get_db)) -> 
             message_text=message_text,
         )
 
-        if settings.slack_bot_token and channel_id:
-            slack_msg: dict[str, Any] = {
-                "channel": channel_id,
-                "text": bot_response.reply_text,
-            }
-            if bot_response.interactive_blocks:
-                slack_msg["blocks"] = bot_response.interactive_blocks
-
-            async with httpx.AsyncClient(timeout=10) as client:
-                await client.post(
-                    "https://slack.com/api/chat.postMessage",
-                    headers={"Authorization": f"Bearer {settings.slack_bot_token}"},
-                    json=slack_msg,
-                )
-        else:
-            logger.warning("Slack token not configured. Reply: %s", bot_response.reply_text)
+        if channel_id:
+            await outbox_immediate.enqueue_bot_reply(
+                db, reply_id=f"slack:{payload.get('event_id') or event.get('ts') or uuid.uuid4().hex}",
+                channel="slack_bot", recipient=channel_id, text=bot_response.reply_text,
+                blocks=bot_response.interactive_blocks or None,
+            )
+            await db.commit()
+            outbox.kick()
 
     return {"status": "ok"}

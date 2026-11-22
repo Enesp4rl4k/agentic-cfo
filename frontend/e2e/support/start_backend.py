@@ -49,6 +49,8 @@ def main() -> None:
     env.update(
         {
             "USE_SQLITE": "true",
+            # The journey registers and signs in at once; verification has its own tests.
+            "EMAIL_VERIFICATION_REQUIRED": "false",
             "LANGGRAPH_CHECKPOINT": "memory",
             "LOG_FORMAT": "plain",
             # No model: the product answers from its templates, as it does without a key.
