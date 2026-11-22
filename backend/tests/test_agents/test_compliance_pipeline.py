@@ -454,6 +454,8 @@ class TestCEOComplianceCrossRisks:
 
     BASE_FIN = {
         "cash_runway_months": 8,
+        "runway_basis": "known",   # a critical risk stands only on a proven runway
+        "runway_proven": True,
         "monthly_burn_cents": 500_000 * 100,
         "net_income_cents": -50_000 * 100,
         "net_margin": -0.05,
