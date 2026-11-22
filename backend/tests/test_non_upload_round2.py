@@ -137,7 +137,11 @@ async def test_the_stripe_pull_lists_paid_invoices_only_and_writes_the_type_itse
         data, _, partial = await pull_stripe_revenue_csv(org.id, db)
     assert seen["status"] == "paid" and partial is None
     text = data.decode()
-    assert text.count(",income,") + text.count(",income\n") >= 1 and "in_1" in text
+    import csv
+    import io
+
+    typed = {r["reference"]: r["type"] for r in csv.DictReader(io.StringIO(text))}
+    assert typed == {"in_1": "income", "in_2": "income"}
     n = normalize_csv_transactions(csv_bytes=data, source="billing_stripe")
     assert [r.source_record_id for r in n.rows] == ["in_1"] and n.rows[0].direction == "income"
     assert [h["reference"] for h in n.held] == ["in_2"]                  # no amount_paid: held, not 0
