@@ -260,7 +260,7 @@ def _csv_satiri(
     }
     stated = _ilk(r_lower, "currency", "para birimi", "doviz", "doviz cinsi", "pb").strip()
     if stated and tx["currency"] is None:
-        # The row STATES a currency that cannot be read ("XXX", "US$1"): it is held with what it said and the
+        # The row STATES a currency that cannot be read ("XXX", "a garbled symbol"): it is held with what it said and the
         # organisation's base currency is never put in its place (only a currency nobody stated may follow that rule).
         tx["currency_unreadable"] = stated[:20]
     if hesap is not None:
