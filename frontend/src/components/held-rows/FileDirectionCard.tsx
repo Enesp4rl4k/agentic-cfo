@@ -22,11 +22,12 @@ export function FileDirectionCard({
   file: FileQuestion;
   pending: boolean;
   canRemember: boolean;
-  onAnswer: (answer: FileAnswer, remember: boolean) => void;
+  onAnswer: (answer: FileAnswer, remember: boolean, standing?: boolean) => void;
 }>) {
   const { t } = useI18n();
   const copy = t.heldRows;
   const [remember, setRemember] = useState(true);
+  const [standing, setStanding] = useState(false);
   const roles = copy.fileRoles as Record<string, string>;
   const options = copy.fileOptions as Record<string, string>;
   const columns = file.question?.columns ?? [];
@@ -41,6 +42,11 @@ export function FileDirectionCard({
   const needsAccount = file.reason === "convention_unverified";
   const storable = rememberable && canRemember && (file.identity || !needsAccount);
   const mapping = file.question?.mapping ?? [];
+  // The earlier answer for the same header words, not evidenced as the same source: asked again with it pre-selected.
+  const previous = file.reason === "sign_unconfirmed" ? (file.previous ?? file.question?.previous ?? null) : null;
+  const previousOption = previous ? (copy.fileOptions as Record<string, string>)[previous.answer] : null;
+  // An identity-less file may become a standing rule, only by this explicit choice.
+  const canStand = file.reason === "sign_unconfirmed" && !file.identity && storable;
   const outLabel = mapping.find((m) => m.means === "expense")?.label;
   const body = {
     no_signal: copy.fileBodyNoSignal,
@@ -64,6 +70,13 @@ export function FileDirectionCard({
         <p className="text-sm font-medium">{copy.fileConventionQuestion.replace("{label}", outLabel)}</p>
       )}
       {file.reason === "sign_unconfirmed" && <p className="text-sm font-medium">{copy.fileSignQuestion}</p>}
+      {previous && (
+        <p className="rounded-md border p-2 text-sm" data-testid="previous-answer">
+          {copy.filePreviousAnswer
+            .replace("{answer}", previousOption ?? previous.answer)
+            .replace("{source}", previous.account ?? previous.columns)}
+        </p>
+      )}
       <p className="text-sm text-muted-foreground">{body}</p>
       {file.reason === "sign_unconfirmed" && totals && (
         <p className="text-xs text-muted-foreground">
@@ -119,21 +132,31 @@ export function FileDirectionCard({
           {copy.fileRemember}
         </label>
       )}
+      {canStand && remember && (
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={standing} onChange={(e) => setStanding(e.target.checked)} />
+          {copy.fileStanding}
+        </label>
+      )}
       {rememberable && !canRemember && <p className="text-xs text-muted-foreground">{copy.fileRememberDenied}</p>}
       {rememberable && canRemember && !storable && (
         <p className="text-xs text-muted-foreground">{copy.fileNoAccount}</p>
       )}
       <div className="flex flex-wrap gap-2">
-        {file.options.map((answer) => (
-          <Button
-            key={answer}
-            variant={answer === "mixed" || answer === "only_income" || answer === "only_expense" ? "outline" : "default"}
-            disabled={pending}
-            onClick={() => onAnswer(answer, storable && remember && answer !== "mixed")}
-          >
-            {options[answer] ?? answer}
-          </Button>
-        ))}
+        {[...file.options]
+          .sort((a, b) => Number(b === previous?.answer) - Number(a === previous?.answer))
+          .map((answer) => (
+            <Button
+              key={answer}
+              variant={answer === "mixed" || answer === "only_income" || answer === "only_expense" ? "outline" : "default"}
+              disabled={pending}
+              aria-pressed={answer === previous?.answer}
+              onClick={() => onAnswer(answer, storable && remember && answer !== "mixed", canStand && standing && answer !== "mixed")}
+            >
+              {answer === previous?.answer ? `${copy.fileConfirm}: ` : ""}
+              {options[answer] ?? answer}
+            </Button>
+          ))}
       </div>
     </Card>
   );

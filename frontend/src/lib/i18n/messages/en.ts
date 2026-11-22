@@ -2747,6 +2747,11 @@ export type MessageTree = {
     fileSignReading: string;
     fileBodySignUniform: string;
     ingestOutsideChain: string;
+    filePreviousAnswer: string;
+    fileConfirm: string;
+    fileStanding: string;
+    mappingStanding: string;
+    mappingFlagged: string;
   };
   acceptInvite: {
     title: string;
@@ -5941,6 +5946,11 @@ export const en: MessageTree = {
     fileSignReading: "If minus is out: {inIncome} in, {inExpense} out. If it is the opposite: {outIncome} in, {outExpense} out.",
     fileBodySignUniform: "Every amount in this file has the same sign, and there is no column or balance that says which way they went. The system does not guess.",
     ingestOutsideChain: "{count} rows have no balance and sit outside the balance chain; they wait for your decision and the chain does not vouch for them.",
+    filePreviousAnswer: "In an earlier file with the same headers ({source}) you answered: \"{answer}\". Is that true for this file too? Nothing says it is the same source, so it was not applied.",
+    fileConfirm: "Yes, same as before",
+    fileStanding: "Files with these headers and no account named are always like this (a standing rule you can forget later)",
+    mappingStanding: "standing rule for files with no account named",
+    mappingFlagged: "A balance chain overrode this answer",
   },
   acceptInvite: {
     title: "Join the invitation",

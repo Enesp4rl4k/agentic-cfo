@@ -81,6 +81,11 @@ def account_identity(text: str) -> str | None:
     return _from_column(lines, header_at) or _from_header(lines[:header_at])
 
 
+def header_identity(title_text: str) -> str:
+    """The identity a statement's TITLE lines (the text above its table, already separated from it) state; "" if none."""
+    return _from_header((title_text or "").splitlines()) or ""
+
+
 def kind(identity: str | None) -> str | None:
     return str(identity).split(":", 1)[0] if identity else None
 

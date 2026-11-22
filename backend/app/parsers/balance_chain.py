@@ -5,7 +5,8 @@ file that is arithmetic: a step equals its amount in the direction read, or it d
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from itertools import pairwise
 from typing import Any
 
 INCOME = "income"
@@ -22,30 +23,57 @@ class Chain:
     inverted: int
     total: int
     newest_first: bool
-    bad: list[int]            # rows whose own balance step does not equal their amount in their direction
+    bad: list[int]            # rows of a segment whose balances do not equal their amounts in their directions
+    outside: list[int] = field(default_factory=list)   # rows with an amount and no balance that no reconciled segment covers
+
+
+def _signed(mag: int, direction: str) -> int:
+    return mag if direction == INCOME else -mag
+
+
+def _scan(
+    order: list[int], mags: list[int | None], dirs: list[str | None], bals: list[int | None],
+) -> tuple[int, int, int, list[int], set[int]]:
+    """Segment verification in one row order: between two consecutive balance rows, the signed amounts of the rows
+    after the first up to and including the second must add up to the balance's change. With a balance on every
+    row a segment is one row (the usual step); with a balance every third row it is three. A segment that does not
+    reconcile may still reconcile WITHOUT its balance-less rows (a footer line between two real rows): then those
+    rows are outside the chain and the balance row itself is inside."""
+    pos = {i: k for k, i in enumerate(order)}
+    anchors = [i for i in order if bals[i] is not None]
+    m = inv = total = 0
+    bad: list[int] = []
+    inside: set[int] = set()
+    for p, q in pairwise(anchors):
+        seg = order[pos[p] + 1: pos[q] + 1]
+        if any(mags[i] is None or dirs[i] is None for i in seg):
+            continue
+        delta = (bals[q] or 0) - (bals[p] or 0)
+        expected = sum(_signed(mags[i] or 0, dirs[i] or INCOME) for i in seg)
+        total += 1
+        if delta == expected:
+            m += 1
+            inside.update(seg)
+        elif len(seg) > 1 and delta == _signed(mags[q] or 0, dirs[q] or INCOME):
+            m += 1
+            inside.add(q)
+        else:
+            bad.extend(i for i in seg if mags[i])
+            inv += delta == -expected
+    return m, inv, total, bad, inside
 
 
 def _chain(mags: list[int | None], dirs: list[str | None], bals: list[int | None]) -> Chain:
     """Compare balance movements with the amounts, in the row order that explains the file best."""
     best = Chain(0, 0, 0, False, [])
+    n = len(mags)
     for newest_first in (False, True):
-        m = inv = total = 0
-        bad: list[int] = []
-        for i in range(1, len(mags)):
-            later, earlier = (i, i - 1) if not newest_first else (i - 1, i)
-            mag, now, before = mags[later], bals[later], bals[earlier]
-            if now is None or before is None or mag is None or dirs[later] is None:
-                continue
-            delta = now - before
-            expected = mag if dirs[later] == INCOME else -mag
-            total += 1
-            if delta == expected:
-                m += 1
-            else:
-                bad.append(later)
-                inv += delta == -expected
+        order = list(range(n))[::-1] if newest_first else list(range(n))
+        m, inv, total, bad, inside = _scan(order, mags, dirs, bals)
+        has_chain = sum(1 for b in bals if b is not None) >= 2
+        outside = [i for i in range(n) if has_chain and mags[i] and bals[i] is None and i not in inside and i not in bad]
         if m + inv > best.matches + best.inverted or (m + inv == best.matches + best.inverted and m > best.matches):
-            best = Chain(m, inv, total, newest_first, bad)
+            best = Chain(m, inv, total, newest_first, bad, outside)
     return best
 
 
@@ -113,10 +141,8 @@ def sign_preview(mags: list[int | None], negative: list[bool], sign_rows: list[i
 
 
 def outside_chain(mags: list[int | None], bals: list[int | None], skip: frozenset[int] = frozenset()) -> set[int]:
-    """Rows with an amount and NO balance inside a statement whose other rows have balances.
-
-    Such a row is not a link of the chain: nothing checks it (a footer-like line with a date and an amount is
-    indistinguishable from a transaction). Needs at least two balances elsewhere, or there is no chain at all."""
+    """Rows with an amount and no balance, when the directions come from the balance itself (`_from_balance`: every
+    step is adjacent, so a row without a balance is simply not a link). Needs two balances elsewhere."""
     with_balance = sum(1 for i, b in enumerate(bals) if b is not None and i not in skip)
     if with_balance < 2:
         return set()

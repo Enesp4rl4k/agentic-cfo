@@ -358,7 +358,7 @@ async def _belgeyi_al(
         # The counts travel in the result, never on a row: they survive a file whose rows were all skipped.
         sonuc.patch = {**(sonuc.patch or {}), "ingest_counts": ledger.as_dict()}
     rows = (sonuc.patch or {}).get("transactions") or []
-    if any(r.get("direction_file") for r in rows):
+    if any(r.get("direction_file") or r.get("sign_chain") for r in rows):
         # A statement format this organisation already answered is not asked again.
         from app.database import session_factory
         from app.services.held_direction import apply_remembered

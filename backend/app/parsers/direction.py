@@ -257,6 +257,9 @@ class FileDirection:
     notes: list[str] = field(default_factory=list)
     # Set when the file as a whole cannot be placed: {reason, signature, identity, question}.
     hold: dict[str, Any] | None = None
+    # Set when a verifying balance chain corroborated reading one signed column as "minus = out": which source that was
+    # ({signature, header_signature, account}), so a remembered answer that says otherwise can be flagged.
+    chain_source: dict[str, Any] | None = None
 
 
 def _roles(headers: list[str]) -> dict[str, str]:
@@ -343,7 +346,8 @@ def resolve_file(
 
     def hold_file(reason: str, note: str, out_reads: list[str | None], hints: list[str | None],
                   mapping: list[dict[str, str]] | None = None, extra: dict[str, Any] | None = None) -> FileDirection:
-        hold = {"reason": reason, "signature": signature, "identity": bool(identity),
+        hold = {"reason": reason, "signature": signature, "identity": bool(identity), "account": identity,
+                "header_signature": header_signature(headers),
                 "uniform": bool((extra or {}).get("uniform")),
                 "question": _question(headers, roles, rows, reason, note, mapping, labels, extra)}
         return FileDirection(
@@ -379,6 +383,7 @@ def resolve_file(
     # (and without a remembered answer, applied later by held_direction) the file is asked once.
     sign_rows = [i for i in range(n) if via_amount[i] and mags[i]]
     sign_reads = False
+    chain_source: dict[str, Any] | None = None
     if sign_rows and not split and direction_column is None:
         tentative: list[str | None] = [None] * n
         for i in sign_rows:
@@ -387,6 +392,7 @@ def resolve_file(
         uniform = len({negative[i] for i in sign_rows}) == 1
         if state == "confirmed":
             sign_reads = True
+            chain_source = {"signature": signature, "header_signature": header_signature(headers), "account": identity}
         elif uniform and _from_balance(mags, bals) is not None:
             pass                                    # one sign says nothing; the balance reads the direction below
         elif state in ("inverted", "inconclusive"):
@@ -458,7 +464,7 @@ def resolve_file(
             reads, [_flip(r) for r in reads], mapping)
 
     mismatch = set()
-    outside = outside_chain(mags, bals, skip)       # no balance among rows that have one: not a link of the chain
+    outside = set(_chain(mags, reads, bals).outside) - skip   # no balance, in no reconciled segment: not a link of the chain
     if state == "confirmed":
         mismatch = set(_chain(mags, reads, bals).bad)
         notes.append("yön bakiye hareketiyle doğrulandı")
@@ -474,11 +480,12 @@ def resolve_file(
         RowDirection(None if i in mismatch or i in outside else reads[i], mags[i], reads[i], None, notes_per_row[i],
                      i in mismatch, i in outside)
         for i in range(n)
-    ], notes)
+    ], notes, chain_source=chain_source if state == "confirmed" else None)
 
 
 def settle_rows(
     rows: list[dict[str, Any]], signature_material: str, *, ambiguous: bool = False, identity: bool = False,
+    account: str = "",
 ) -> dict[str, Any] | None:
     """The same checks for rows a text parser already read (type, amount_cents, balance_cents).
 
@@ -500,7 +507,8 @@ def settle_rows(
 
     def hold(reason: str, note: str, extra: dict[str, Any] | None = None, mapping: list[dict[str, str]] | None = None,
              shown: list[dict[str, str]] | None = None) -> dict[str, Any]:
-        return {"signature": signature, "reason": reason, "identity": identity, "uniform": bool((extra or {}).get("uniform")),
+        return {"signature": signature, "reason": reason, "identity": identity, "account": account,
+                "header_signature": signature, "uniform": bool((extra or {}).get("uniform")),
                 "question": {"columns": [], "samples": shown or samples, "reason": reason, "note": note,
                              "mapping": mapping or [], **(extra or {})}}
 
@@ -546,7 +554,7 @@ def settle_rows(
     if state == "confirmed":
         for i in _chain(mags, reads, bals).bad:
             rows[i]["type"], rows[i]["balance_mismatch"] = None, True
-        for i in outside_chain(mags, bals):
+        for i in _chain(mags, reads, bals).outside:
             rows[i]["type"], rows[i]["outside_chain"] = None, True
     elif state == "unverified" and ambiguous:
         for r, d in zip(rows, reads, strict=True):

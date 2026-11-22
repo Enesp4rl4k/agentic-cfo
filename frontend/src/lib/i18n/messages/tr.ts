@@ -3053,6 +3053,11 @@ export const tr: MessageTree = {
     fileSignReading: "Eksi çıkışsa: {inIncome} giriş, {inExpense} çıkış. Tersiyse: {outIncome} giriş, {outExpense} çıkış.",
     fileBodySignUniform: "Bu dosyadaki tüm tutarlar aynı işaretli ve hangi yöne gittiklerini söyleyen bir sütun ya da bakiye yok. Sistem tahmin etmez.",
     ingestOutsideChain: "{count} satırın bakiyesi yok ve bakiye zincirinin dışında kalıyor; kararınızı bekliyorlar, zincir bunları doğrulamıyor.",
+    filePreviousAnswer: "Aynı başlıklı önceki dosyada ({source}) \"{answer}\" demiştiniz; bu dosya için de geçerli mi? Aynı kaynak olduğunu gösteren bir şey olmadığı için uygulanmadı.",
+    fileConfirm: "Evet, öncekiyle aynı",
+    fileStanding: "Bu başlıkla gelen, hesabı belli olmayan dosyalar hep böyle (sonradan unutabileceğiniz kalıcı bir kural)",
+    mappingStanding: "hesabı belli olmayan dosyalar için kalıcı kural",
+    mappingFlagged: "Bir bakiye zinciri bu cevabı geçersiz kıldı",
   },
   acceptInvite: {
     title: "Davete katıl",

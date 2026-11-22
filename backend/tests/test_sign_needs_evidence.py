@@ -34,17 +34,18 @@ from tests.test_ingest_no_silent_defaults import (  # noqa: F401  (a fixture, re
 )
 
 HEADER = "Tarih;Açıklama;Tutar;Para Birimi"
+ACCOUNT = "AKBANK Hesap No: 1234567"
 
 
 def _csv(header: str, *rows: str) -> str:
     return NL.join([header, *rows]) + NL
 
 
-def _expense_list(positives: int = 27, negatives: int = 3, month: str = "03") -> str:
+def _expense_list(positives: int = 27, negatives: int = 3, month: str = "03", title: str = "") -> str:
     """Amounts written positive for money spent, with a few reversals written negative: no balance column."""
     rows = [f"{d:02d}.{month}.2026;Gider {d};{d * 10},00;TRY" for d in range(1, positives + 1)]
     rows += [f"{positives + d:02d}.{month}.2026;İade {d};-{d * 5},00;TRY" for d in range(1, negatives + 1)]
-    return _csv(HEADER, *rows)
+    return _csv(HEADER, *rows) if not title else NL.join([title, HEADER, *rows]) + NL
 
 
 def totals(rows: list[dict[str, Any]]) -> tuple[int, int, int]:
@@ -204,7 +205,7 @@ async def _booked(client, job_id: str) -> list[Transaction]:
 async def test_one_question_then_the_next_file_of_the_same_format_books_without_asking(env, monkeypatch) -> None:
     client, tmp_path = env
     headers, org_id, _ = await kullanici(client, "sg1@x.com")
-    job1, _ = await _upload(client, tmp_path, monkeypatch, [], org_id, content=_expense_list(), name="mart.csv")
+    job1, _ = await _upload(client, tmp_path, monkeypatch, [], org_id, content=_expense_list(title=ACCOUNT), name="mart.csv")
     assert await _booked(client, job1) == []
     asked = await _questions(client, headers)
     assert len(asked) == 1 and asked[0]["reason"] == "sign_unconfirmed" and asked[0]["rows"] == 30
@@ -220,14 +221,14 @@ async def test_one_question_then_the_next_file_of_the_same_format_books_without_
         kinds = {d.kind for d in (await db.execute(select(Decision))).scalars()}
     assert {DecisionKind.FILE_DIRECTION_ANSWER.value, DecisionKind.DIRECTION_MAPPING.value} <= kinds
 
-    job2, _ = await _upload(client, tmp_path, monkeypatch, [], org_id, content=_expense_list(20, 2, "04"), name="nisan.csv")
-    assert await _questions(client, headers) == []                         # the memory is applied, nothing is asked
+    job2, _ = await _upload(client, tmp_path, monkeypatch, [], org_id, content=_expense_list(20, 2, "04", ACCOUNT), name="nisan.csv")
+    assert await _questions(client, headers) == []                         # the same source (same account): nothing is asked
     again = await _booked(client, job2)
     assert sum(t.type == "expense" for t in again) == 20 and sum(t.type == "income" for t in again) == 2
     assert all(t.category for t in again)
 
     headers2, org2, _ = await kullanici(client, "sg1b@x.com")              # another organisation: asked
-    job3, _ = await _upload(client, tmp_path, monkeypatch, [], org2, content=_expense_list(), name="mart.csv")
+    job3, _ = await _upload(client, tmp_path, monkeypatch, [], org2, content=_expense_list(title=ACCOUNT), name="mart.csv")
     assert await _booked(client, job3) == [] and len(await _questions(client, headers2)) == 1
 
 
@@ -237,8 +238,9 @@ async def test_a_remembered_inverted_answer_meets_a_chain_that_agrees_and_the_ba
     headers, org_id, _ = await kullanici(client, "sg2@x.com")
     hdr = "Tarih;Açıklama;Tutar;Bakiye;Para Birimi"
     first = [f"{d:02d}.03.2026;Gider {d};{d * 10},00;;TRY" for d in range(1, 8)]
+    first[0:0] = []
     first += ["08.03.2026;İade;-30,00;;TRY", "09.03.2026;İade;-40,00;4.040,00;TRY"]
-    job1, _ = await _upload(client, tmp_path, monkeypatch, [], org_id, content=_csv(hdr, *first), name="a.csv")
+    job1, _ = await _upload(client, tmp_path, monkeypatch, [], org_id, content=NL.join([ACCOUNT, hdr, *first]) + NL, name="a.csv")
     asked = (await _questions(client, headers))[0]
     assert asked["reason"] == "sign_unconfirmed"            # one balance is not a chain: it proves nothing about the signs
     await client.post("/api/v1/held-rows/file-direction", headers=headers,
@@ -250,7 +252,7 @@ async def test_a_remembered_inverted_answer_meets_a_chain_that_agrees_and_the_ba
         rows.append(f"{d:02d}.04.2026;Gider {d};{d * 10},00;{balance},00;TRY")
     balance += 30
     rows.append(f"08.04.2026;İade;-30,00;{balance},00;TRY")
-    job2, _ = await _upload(client, tmp_path, monkeypatch, [], org_id, content=_csv(hdr, *rows), name="b.csv")
+    job2, _ = await _upload(client, tmp_path, monkeypatch, [], org_id, content=NL.join([ACCOUNT, hdr, *rows]) + NL, name="b.csv")
     assert [q for q in await _questions(client, headers) if q["job_id"] == job2] == []
     booked = await _booked(client, job2)
     assert sum(t.type == "expense" for t in booked) == 7 and sum(t.type == "income" for t in booked) == 1

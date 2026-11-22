@@ -22,6 +22,14 @@ needs a decider or the accountant, because it changes how every later statement 
 booked. A memory is applied only when it can still be checked: a file whose identity is unknown is asked
 again, and a memory that says "as read" never overrides a balance that contradicts the columns (the
 override is recorded).
+
+A SIGN memory (`sign_unconfirmed`: "minus = out, plus = in") is stricter, because generic header words ("Tarih;
+Açıklama;Tutar") are shared by unrelated sources: it is applied silently only to the SAME SOURCE, i.e. the same header
+signature AND the same account identity the header states (`services/statement_account`). A file with the same
+headers but no identity, or another one, is asked again with the earlier answer and its source shown, pre-selected:
+one click to confirm, recorded as a decision. Only an explicit "standing" choice (never inferred) lets identity-less
+files of that signature through silently. A verifying balance chain always wins over a memory; the override is a
+recorded decision and the memory is flagged where remembered answers are listed.
 """
 from __future__ import annotations
 
@@ -44,6 +52,7 @@ from app.parsers.direction import (
 from app.services import held_rows
 from app.services.decisions import record_decision
 from app.services.ingest.hold import row_reasons
+from app.services.statement_account import mask
 
 MIXED = "mixed"
 ANSWERS: dict[str, frozenset[str]] = {
@@ -109,6 +118,36 @@ async def active_mappings(db: AsyncSession, org_id: str) -> list[DirectionMappin
     )).scalars().all())
 
 
+def _previous_hint(m: DirectionMapping, mark: dict[str, Any]) -> dict[str, Any]:
+    from app.services.statement_account import mask
+
+    return {"answer": m.answer, "columns": m.columns, "account": mask(m.identity or None),
+            "same_account": bool(mark.get("identity")) and (m.identity or "") == mark.get("account"),
+            "created_at": m.created_at.isoformat() if m.created_at else None}
+
+
+def _sign_memory(maps: list[DirectionMapping], mark: dict[str, Any]) -> tuple[str | None, DirectionMapping | None]:
+    """(answer to apply silently, the earlier answer to show instead) for a sign question."""
+    sig = mark["signature"]
+    exact = next((m for m in maps if m.signature == sig), None)
+    if exact is not None and not mark.get("uniform"):
+        if mark.get("identity"):
+            return exact.answer, None             # the same source: its account was stated and is part of the signature
+        if exact.standing:
+            return exact.answer, None             # an explicit, recorded standing rule for identity-less files
+    hsig = mark.get("header_signature") or sig
+    return None, exact or next((m for m in maps if (m.header_signature or m.signature) == hsig), None)
+
+
+async def _override(db: AsyncSession, org_id: str, m: DirectionMapping, why: str) -> None:
+    """A verifying balance chain won over a memory: recorded, and the memory is flagged where it is listed."""
+    m.flagged_at, m.flagged_note = datetime.now(UTC), why[:300]
+    await record_decision(
+        db, org_id=org_id, kind=DecisionKind.DIRECTION_MAPPING, target_type="direction_mapping",
+        target_id=m.id, outcome="overridden", decided_via=DecidedVia.SYSTEM, reason=why,
+    )
+
+
 async def apply_remembered(db: AsyncSession, org_id: str | None, rows: list[dict[str, Any]]) -> int:
     """Rows of a file held for its direction, whose format this organisation already answered: answer them.
 
@@ -118,11 +157,18 @@ async def apply_remembered(db: AsyncSession, org_id: str | None, rows: list[dict
     - an "as read" memory never overrides a balance that contradicts the columns: it is ignored, and
       the override is recorded.
     """
-    if not org_id or not any(r.get("direction_file") for r in rows):
+    chains = {c["signature"] for r in rows if (c := r.pop("sign_chain", None))}   # the file booked on a verifying chain
+    if not org_id or not (chains or any(r.get("direction_file") for r in rows)):
         return 0
-    known = {(m.signature, m.reason): m for m in await active_mappings(db, org_id)}
+    mappings = await active_mappings(db, org_id)
+    known = {(m.signature, m.reason): m for m in mappings}
+    sign_maps = [m for m in mappings if m.reason == SIGN_UNCONFIRMED]
     settled = 0
-    overridden: set[str] = set()
+    overridden: dict[str, tuple[DirectionMapping, str]] = {}
+    for sig in chains:
+        m = known.get((sig, SIGN_UNCONFIRMED))
+        if m is not None and m.answer == "sign_inverted":
+            overridden[m.id] = (m, "the balance chain verifies minus = out; the remembered 'inverted' answer was not applied")
     for row in rows:
         mark = row.get("direction_file")
         if not mark:
@@ -130,20 +176,25 @@ async def apply_remembered(db: AsyncSession, org_id: str | None, rows: list[dict
         sig, reason = mark["signature"], mark["reason"]
         answer: str | None = None
         if reason == SIGN_UNCONFIRMED:
-            # Applied only to a file in which BOTH signs occur: a memory about what minus means can be contradicted
-            # (by a balance chain: it is held then) only by such a file. A one-signed file is asked.
-            m = known.get((sig, reason))
-            answer = m.answer if m and not mark.get("uniform") else None
+            # Silent only for the same source (see the module doc); otherwise the earlier answer is shown, pre-selected.
+            answer, earlier = _sign_memory(sign_maps, mark)
+            if earlier is not None:
+                hint = _previous_hint(earlier, mark)
+                mark["previous"] = hint
+                if isinstance(row.get("direction_question"), dict):
+                    row["direction_question"]["previous"] = hint
         elif reason in NEEDS_IDENTITY and mark.get("identity"):
             m = known.get((sig, reason))
             answer = m.answer if m else None
         elif reason == BALANCE_CONTRADICTS:
             direct, convention = known.get((sig, BALANCE_CONTRADICTS)), known.get((sig, CONVENTION_UNVERIFIED))
             if convention is not None and convention.answer == "as_read":
-                overridden.add(convention.id)       # this file's balance contradicts what was remembered
+                overridden[convention.id] = (convention, "the new file's balance contradicts the remembered reading")
             sign = known.get((sig, SIGN_UNCONFIRMED))
+            if sign is not None and not (mark.get("identity") or sign.standing):
+                sign = None                         # not evidenced as the same source: it would not have applied anyway
             if sign is not None and sign.answer == "sign_correct":
-                overridden.add(sign.id)             # "the signs are right" does not outrank a balance that says otherwise
+                overridden[sign.id] = (sign, "the new file's balance contradicts the remembered 'signs are right'")
             if direct is None and sign is not None and sign.answer == "sign_inverted":
                 answer = "balance"                  # the balance shows the opposite of the signs: what was remembered
             if direct is not None:
@@ -154,12 +205,8 @@ async def apply_remembered(db: AsyncSession, org_id: str | None, rows: list[dict
             apply_to_rows([row], answer)
             row["direction_remembered"] = answer
             settled += 1
-    for mapping_id in sorted(overridden):
-        await record_decision(
-            db, org_id=org_id, kind=DecisionKind.DIRECTION_MAPPING, target_type="direction_mapping",
-            target_id=mapping_id, outcome="overridden", decided_via=DecidedVia.SYSTEM,
-            reason="the new file's balance contradicts the remembered reading; the memory was not applied",
-        )
+    for mapping, why in sorted(overridden.values(), key=lambda t: t[0].id):
+        await _override(db, org_id, mapping, f"{why}; the memory was not applied")
     if overridden:
         await db.commit()
     return settled
@@ -182,6 +229,7 @@ async def list_questions(db: AsyncSession, org_id: str) -> list[dict[str, Any]]:
         entry = out.setdefault((row.job_id, mark["key"]), {
             "job_id": row.job_id, "file_key": mark["key"], "reason": mark["reason"],
             "signature": mark["signature"], "identity": bool(mark.get("identity")), "rows": 0, "question": None,
+            "previous": mark.get("previous"),
             "options": sorted(ANSWERS.get(mark["reason"], frozenset())),
         })
         entry["rows"] += 1
@@ -192,7 +240,7 @@ async def list_questions(db: AsyncSession, org_id: str) -> list[dict[str, Any]]:
 
 async def answer_file(
     db: AsyncSession, org_id: str, user_id: str, job_id: str, file_key: str, answer: str,
-    *, remember: bool = True, note: str | None = None,
+    *, remember: bool = True, note: str | None = None, standing: bool = False,
 ) -> dict[str, Any]:
     """Apply one answer to every row of a waiting file. One transaction; commits."""
     rows = await _file_rows(db, org_id, job_id, file_key)
@@ -224,20 +272,24 @@ async def answer_file(
     can_store = (mark["reason"], answer) in REMEMBERABLE and (
         mark["reason"] not in NEEDS_IDENTITY or bool(mark.get("identity"))
     )
+    # An identity-less sign answer becomes a standing rule only when the person says so, here, explicitly.
+    standing = bool(standing and remember and can_store and mark["reason"] == SIGN_UNCONFIRMED and not mark.get("identity"))
+    confirmed_previous = (mark.get("previous") or {}).get("answer") == answer
     await record_decision(
         db, org_id=org_id, kind=DecisionKind.FILE_DIRECTION_ANSWER, target_type="statement_file",
         target_id=file_key, outcome=answer, decided_via=DecidedVia.HUMAN, decided_by=user_id, reason=note,
         evidence_refs=[{"type": "analysis_job", "id": job_id}],
         before={"reason": mark["reason"], "rows": len(rows), "signature": mark["signature"]},
         after={"answer": answer, "released": result["resolved"], "still_waiting_rows": len(waiting),
-               "remembered": bool(remember and can_store),
+               "remembered": bool(remember and can_store), "standing": standing,
+               "confirmed_previous": confirmed_previous,
                # The statement's balance chain was read again from these answers (a decision of its own).
                "balance_reverifications": [p["decision_id"] for p in result["balance_proof"]]},
     )
     remembered = None
     if remember and can_store:
         asked = next((r.payload["direction_question"] for r in rows if r.payload.get("direction_question")), {})
-        remembered = await _remember(db, org_id, user_id, mark, answer, asked)
+        remembered = await _remember(db, org_id, user_id, mark, answer, asked, standing)
     await db.commit()
     result["still_waiting"] = await held_rows.pending_count(db, org_id)
     result["ledger"] = await held_rows.append_released(db, jobs)
@@ -249,6 +301,7 @@ async def answer_file(
 
 async def _remember(
     db: AsyncSession, org_id: str, user_id: str, mark: dict[str, Any], answer: str, asked: dict[str, Any],
+    standing: bool = False,
 ) -> str:
     """Store the answer for this format (replacing a previous one), as a decision. No commit."""
     now = datetime.now(UTC)
@@ -258,14 +311,16 @@ async def _remember(
     names = ", ".join(str(c.get("name")) for c in asked.get("columns", []))
     mapping = DirectionMapping(
         org_id=org_id, signature=mark["signature"], reason=mark["reason"], answer=answer,
-        columns=names[:500], created_by=user_id,
+        columns=names[:500], created_by=user_id, header_signature=mark.get("header_signature"),
+        identity=str(mark.get("account") or ""), standing=standing,
     )
     db.add(mapping)
     await db.flush()
     await record_decision(
         db, org_id=org_id, kind=DecisionKind.DIRECTION_MAPPING, target_type="direction_mapping",
         target_id=mapping.id, outcome="remembered", decided_via=DecidedVia.HUMAN, decided_by=user_id,
-        before=None, after={"signature": mark["signature"], "reason": mark["reason"], "answer": answer},
+        before=None, after={"signature": mark["signature"], "reason": mark["reason"], "answer": answer, "standing": standing,
+                            "identity": bool(mark.get("identity"))},
     )
     return mapping.id
 
@@ -274,6 +329,8 @@ def describe_mapping(m: DirectionMapping) -> dict[str, Any]:
     return {
         "id": m.id, "signature": m.signature, "reason": m.reason, "answer": m.answer,
         "columns": m.columns, "created_at": m.created_at.isoformat() if m.created_at else None,
+        "account": mask(m.identity or None), "standing": bool(m.standing),
+        "flagged_at": m.flagged_at.isoformat() if m.flagged_at else None, "flagged_note": m.flagged_note,
     }
 
 

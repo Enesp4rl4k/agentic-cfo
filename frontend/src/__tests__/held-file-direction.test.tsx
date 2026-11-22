@@ -184,6 +184,56 @@ describe("which account, and the sign question", () => {
   });
 });
 
+describe("the same header words, another source: the earlier answer is shown, not applied", () => {
+  const signFile = {
+    ...fileQuestionFixture,
+    reason: "sign_unconfirmed",
+    identity: false,
+    options: ["sign_correct", "sign_inverted", "mixed"],
+    previous: { answer: "sign_correct", columns: "tarih, açıklama, tutar", account: null, same_account: false, created_at: null },
+  };
+
+  it("names the earlier answer, pre-selects it as one click, and records nothing standing unless asked", async () => {
+    const user = userEvent.setup();
+    listFileQuestions.mockResolvedValue({ files: [signFile], canRemember: true });
+    renderWithQuery(<BekleyenKayitlarPage />);
+    expect(await screen.findByTestId("previous-answer")).toHaveTextContent(
+      /Aynı başlıklı önceki dosyada \(tarih, açıklama, tutar\) "Tutarların işareti doğru: eksi = çıkan, artı = giren" demiştiniz; bu dosya için de geçerli mi\?/,
+    );
+    const buttons = screen.getAllByRole("button").filter((b) => b.hasAttribute("aria-pressed"));
+    expect(buttons[0]).toHaveTextContent("Evet, öncekiyle aynı: Tutarların işareti doğru");
+    expect(buttons[0]).toHaveAttribute("aria-pressed", "true");
+    await user.click(buttons[0]);
+    await waitFor(() =>
+      expect(answerFileDirection).toHaveBeenCalledWith({ job_id: "j9", file_key: "f9", answer: "sign_correct", remember: true }),
+    );
+  });
+
+  it("offers a standing rule for files that name no account, as an explicit tick", async () => {
+    const user = userEvent.setup();
+    listFileQuestions.mockResolvedValue({ files: [signFile], canRemember: true });
+    renderWithQuery(<BekleyenKayitlarPage />);
+    await user.click(await screen.findByLabelText(/Bu başlıkla gelen, hesabı belli olmayan dosyalar hep böyle/));
+    await user.click(screen.getByRole("button", { name: /Hayır, tersi/ }));
+    await waitFor(() =>
+      expect(answerFileDirection).toHaveBeenCalledWith({
+        job_id: "j9", file_key: "f9", answer: "sign_inverted", remember: true, standing: true,
+      }),
+    );
+  });
+
+  it("lists a standing rule and an override by a balance chain where remembered answers are shown", async () => {
+    listFileQuestions.mockResolvedValue({ files: [], canRemember: true });
+    listHeldRows.mockResolvedValue([]);
+    listDirectionMappings.mockResolvedValue([
+      { ...directionMappingFixture, standing: true, flagged_at: "2026-04-01T10:00:00Z", flagged_note: "the balance chain verifies minus = out" },
+    ]);
+    renderWithQuery(<BekleyenKayitlarPage />);
+    expect(await screen.findByText(/hesabı belli olmayan dosyalar için kalıcı kural/)).toBeInTheDocument();
+    expect(screen.getByText(/Bir bakiye zinciri bu cevabı geçersiz kıldı: the balance chain verifies minus = out/)).toBeInTheDocument();
+  });
+});
+
 describe("hatırlanan ekstre yönleri", () => {
   it("lists a remembered answer and forgets it on request", async () => {
     const user = userEvent.setup();

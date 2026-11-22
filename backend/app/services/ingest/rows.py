@@ -25,7 +25,6 @@ from app.parsers.direction import (
     parse_money,
     resolve_file,
     signed_money,
-    statement_identity,
 )
 from app.services.ingest.categories import (
     INCOME_CATEGORIES,
@@ -105,8 +104,10 @@ def _pdf_yonu(
         [r["type"] if r.get("type") in ("income", "expense") else None for r in transactions],
         [r.get("balance_cents") for r in transactions], min_steps=3,
     )
-    identity = statement_identity(raw_text)
-    hold = settle_rows(transactions, f"{bank}||{identity}", ambiguous=ambiguous, identity=bool(identity))
+    from app.services.statement_account import account_identity
+
+    identity = account_identity(raw_text) or ""
+    hold = settle_rows(transactions, f"{bank}||{identity}", ambiguous=ambiguous, identity=bool(identity), account=identity)
     # A footer-like line with a date and an amount is not part of the chain: it is held, and the statement is
     # never called verified (the summary says how many rows were outside the chain).
     outside = sum(1 for tx in transactions if tx.get("outside_chain"))
@@ -117,6 +118,7 @@ def _pdf_yonu(
         for n, tx in enumerate(transactions):
             tx["direction_file"] = {
                 "key": key, "signature": hold["signature"], "reason": hold["reason"], "uniform": hold.get("uniform", False),
+                "header_signature": hold.get("header_signature", hold["signature"]), "account": hold.get("account", ""),
                 "read": tx.pop("direction_read", None), "balance": tx.pop("direction_balance", None),
             }
             if n == 0:
@@ -313,6 +315,7 @@ def _dosya_isareti(settled: FileDirection, yon: RowDirection | None, raw_text: s
         "key": hashlib.sha1(raw_text.encode("utf-8", "ignore")).hexdigest()[:16],
         "signature": settled.hold["signature"], "reason": settled.hold["reason"],
         "identity": settled.hold.get("identity", False), "uniform": settled.hold.get("uniform", False),
+        "header_signature": settled.hold.get("header_signature"), "account": settled.hold.get("account", ""),
         "read": yon.read, "balance": yon.balance,
     }
 
@@ -337,6 +340,8 @@ def _try_parse_csv(
     """
     import csv
     import io
+
+    from app.services.statement_account import account_identity
 
     ledger = ledger if ledger is not None else ReadLedger()
     headers: list[str] = []
@@ -385,11 +390,14 @@ def _try_parse_csv(
             # cell that cannot be read ("31.02.2026") is money with a broken date: a transaction, held.
             if not _tutarli(rows[i]) or not any(ch.isdigit() for ch in _ilk(rows[i], *date_keys))
         }
+        # The FIRST row, when it states a balance and no amount, is the statement's opening balance, not a money row.
+        if uncoded and uncoded[0] == 0 and not _tutarli(rows[0]) and signed_money(_ilk(rows[0], "bakiye", "balance")) is not None:
+            notmoves.add(0)
         suspects = phrased - notmoves
         has_balance = bool(set(names) & {"bakiye", "balance"})
         settled = resolve_file(
             headers, [rows[i] for i in uncoded], frozenset(k for k, i in enumerate(uncoded) if i in notmoves),
-            identity or statement_identity(raw_text.split(chr(10), 1)[0]),
+            identity or account_identity(raw_text) or "",
             {fold(f.strip()): f.strip() for f in reader.fieldnames if f},
         )
         yonler = dict(zip(uncoded, settled.rows, strict=True))
@@ -410,6 +418,8 @@ def _try_parse_csv(
             if i in malformed:
                 tx["malformed_row"] = True
                 tx["raw_text"] += chr(10) + "[fazlalık hücreler] " + " | ".join(malformed[i])
+            if settled.chain_source and tx.get("type"):
+                tx["sign_chain"] = settled.chain_source      # consumed (and removed) by held_direction.apply_remembered
             if mark := _dosya_isareti(settled, yonler.get(i), raw_text):
                 tx["direction_file"] = mark
                 if not asked and settled.hold is not None:
@@ -467,12 +477,12 @@ def _tablo_ekstresi(
         return None
     if tablo is None or not tablo.satirlar:
         return None
-    from app.parsers.direction import statement_identity as _identity
+    from app.services.statement_account import header_identity
 
     # The table reader drops only blank rows and repeated headers, and says how many.
     ledger.read += len(tablo.satirlar) + tablo.bos + tablo.baslik_tekrari
     ledger.blank += tablo.bos
     ledger.header_repeats += tablo.baslik_tekrari
     return _try_parse_csv(
-        standart_csv(tablo, BANKA_EKSTRESI)[0], atlanan, _identity(tablo.ust_metin), ledger, count_read=False,
+        standart_csv(tablo, BANKA_EKSTRESI)[0], atlanan, header_identity(tablo.ust_metin), ledger, count_read=False,
     )
