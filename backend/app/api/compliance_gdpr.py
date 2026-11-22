@@ -6,9 +6,7 @@ AB Genel Veri Koruma Tüzüğü (GDPR) uyumlu endpoint'ler.
 
 Endpoint'ler:
   GET  /compliance/data-inventory          → Org'un veri envanteri
-  POST /compliance/erasure-request         → Silinme hakkı başvurusu
-  GET  /compliance/erasure-request/{id}    → Başvuru durumu
-  POST /compliance/erasure-request/{id}/execute → Veriyi sil
+  (silme: org_erasure.py ve member_erasure.py)
   GET  /compliance/data-export/{user_id}   → Kişisel veri dışa aktarma (portability)
   GET  /compliance/retention-report        → Veri saklama süresi raporu
   POST /compliance/consent                 → Kullanıcı onayını kaydet
@@ -20,12 +18,11 @@ from __future__ import annotations
 
 import io
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, EmailStr
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -49,12 +46,6 @@ RETENTION_POLICY: dict[str, int] = {
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
-
-class ErasureRequest(BaseModel):
-    reason:          str
-    user_email:      EmailStr | None = None   # Admin on behalf of user
-    include_derived: bool = True               # Analiz sonuçları da silinsin mi?
-
 
 # ── Data inventory ────────────────────────────────────────────────────────────
 
@@ -191,55 +182,9 @@ async def export_personal_data(
     )
 
 
-# ── Erasure request (right to be forgotten) ───────────────────────────────────
-
-@router.post("/compliance/erasure-request")
-async def create_erasure_request(
-    req:          ErasureRequest,
-    current_user: User = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
-) -> dict[str, Any]:
-    """
-    KVKK Madde 7 / GDPR Article 17: Silinme hakkı talebi oluştur.
-
-    Talep alınır; bu uç yalnızca başvuru kaydıdır, hiçbir veri silmez.
-    Organizasyonun tüm verisinin silinmesi için bkz. app/api/org_erasure.py
-    (POST /compliance/org-erasure/request → .../{id}/confirm).
-    """
-    import uuid
-    request_id = str(uuid.uuid4())
-    # Store as an in-app notification for now (can be a separate table)
-    from app.models.in_app_notification import InAppNotification
-    notif = InAppNotification(
-        user_id = str(current_user.id),
-        title   = "Silinme Talebi Alındı",
-        body    = f"Veri silme talebiniz alındı (ID: {request_id}). "
-                  f"İnceleme sonrası 30 gün içinde yanıt verilecektir.",
-        level   = "info",
-        payload = {
-            "type":            "erasure_request",
-            "request_id":      request_id,
-            "user_id":         str(current_user.id),
-            "email":           current_user.email,
-            "reason":          req.reason,
-            "include_derived": req.include_derived,
-            "status":          "pending",
-            "created_at":      datetime.now(UTC).isoformat(),
-        },
-    )
-    db.add(notif)
-    await db.commit()
-    logger.info("Erasure request created: user=%s request_id=%s", current_user.id, request_id)
-
-    return {
-        "data": {
-            "request_id":    request_id,
-            "status":        "pending",
-            "message":       "Talebiniz alındı. 30 gün içinde yanıt verilecektir.",
-            "deadline":      (datetime.now(UTC) + timedelta(days=30)).isoformat(),
-        },
-        "error": None,
-    }
+# The old `POST /compliance/erasure-request` was removed: it built an `InAppNotification` with fields that model
+# does not have (every call was a 500) and would have copied the requester's e-mail address and reason into it.
+# Erasure is `app/api/org_erasure.py` (a whole organisation) and `app/api/member_erasure.py` (one person).
 
 
 # ── Retention report ──────────────────────────────────────────────────────────

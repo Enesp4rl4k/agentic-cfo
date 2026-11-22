@@ -979,6 +979,9 @@ def get_scheduler() -> AsyncIOScheduler:
                 max_instances=1,
             )
 
+    from app.services.privacy.jobs import register_privacy_jobs
+
+    register_privacy_jobs(_scheduler, _exclusive)  # KVKK: erasure executor (and the retention purge)
     return _scheduler
 
 

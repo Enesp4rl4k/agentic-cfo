@@ -47,6 +47,7 @@ SCOPED_IN_HANDLER: dict[tuple[str, str], str] = {
     ("POST", "/api/v1/open-banking/connect/{bank_id}"): "bank id is a key into a static table",
     ("POST", "/api/v1/open-banking/connections/{connection_id}/sync"): "id unused; the new job is created in the caller's org",
     ("DELETE", "/api/v1/platform/orgs/{org_id}/ip-whitelist"): "platform operator only (require_platform_operator); the org is the target, not the caller's",
+    ("POST", "/api/v1/privacy/member-erasure/{request_id}/cancel"): "only the person the request is about, the person who made it, or a platform operator; anyone else gets 404 (checked in the handler)",
     ("GET", "/api/v1/efatura/invoices/{direction}"): "inbound|outbound, not an object",
     ("GET", "/api/v1/efatura/tax-calendar/{period}"): "a YYYY-MM period, not an object",
     ("GET", "/api/v1/billing/check-limit/{resource}"): "resource name; usage read for the caller's org",

@@ -264,6 +264,8 @@ class Settings(BaseSettings):
     # KVKK org erasure: `hard_delete` stays unreachable through the API until the
     # retention question (plan G19) is decided by the owner/lawyer.
     org_erasure_hard_delete_enabled: bool = False
+    # KVKK erasure: days between the owner's confirmation and the destructive step (0 = immediately); the owner can cancel until then
+    erasure_cooling_off_days: int = 7
 
     # LLM — set llm_base_url to use DeepSeek or any OpenAI-compatible API
     llm_model: str = "deepseek-chat"

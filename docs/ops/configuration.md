@@ -129,6 +129,7 @@ is never blocked. WARN findings are logged in every mode.
 | `STORAGE_BACKEND` | `local` | optional | - |  |
 | `STORAGE_LOCAL_PATH` | `./uploads` | optional | - |  |
 | `ORG_ERASURE_HARD_DELETE_ENABLED` | False | optional | - |  |
+| `ERASURE_COOLING_OFF_DAYS` | 7 | optional | - | KVKK erasure: days between the owner's confirmation and the destructive step (0 = immediately); the owner can cancel until then |
 | `LLM_MODEL` | `deepseek-chat` | optional | - |  |
 | `LLM_MODEL_CHEAP` | (unset) | optional | - |  |
 | `LLM_MODEL_STRONG` | (unset) | optional | - |  |

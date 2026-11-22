@@ -2,8 +2,9 @@
 
 Two tables, neither of which holds personal data once an erasure has run:
 
-* `OrgErasureRequest` — the two-step handshake. An owner/admin *requests*, the
-  owner *confirms*. While pending it names the target organisation; on execution
+* `OrgErasureRequest` — the handshake. An owner/admin *requests*, the owner *confirms*; the erasure is then
+  *scheduled* and runs after a cooling-off window (cancellable) — see `app.services.privacy.erasure_flow`.
+  The same table carries member-scope requests (one person's account, `scope="member"`). While pending it names the target organisation; on execution
   `target_org_id` and `requested_by_user_id` are nulled and only hashes remain.
 * `OrgErasureRecord` — the append-only, hash-chained proof that an erasure
   happened: who (hash), when, which org (hash), how many rows per table.
@@ -46,6 +47,20 @@ class OrgErasureRequest(Base):
     confirmed_by_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     record_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    # "org": erase a whole organisation. "member": pseudonymise one person's account (the company stays).
+    scope: Mapped[str] = mapped_column(String(10), nullable=False, default="org", server_default="org")
+    # Who set it going: "owner" (a member of the organisation), "self" (a member, for their own account) or
+    # "operator" (the platform operator on a verified request: `verification_ref` names the ticket, never a person).
+    initiated_by: Mapped[str] = mapped_column(String(10), nullable=False, default="owner", server_default="owner")
+    verification_ref: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # The person a member-scope request is about; nulled when it executes (the hash remains in `org_hash`).
+    target_user_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    # Cooling-off: after confirmation nothing is destroyed until this moment, and the owner can cancel before it.
+    execute_after: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_by_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Why a scheduled erasure did not run (a fixed code, never free text): e.g. "sole_owner".
+    blocked_reason: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
 
 class OrgErasureRecord(Base):

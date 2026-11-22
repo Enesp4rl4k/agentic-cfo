@@ -434,6 +434,9 @@ async def _erase(
             )).scalar_one_or_none()
             await db.execute(update(users).where(users.c.id == uid).values(org_id=fallback))
 
+    # What only the operator can finish: copies at third parties this code cannot reach.
+    counts["_external_followup"] = await _external_followup(db, org_id, tables, scope)
+
     # Org-scoped tables, children before parents.
     for name in sorted(scope, key=lambda n: -_depth(n, scope)):
         where = _clause(tables[name], org_id, scope, tables)
@@ -491,7 +494,32 @@ async def _erase(
         .values(target_org_id=None, requested_by_user_id=None)
     )
     counts["_files"] = {"deleted": removed}
+    # Caches, chat history and agent memory live outside the tables (see `privacy.ephemeral`).
+    from app.services.privacy.ephemeral import erase_org_ephemeral
+
+    counts["_ephemeral"] = await erase_org_ephemeral(db, org_id, erase_users, [r.id for r in job_rows])
     return counts
+
+
+async def _external_followup(
+    db: AsyncSession, org_id: str, tables: dict[str, Table], scope: dict[str, tuple[bool, list[Link]]]
+) -> dict[str, int]:
+    """Counts (no personal data) of third-party copies the operator must still close.
+
+    Local rows and tokens are erased here; the Stripe customer, the ERP/connector grants and the LLM provider's
+    own retention are not ours to delete (docs/ops/runbooks/offboard-and-erasure.md lists the steps).
+    """
+    orgs = tables["organizations"]
+    stripe = (await db.execute(
+        select(orgs.c.stripe_customer_id).where(orgs.c.id == org_id)
+    )).scalar_one_or_none()
+    out = {"stripe_customer": 1 if stripe else 0}
+    for name in ("erp_integrations", "connector_connections"):
+        t = tables[name]
+        out[name] = int((await db.execute(
+            select(func.count()).select_from(t).where(_clause(t, org_id, scope, tables))
+        )).scalar_one())
+    return out
 
 
 async def _write_record(

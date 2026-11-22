@@ -92,7 +92,6 @@ _BILLING = [
 
 _ERASURE = [
     ("POST", "/api/v1/compliance/org-erasure/request"),
-    ("POST", "/api/v1/compliance/org-erasure/{request_id}/confirm"),
 ]
 
 _SYNCS = [
@@ -143,7 +142,7 @@ for _routes, _why in (
     (_BILLING, "the payment provider holds the subscription and its history; no company record is decided"),
     (_OTHER_REGISTER, "the management-recommendation register (DecisionLog, outcome tracking): a different, older register than the decision record"),
     (_PLATFORM_OPERATOR, "platform administration or demo data, not a company's decision"),
-    (_ERASURE, "organisation erasure keeps its own hash-chained, organisation-independent proof (`OrgErasureRequest`, `ErasureRecord`); a decisions row would be erased with the organisation"),
+    (_ERASURE, "only asks: nothing is decided and nothing is touched until the owner confirms (confirm, cancel and the operator's scheduling each write an `erasure` decision record; the erasure itself keeps its own hash-chained proof, `OrgErasureRecord`)"),
     (_WORKING_INPUTS, "removes a queued run or an input the same writer added; nothing in the books changes"),
 ):
     for _route in _routes:

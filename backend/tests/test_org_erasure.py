@@ -388,6 +388,7 @@ async def test_two_step_erasure_over_http(client, monkeypatch) -> None:
     assert (await client.post(f"{url}/request", json={})).status_code in (401, 403)
 
     monkeypatch.setattr(get_settings(), "org_erasure_hard_delete_enabled", True)
+    monkeypatch.setattr(get_settings(), "erasure_cooling_off_days", 0)  # the window has its own tests
     r = await client.post(f"{url}/request", json={"mode": "hard_delete"}, headers=adm)
     assert r.status_code == 200, r.text
     data = r.json()["data"]
