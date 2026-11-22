@@ -16,6 +16,7 @@ believed. Rule:
 from __future__ import annotations
 
 import ipaddress
+import logging
 from functools import lru_cache
 
 from starlette.requests import HTTPConnection
@@ -76,12 +77,56 @@ def resolve_client_ip(
     return best  # every hop was ours: the left-most address is the origin
 
 
+_WATCH_AFTER = 20  # requests, all from private/loopback peers, before the warning
+_private_peers = 0
+_public_peer_seen = False
+_warned = False
+
+
+def reset_peer_watch() -> None:
+    """Test hook: forget what the watch has seen."""
+    global _private_peers, _public_peer_seen, _warned
+    _private_peers, _public_peer_seen, _warned = 0, False, False
+
+
+def observe_peer(peer: str | None, *, production: bool, configured: bool) -> bool:
+    """Warn (once, loudly, never fail) when a production deployment with no trusted-proxy setting only
+    ever sees private or loopback peers: that is a reverse proxy, every client would share one
+    rate-limit bucket (login 5/min: a self-inflicted lockout) and the audit log would record the
+    proxy. Returns True on the call that logs the warning."""
+    global _private_peers, _public_peer_seen, _warned
+    if not production or configured or _warned or _public_peer_seen:
+        return False
+    address = _parse(peer or "")
+    if address is None:
+        return False
+    if not (address.is_private or address.is_loopback or address.is_link_local):
+        _public_peer_seen = True
+        return False
+    _private_peers += 1
+    if _private_peers < _WATCH_AFTER:
+        return False
+    _warned = True
+    logging.getLogger(__name__).error(
+        "All %d requests so far came from a private or loopback address (%s) and neither "
+        "TRUSTED_PROXY_COUNT nor TRUSTED_PROXY_CIDRS is set. Behind a reverse proxy this makes every "
+        "client share one rate-limit bucket (login 5/min locks everyone out) and the audit log records "
+        "the proxy. Set TRUSTED_PROXY_COUNT=1 (see docs/ops/auth-abuse-and-outbound.md).",
+        _private_peers, peer,
+    )
+    return True
+
+
 def client_ip(connection: HTTPConnection) -> str:
     """The client address of a request or WebSocket, by the deployment's trusted-proxy setting."""
     from app.config import get_settings
 
     settings = get_settings()
     peer = connection.client.host if connection.client else None
+    observe_peer(
+        peer, production=not settings.use_sqlite,
+        configured=bool(settings.trusted_proxy_count > 0 or settings.trusted_proxy_cidrs.strip()),
+    )
     return resolve_client_ip(
         peer,
         connection.headers.get("X-Forwarded-For"),

@@ -193,6 +193,24 @@ async def mailed_recently(db: AsyncSession, *, kind: str, email: str, minutes: i
 _TEST_TEXT = "Bağlantı testi: bu mesajı görüyorsanız bağlantınız çalışıyor. / Connection test: this message arrived."
 
 
+PUBLIC_REFUSAL = "Hedefe ulaşılamadı veya izin verilmiyor. / The destination could not be reached or is not allowed."
+
+
+async def record_test_refusal(
+    db: AsyncSession, *, org_id: str, user_id: str | None, channel: str, reason: str, ip: str | None = None,
+) -> str:
+    """Keep the precise reason of a refused connection test in the audit log; return the one sentence
+    the person sees (internal address, unresolvable name, port, not a member: all alike)."""
+    from app.models.audit_log import AuditLog
+
+    db.add(AuditLog(
+        user_id=user_id, action="integrations.connection_test_refused", resource="/api/v1/integrations/test",
+        request_body={"org_id": org_id, "channel": channel, "reason": reason[:80]}, ip_address=ip,
+    ))
+    await db.commit()
+    return PUBLIC_REFUSAL
+
+
 async def enqueue_connection_test(
     db: AsyncSession, *, test_id: str, org_id: str, channel: str, destination: str,
 ) -> OutboxMessage:

@@ -18,6 +18,15 @@ from app.core import outbound
 logger = logging.getLogger(__name__)
 
 
+def _transport_reason(exc: Exception) -> str:
+    """A word for the delivery status ("timeout", "connection_failed"), never the exception text."""
+    if isinstance(exc, httpx.TimeoutException | TimeoutError):
+        return "timeout"
+    if isinstance(exc, httpx.TransportError):
+        return "connection_failed"
+    return ""
+
+
 @dataclass
 class DispatchedAlert:
     alert_id: str
@@ -159,6 +168,7 @@ class AlertDispatcher:
                 delivered=False,
                 status_code=500,
                 timestamp=ts,
+                blocked_reason=_transport_reason(exc),
             )
 
     @classmethod
@@ -212,4 +222,5 @@ class AlertDispatcher:
                 delivered=False,
                 status_code=500,
                 timestamp=ts,
+                blocked_reason=_transport_reason(exc),
             )

@@ -71,7 +71,7 @@ def test_malformed_or_non_https_urls_are_refused(url, reason):
 
 def test_a_plain_public_url_and_a_public_literal_pass():
     assert parse_target("https://hooks.slack.com/services/T/B/X").host == "hooks.slack.com"
-    assert parse_target("https://93.184.216.34:8443/x").port == 8443
+    assert parse_target("https://93.184.216.34:443/x").port == 443
     assert parse_target("https://[2606:4700::1111]/").literal is not None
     assert outbound.static_problem("https://example.com/") is None
     assert outbound.static_problem("https://127.1/") == "destination_is_internal"
@@ -118,13 +118,13 @@ async def test_the_connection_is_pinned_to_the_validated_address_with_the_origin
     outbound.set_test_seams(_resolver({"hooks.example.com": [PUBLIC]}), None)
     seen, transport = _recorder()
     response = await outbound.request(
-        "POST", "https://hooks.example.com:8443/a/b?q=1", json={"x": 1}, transport=transport,
+        "POST", "https://hooks.example.com:443/a/b?q=1", json={"x": 1}, transport=transport,
     )
     assert response.status_code == 200 and response.body is None  # body not read by default
     request = seen[0]
-    assert request.url.host == PUBLIC and request.url.port == 8443
+    assert request.url.host == PUBLIC and request.url.port in (None, 443)
     assert request.url.path == "/a/b" and request.url.query == b"q=1"
-    assert request.headers["host"] == "hooks.example.com:8443"
+    assert request.headers["host"] == "hooks.example.com"
     assert request.extensions["sni_hostname"] == "hooks.example.com"
 
 
@@ -151,7 +151,7 @@ async def test_dns_rebinding_the_second_answer_is_never_used():
 
 @pytest.mark.asyncio
 async def test_a_redirect_is_a_status_never_followed():
-    outbound.set_test_seams(None, None)
+    outbound.set_test_seams(_resolver({}), None)
     seen, transport = _recorder(302, headers={"Location": "https://127.0.0.1/admin"})
     response = await outbound.request("POST", "https://example.com/", json={}, transport=transport)
     assert response.status_code == 302 and not response.ok
@@ -177,7 +177,7 @@ async def test_fetch_import_refuses_internal_urls_and_error_statuses(monkeypatch
     with pytest.raises(OutboundBlocked):
         await outbound.fetch_import("https://2130706433/data.csv")
     _seen, transport = _recorder(404)
-    outbound.set_test_seams(None, transport)
+    outbound.set_test_seams(_resolver({}), transport)
     with pytest.raises(OutboundBlocked) as info:
         await outbound.fetch_import("https://example.com/missing.csv")
     assert info.value.reason == "http_404"
@@ -212,7 +212,7 @@ async def test_the_csv_connectors_use_the_guard():
     from app.services.connectors.hr_export import pull_hr_export_csv
 
     seen, transport = _recorder(body=b"x")
-    outbound.set_test_seams(None, transport)
+    outbound.set_test_seams(_resolver({}), transport)
     for pull in (pull_crm_export_csv, pull_hr_export_csv):
         assert await pull({"csv_url": "https://169.254.169.254/latest/meta-data/"}) == (b"", "")
         assert await pull({"csv_url": "http://example.com/a.csv"}) == (b"", "")

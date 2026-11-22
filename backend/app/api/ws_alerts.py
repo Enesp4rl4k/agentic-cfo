@@ -84,12 +84,13 @@ async def ws_alerts(
     """
     import asyncio
 
-    from app.services.ws_alert_manager import get_ws_alert_manager
-
     # A token is required and must belong to a member of this organisation.
     # Without one, anyone could subscribe to any organisation's live alerts by
     # putting its id in the path.
-    user = await ws_auth.websocket_caller(token)
+    from app.core.client_ip import client_ip
+    from app.services.ws_alert_manager import get_ws_alert_manager
+
+    user = await ws_auth.websocket_caller(token, client_ip(ws))
     if user is None or not current_user_org_matches(user, org_id):
         await ws.close(code=ws_auth.REFUSED)
         return
@@ -107,7 +108,7 @@ async def ws_alerts(
             try:
                 await manager.send_heartbeat(org_id)
                 # Authenticated once, at connect: ask again, so leaving or switching ends the feed.
-                if not await ws_auth.still_acting_in(user_id, org_id):
+                if not await ws_auth.still_acting_in(user_id, org_id, client_ip(ws)):
                     await ws.close(code=ws_auth.REFUSED)
                     return
             except Exception:
@@ -123,7 +124,7 @@ async def ws_alerts(
                 msg = json.loads(raw)
 
                 if msg.get("type") == "ack" and msg.get("alert_id"):
-                    if not await ws_auth.still_acting_in(user_id, org_id):
+                    if not await ws_auth.still_acting_in(user_id, org_id, client_ip(ws)):
                         await ws.close(code=ws_auth.REFUSED)
                         break
                     await manager.broadcast_acknowledgement(

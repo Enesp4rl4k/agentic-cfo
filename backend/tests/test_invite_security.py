@@ -349,6 +349,8 @@ class _Socket:
 
     def __init__(self, messages):
         self.client_state = self.WebSocketState.CONNECTED
+        self.client = None
+        self.headers: dict[str, str] = {}
         self._messages = list(messages)
         self.sent: list[str] = []
         self.closed: int | None = None
