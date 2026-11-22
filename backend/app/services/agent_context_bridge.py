@@ -9,6 +9,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from app.services.runway_display import runway_for_display
+
 logger = logging.getLogger(__name__)
 
 
@@ -159,9 +161,7 @@ async def enrich_state(
 def _extract_runway(forecast: dict | None) -> float | None:
     if not forecast:
         return None
-    scenarios = forecast.get("scenarios") or {}
-    base = scenarios.get("base") or {}
-    return base.get("runway_months")
+    return runway_for_display(forecast).months
 
 
 def _count_critical_anomalies(anomalies: list[dict]) -> int:

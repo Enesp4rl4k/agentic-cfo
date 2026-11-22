@@ -19,6 +19,7 @@ import logging
 from typing import Any
 
 from app.agents.ceo.state import CEORunConfig, CEOSkillResult, CEOState
+from app.services.runway_display import view_from_fin
 
 logger = logging.getLogger(__name__)
 
@@ -70,10 +71,10 @@ def _build_priorities_from_risks(
     ):
         priorities.append({
             "title":        "Emergency cash conservation plan",
-            "rationale":    f"Cash runway is {runway} months. Immediate OpEx review required.",
+            "rationale":    f"Cash runway: {view_from_fin(fin).text()}. Immediate OpEx review required.",
             "domains":      ["cfo"],
             "urgency":      "now",
-            "severity":     "critical",
+            "severity":     view_from_fin(fin).cap("critical"),
             "financial_impact_cents": fin.get("monthly_burn_cents", 0),
             "owner_role":   "CFO",
             "effort":       "medium",

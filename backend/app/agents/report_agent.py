@@ -22,6 +22,7 @@ from typing import Any
 from app.agents.state import AgentRunConfig, CFOState, SkillResult
 from app.config import get_settings
 from app.core.container import get_report_exporter
+from app.services.runway_display import runway_for_display
 
 logger = logging.getLogger(__name__)
 
@@ -81,13 +82,14 @@ def _build_dashboard_json(state: CFOState) -> dict[str, Any]:
     ]
 
     # Add runway KPI if forecast available
-    base_scenario = forecast.get("scenarios", {}).get("base", {})
-    if base_scenario.get("runway_months") is not None:
+    view = runway_for_display(forecast)
+    if view.months is not None:
         kpis.append({
             "label": "Cash Runway",
-            "value": base_scenario["runway_months"],
+            "value": view.months,
             "format": "months",
             "trend": None,
+            "basis": view.text(),   # known / assumed / unverified, with its date or assumption sentence
         })
 
     # Add anomaly summary KPI if anomalies detected

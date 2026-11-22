@@ -6,6 +6,7 @@ and whether two statements may be one account. Everything built on its figures c
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -204,3 +205,102 @@ def test_the_hire_what_if_labels_its_role_coefficient_as_an_assumption():
     )
     result = engine.analyze_headcount_change(delta=2, role_type="sales")
     assert "varsayım: bu rol için gelir etkisi %20" in str(result.to_dict())
+
+
+# ── every consumer of the runway × {known, assumed, unknown} ─────────────────────────────────────────────────────
+
+from app.agents.ceo import (
+    board_deck_agent,
+    okr_agent,
+    strategic_priorities_agent,
+    swot_agent,
+    synthesis_agent,
+)
+from app.agents.nl_query_engine import execute_nl_query
+from app.services import (
+    context_builder,
+    executive_report_pdf,
+    llm_structured,
+    unified_report,
+)
+from app.services.runway_display import PROMPT_RULE, runway_for_display
+
+UNKNOWN_BLOCK = {
+    "status": "no_balance", "basis": None, "message": "Kasa bakiyesi bilinmiyor — nakit pisti hesaplanamadı.",
+    "opening_cash_cents": None, "runway_months": None,
+}
+
+
+def forecast_in(state: str) -> dict[str, Any]:
+    scenario = {"label": "Baz", "twelve_month_net": 100_000, "months": []}
+    if state == "unknown":
+        return {"scenarios": {"base": {**scenario, "runway_months": None}}, "runway": UNKNOWN_BLOCK}
+    return {"scenarios": {"base": {**scenario, "runway_months": 2.0}}, "runway": block(state)}
+
+
+def consumer_outputs(state: str) -> dict[str, str]:
+    forecast = forecast_in(state)
+    fin = synthesis_agent._condense_financial_summary({"pnl": {}, "cashflow": {}, "forecast": forecast})
+    tech = {"infra_waste_cents": 100, "infra_cost_cents": 1000}
+    risks = synthesis_agent._detect_cross_risks(fin, tech)
+    return {
+        "one_page": board_deck_agent._build_one_page_summary(fin, {}, risks, [], "2026", "Co"),
+        "cross_risks": str(risks),
+        "priorities": str(strategic_priorities_agent._build_priorities_from_risks([], fin, {})),
+        "swot": str(swot_agent._extract_swot(fin, {}, None, None, None, None, None)),
+        "okr": str(okr_agent._infer_okrs(fin, {}, [], "2026")),
+        "unified_cfo": str(unified_report._build_cfo_section({"pnl": {}, "forecast": forecast})),
+        "nl_query": str(execute_nl_query("nakit runway ne kadar?", {"forecast": forecast}, [])),
+        "executive_pdf_html": executive_report_pdf._build_html(
+            {"pnl": {"currency": "TRY"}, "cashflow": {}, "forecast": forecast}, "Co", "2026", "now"),
+        "context_builder": context_builder._summarise_forecast(forecast),
+        "forecast_narrative": str(llm_structured._forecast_narrative_template(forecast)),
+        "helper": runway_for_display(forecast).prompt_line(),
+    }
+
+
+@pytest.mark.parametrize("state", ["known", "assumed", "unknown"])
+def test_every_consumer_says_only_what_the_basis_warrants(state):
+    outputs = consumer_outputs(state)
+    for name, text in outputs.items():
+        low = text.replace(PROMPT_RULE, "").lower()  # the instruction to the model names the word on purpose
+        if state != "known":
+            assert "kanıtlı" not in low, (state, name)
+        if state == "unknown":
+            assert not re.search(r"(?<![\d.])2(\.0)? (ay|months)", low), (state, name)
+        if state == "known" and name in ("one_page", "helper"):
+            assert "ekstresine göre" in text, (state, name)
+        if state == "assumed" and name in ("one_page", "helper"):
+            assert "yalnızca 2 bakiye adımıyla doğrulandı" in text, (state, name)
+        if state == "unknown" and name in ("one_page", "helper"):
+            assert "bilinmiyor" in text, (state, name)
+    if state != "known":
+        # No severity word on the runway's own authority.
+        for name in ("cross_risks", "priorities"):
+            assert "'severity': 'critical'" not in outputs[name], (state, name)
+
+
+def test_a_known_runway_may_still_raise_a_critical_risk():
+    risks = synthesis_agent._detect_cross_risks(
+        synthesis_agent._condense_financial_summary({"pnl": {}, "cashflow": {}, "forecast": forecast_in("known")}),
+        {"infra_waste_cents": 100, "infra_cost_cents": 1000},
+    )
+    assert any(r["severity"] == "critical" for r in risks)
+
+
+def test_the_unknown_runway_one_pager_does_not_print_zero_months():
+    fin = synthesis_agent._condense_financial_summary({"pnl": {}, "cashflow": {}, "forecast": forecast_in("unknown")})
+    page = board_deck_agent._build_one_page_summary(fin, {}, [], [], "2026", "Co")
+    assert "Nakit Pisti:     bilinmiyor" in page and "0.0 ay" not in page
+
+
+def test_llm_context_lines_carry_the_basis_and_the_do_not_restate_rule():
+    from app.agents.chat_agent import (
+        _build_executive_context,  # noqa: F401  (the prompt builders share the helper)
+    )
+
+    for state in ("assumed", "unknown"):
+        line = runway_for_display(forecast_in(state)).prompt_line()
+        assert PROMPT_RULE in line
+    chat = context_builder._summarise_forecast(forecast_in("assumed"))
+    assert "yalnızca 2 bakiye adımıyla doğrulandı" in chat

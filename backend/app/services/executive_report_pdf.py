@@ -20,6 +20,7 @@ from functools import partial
 from typing import Any
 
 from app.core.currency_totals import fmt_compact
+from app.services.runway_display import runway_for_display
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +59,8 @@ def _build_html(
     anomalies = dashboard.get("anomalies") or []
 
     base_scenario = (forecast.get("scenarios") or {}).get("base") or {}
-    runway = base_scenario.get("runway_months")
+    runway_view = runway_for_display(forecast)
+    runway = runway_view.months
     base_scenario.get("twelve_month_net", 0)
 
     cf_alerts = cashflow.get("alerts") or []
@@ -101,7 +103,7 @@ def _build_html(
     for key in ["pessimistic", "base", "optimistic"]:
         sc = scenarios.get(key) or {}
         net12 = sc.get("twelve_month_net", 0)
-        rw    = sc.get("runway_months")
+        rw    = runway_for_display(forecast, key).months
         label = sc.get("label", key)
         row_class = "base-row" if key == "base" else ""
         scenario_rows += f"""
@@ -332,7 +334,7 @@ tr.base-row td {{ font-weight: 700; background: #eff6ff; }}
   {'<div class="alert-badge alert-critical">⚠ ' + str(critical_count) + ' Kritik Uyarı</div>' if critical_count > 0 else '<div class="alert-badge alert-ok">✓ Kritik Uyarı Yok</div>'}
   {'<div class="alert-badge alert-warning">▲ ' + str(warning_count) + ' Uyarı</div>' if warning_count > 0 else ''}
   {'<div class="alert-badge alert-anomaly">◆ ' + str(anom_critical + anom_high) + ' Yüksek Anomali</div>' if (anom_critical + anom_high) > 0 else ''}
-  {'<div class="alert-badge alert-warning">⏳ Nakit Ömrü: ' + str(runway) + ' Ay</div>' if runway and runway < 12 else ''}
+  {'<div class="alert-badge alert-warning">⏳ Nakit Ömrü: ' + runway_view.text() + '</div>' if runway and runway < 12 else ''}
 </div>
 
 <!-- KPI Strip -->
@@ -359,7 +361,7 @@ tr.base-row td {{ font-weight: 700; background: #eff6ff; }}
   <div class="kpi-card">
     <div class="kpi-label">Net Nakit</div>
     <div class="kpi-value {_sign_class(cashflow.get('net_change', 0))}">{fmt_lira(cashflow.get('net_change', 0))}</div>
-    <div class="kpi-sub">Nakit ömrü: {str(runway) + " ay" if runway else "bilinmiyor"}</div>
+    <div class="kpi-sub">Nakit ömrü: {runway_view.text()}</div>
   </div>
 </div>
 

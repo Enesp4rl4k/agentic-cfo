@@ -26,6 +26,7 @@ from app.api.auth import get_current_user
 from app.core.http_headers import content_disposition
 from app.database import get_db
 from app.models.user import User
+from app.services.runway_display import view_from_fin
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -173,7 +174,7 @@ def _compute_overall_health(result: dict[str, Any]) -> float | None:
     if fin:
         fin_score = 60.0  # neutral baseline
         net_margin = fin.get("net_margin", 0) or 0
-        runway = fin.get("cash_runway_months")
+        runway = fin.get("cash_runway_months") if view_from_fin(fin).proven else None
 
         # Margin contribution: 0% margin → 0, 20%+ margin → +25 pts
         fin_score += min(25.0, max(-25.0, net_margin * 125))

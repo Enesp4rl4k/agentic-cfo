@@ -21,6 +21,7 @@ import logging
 from typing import Any
 
 from app.agents.ceo.state import CEORunConfig, CEOSkillResult, CEOState
+from app.services.runway_display import runway_for_display, view_from_fin
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,7 @@ def _detect_cross_risks(
     risks: list[dict[str, Any]] = []
 
     runway = fin.get("cash_runway_months")
+    runway_view = view_from_fin(fin)
     infra_waste = tech.get("infra_waste_cents", 0)
     infra_cost  = tech.get("infra_cost_cents", 0)
     debt_score  = tech.get("debt_score", 0)
@@ -515,7 +517,19 @@ def _detect_cross_risks(
         severity_order.get(r.get("severity", "low"), 3),
     ))
 
+    # A risk that stands on the runway is no more severe than the runway's basis allows, and says what it is.
+    if runway is not None and not runway_view.proven:
+        for risk in risks:
+            if risk["risk_id"] in _RUNWAY_RISKS:
+                risk["severity"] = runway_view.cap(risk["severity"])
+                risk["recommended_action"] = f"{risk['recommended_action']} (Nakit ömrü: {runway_view.text()})"
     return risks
+
+
+_RUNWAY_RISKS = frozenset({
+    "cross-infra-cash-runway", "cross-cmo-negative-unit-econ", "cross-cmo-roas-runway", "cross-coo-ops-runway",
+    "cross-compliance-violations-cash", "cross-risk-critical-runway",
+})
 
 
 def _condense_financial_summary(cfo_state: dict[str, Any]) -> dict[str, Any]:
@@ -530,7 +544,8 @@ def _condense_financial_summary(cfo_state: dict[str, Any]) -> dict[str, Any]:
         alerts.extend(src or [])
 
     base_scenario = (forecast.get("scenarios") or {}).get("base", {})
-    runway = base_scenario.get("runway_months")
+    view = runway_for_display(forecast)
+    runway = view.months
 
     # Estimate monthly burn: total expenses / months
     monthly_burn = 0
@@ -546,6 +561,7 @@ def _condense_financial_summary(cfo_state: dict[str, Any]) -> dict[str, Any]:
         "gross_margin":          pnl.get("gross_margin", 0),
         "cash_flow_net_cents":   cashflow.get("net_change", 0),
         "cash_runway_months":    runway,
+        **view.fin_fields(),   # basis and sentence travel with the bare number
         "monthly_burn_cents":    monthly_burn,
         "forecast_base_12m_cents": base_scenario.get("twelve_month_net", 0),
         "top_alerts":            alerts[:5],
