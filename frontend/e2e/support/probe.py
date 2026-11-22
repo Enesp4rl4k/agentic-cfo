@@ -3,7 +3,7 @@
 Three commands, all against the API's SQLite file in `frontend/e2e/.run/`:
 
   outbox [recipient]       the e-mails the product wrote and did not deliver (JSON on stdout)
-  invite-token <email>     the token in an invitation e-mail (the API only e-mails it; there is
+  invite-token <email>     the token in an invitation e-mail (the API only queues it; there is
                            no SMTP here, and no screen or endpoint shows it)
   monday-tick              what the scheduler does every Monday: assemble each company's briefing
                            and put its e-mail in the outbox (the product's own job, run once)
@@ -51,14 +51,21 @@ def outbox(recipient: str | None) -> list[dict]:
 
 
 def invite_token(email: str) -> str | None:
+    """The token is stored only as a digest; the invitation e-mail in the outbox carries the link.
+
+    The sender here is a recorded no-op (SQLite, no SMTP), which keeps the text of the row."""
+    import re
+
     from sqlalchemy import select
 
-    from app.models.organization import OrgInvite
+    from app.models.outbox_message import OutboxMessage as M
 
     with sync_session() as db:
-        return db.execute(
-            select(OrgInvite.token).where(OrgInvite.email == email, OrgInvite.accepted.is_(False))
+        body = db.execute(
+            select(M.body).where(M.kind == "org_invite", M.recipient == email).order_by(M.created_at.desc())
         ).scalars().first()
+    found = re.search(r"token=([0-9a-f]{64})", body or "")
+    return found.group(1) if found else None
 
 
 def main() -> None:

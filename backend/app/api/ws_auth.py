@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import session_factory
 from app.models.user import User
-from app.services.auth import decode_token
+from app.services.auth import decode_token, token_is_current
 
 # RFC 6455 "policy violation": the server will not talk to this client.
 REFUSED = 1008
@@ -37,7 +37,7 @@ async def user_for_token(db: AsyncSession, token: str | None) -> User | None:
     if not user_id:
         return None
     user = await db.get(User, str(user_id))
-    if user is None or not user.is_active:
+    if user is None or not user.is_active or not token_is_current(payload, user.token_version):
         return None
     return user
 

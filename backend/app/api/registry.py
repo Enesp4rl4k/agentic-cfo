@@ -20,6 +20,7 @@ _ROUTERS = [
     ("app.api.stream",              "router", "stream"),
     ("app.api.analysis",            "router", "analysis"),
     ("app.api.auth",                "router", "auth"),
+    ("app.api.password_reset",      "router", "auth"),            # forgot / reset password (public)
     ("app.api.benchmark",           "router", "benchmark"),
     ("app.api.open_banking",        "router", "open-banking"),
     ("app.api.causal",              "router", "causal"),

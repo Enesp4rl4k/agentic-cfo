@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import logging
 import re
-import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -34,6 +33,7 @@ from app.models.organization import Organization, OrgInvite, OrgMembership
 from app.models.user import User, UserRole
 from app.services.acting_role import acting_role
 from app.services.decisions import record_decision
+from app.services.secret_tokens import hash_token, new_token
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -461,15 +461,28 @@ async def invite_member(
     for inv in old.scalars().all():
         await db.delete(inv)
 
+    raw_token, token_digest = new_token()
     invite = OrgInvite(
         org_id=org.id,
         email=normalize_email(str(body.email)),
         role=body.role.value,
-        token=secrets.token_hex(32),
+        token_hash=token_digest,
         expires_at=datetime.now(UTC) + timedelta(days=INVITE_EXPIRE_DAYS),
     )
     db.add(invite)
     await db.flush()
+    # The e-mail is an outbox row of the immediate class (no release; the link is the only content),
+    # written in the invitation's own transaction and delivered, retried and recorded by the outbox
+    # sender: a failure shows on the row, never silently.
+    from app.config import get_settings
+    from app.services import outbox, outbox_immediate
+
+    frontend = get_settings().frontend_url.rstrip("/")
+    await outbox_immediate.enqueue_org_invite(
+        db, invite_id=str(invite.id), org_id=str(org.id), email=invite.email, org_name=org.name or "",
+        role=invite.role, accept_url=f"{frontend}/auth/accept-invite?token={raw_token}",
+        expires_at=invite.expires_at,
+    )
     await record_decision(
         db, org_id=str(org.id), kind=DecisionKind.MEMBER_CHANGE, target_type="org_invite",
         target_id=str(invite.id), outcome="invited", decided_via=DecidedVia.HUMAN, decided_by=str(current_user.id),
@@ -478,28 +491,9 @@ async def invite_member(
     await db.commit()
     await db.refresh(invite)
 
-    logger.info("Invite sent: %s → %s (role=%s)", org.name, body.email, body.role.value)
-
-    email_sent = False
-    try:
-        from app.config import get_settings
-        from app.services.integrations import WebhookDispatcher
-
-        settings = get_settings()
-        frontend = getattr(settings, "frontend_url", None) or "http://localhost:3000"
-        accept_url = f"{frontend}/auth/accept-invite?token={invite.token}"
-        notifier = WebhookDispatcher()
-        email_sent = await notifier.send_email(
-            to=invite.email,
-            subject=f"You're invited to {org.name}",
-            body=(
-                f"You have been invited to join {org.name} as {invite.role}.\n\n"
-                f"Accept: {accept_url}\n\n"
-                f"This invite expires at {invite.expires_at.isoformat()}."
-            ),
-        )
-    except Exception as exc:
-        logger.warning("Invite email failed (non-fatal): %s", exc)
+    outbox.kick()
+    email_sent = True  # handed to the outbox; its delivery is recorded there
+    logger.info("Invite queued: %s → %s (role=%s)", org.name, body.email, body.role.value)
 
     return {
         "data": {
@@ -544,7 +538,7 @@ async def preview_invite(
     keep. It says whether the invited address already has an account, so the page asks for
     a password to sign in or to create one.
     """
-    invite = (await db.execute(select(OrgInvite).where(OrgInvite.token == body.token))).scalar_one_or_none()
+    invite = (await db.execute(select(OrgInvite).where(OrgInvite.token_hash == hash_token(body.token)))).scalar_one_or_none()
     state = _invite_state(invite)
     if invite is None:
         return {"data": {"state": state}, "error": None}
@@ -580,7 +574,7 @@ async def accept_invite(
     """
     from app.services.auth import create_access_token, create_refresh_token, hash_password
 
-    result = await db.execute(select(OrgInvite).where(OrgInvite.token == body.token))
+    result = await db.execute(select(OrgInvite).where(OrgInvite.token_hash == hash_token(body.token)))
     invite = result.scalar_one_or_none()
     state = _invite_state(invite)
     if invite is None or state == "unknown":
@@ -655,8 +649,8 @@ async def accept_invite(
     await db.commit()
     await db.refresh(user)
 
-    access  = create_access_token(user.id, user.email, user.role)
-    refresh = create_refresh_token(user.id)
+    access  = create_access_token(user.id, user.email, user.role, token_version=user.token_version)
+    refresh = create_refresh_token(user.id, token_version=user.token_version)
 
     logger.info("Invite accepted: %s joined org %s", user.email, invite.org_id)
 
@@ -682,14 +676,18 @@ def _proves_account(credentials: HTTPAuthorizationCredentials | None, user: User
     """The caller is this account: a valid access token of it, or its password."""
     from jose import JWTError
 
-    from app.services.auth import decode_token, verify_password
+    from app.services.auth import decode_token, token_is_current, verify_password
 
     if credentials and credentials.credentials:
         try:
             payload = decode_token(credentials.credentials)
         except JWTError:
             payload = {}
-        if payload.get("type") == "access" and payload.get("sub") == str(user.id):
+        if (
+            payload.get("type") == "access"
+            and payload.get("sub") == str(user.id)
+            and token_is_current(payload, user.token_version)
+        ):
             return True
     return bool(password and user.hashed_password) and verify_password(password, user.hashed_password)
 

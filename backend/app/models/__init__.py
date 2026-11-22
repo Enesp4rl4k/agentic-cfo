@@ -40,6 +40,7 @@ from app.models.open_item import OpenItem
 from app.models.open_item_match import OpenItemMatch
 from app.models.organization import Organization
 from app.models.outbox_message import OutboxMessage
+from app.models.password_reset import PasswordResetToken
 from app.models.payment_plan_change import PaymentPlanChange
 from app.models.pilot import PilotInvite, UserFeedback
 from app.models.proactive_alert import ProactiveAlert
@@ -105,6 +106,7 @@ __all__ = [
     "OrgErasureRequest",
     "Organization",
     "OutboxMessage",
+    "PasswordResetToken",
     "PaymentPlanChange",
     "PilotInvite",
     "ProactiveAlert",

@@ -127,6 +127,16 @@ def _alert_dispatcher_answers_200(monkeypatch):
         AlertDispatcher, "transport", httpx.MockTransport(lambda request: httpx.Response(200))
     )
 
+# ── 2c. A request does not start a background delivery ───────────────────────
+# `outbox.kick()` spawns a delivery on its own session after an invitation or a reset is
+# written. A test drives the outbox itself (`deliver_pending`), on its own database.
+@pytest.fixture(autouse=True)
+def _outbox_does_not_kick(monkeypatch):
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "outbox_kick_on_enqueue", False)
+
+
 # ── 3. Shared HTTP client fixture ────────────────────────────────────────────
 # An in-memory FastAPI app with its own throwaway database, yielded per test.
 # Lives here (not in test_ingest) so every API test file can request `client`

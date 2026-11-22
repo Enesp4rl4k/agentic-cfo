@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from app.core.email_address import normalize_email
@@ -76,6 +76,11 @@ class User(Base):
     sso_provider: Mapped[str | None] = mapped_column(String(30), nullable=True)   # "microsoft"|"google"|"github"
     sso_id:       Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)  # provider user ID
     last_login:   Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Raised when the password changes. Every token carries the version it was issued under
+    # (`tv`); a token of an older version is refused, so a reset ends all earlier sessions.
+    token_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    password_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Metadata
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -14,7 +14,8 @@ from sqlalchemy import select
 from app.models.decision import Decision
 from app.models.organization import OrgInvite, OrgMembership
 from app.models.user import User
-from tests.api_helpers import PAROLA, bellek_istemcisi, kullanici
+from app.services.secret_tokens import hash_token
+from tests.api_helpers import PAROLA, bellek_istemcisi, emailed_token, kullanici
 
 P = "/api/v1"
 
@@ -34,7 +35,7 @@ async def add_membership(client, user_id: str, org_id: str, role: str) -> None:
 async def seed_invite(client, org_id: str, email: str, role: str = "viewer", token: str | None = None) -> str:
     token = token or (email.replace("@", "").replace(".", "") + role).ljust(64, "z")[:64]
     async with client._maker() as db:
-        db.add(OrgInvite(org_id=org_id, email=email, role=role, token=token, accepted=False,
+        db.add(OrgInvite(org_id=org_id, email=email, role=role, token_hash=hash_token(token), accepted=False,
                          expires_at=datetime.now(UTC) + timedelta(days=7)))
         await db.commit()
     return token
@@ -58,9 +59,13 @@ async def test_tokens_are_long_random_and_never_handed_back_to_the_inviter(clien
     listing = await client.get(f"{P}/org/invites", headers=owner)
     assert "token" not in json.dumps(listing.json()).lower()
     async with client._maker() as db:
-        for inv in (await db.execute(select(OrgInvite))).scalars().all():
-            assert len(inv.token) == 64 and int(inv.token, 16) >= 0
-            seen.add(inv.token)
+        stored = {i.email: i.token_hash for i in (await db.execute(select(OrgInvite))).scalars().all()}
+    for i in range(3):
+        email = f"k{i}@example.com"
+        token = await emailed_token(client, "org_invite", email)
+        assert len(token) == 64 and int(token, 16) >= 0
+        assert stored[email] == hash_token(token) != token, "only the digest is stored"
+        seen.add(token)
     assert len(seen) == 3
 
 
@@ -68,8 +73,8 @@ async def test_a_cancelled_invitation_is_dead(client):
     owner, _org, _ = await kullanici(client, "sahip@example.com", role="owner")
     await client.post(f"{P}/org/invite", headers=owner, json={"email": "yeni@example.com", "role": "viewer"})
     async with client._maker() as db:
-        inv = (await db.execute(select(OrgInvite))).scalar_one()
-        token, invite_id = inv.token, inv.id
+        invite_id = (await db.execute(select(OrgInvite))).scalar_one().id
+    token = await emailed_token(client, "org_invite", "yeni@example.com")
     assert (await client.delete(f"{P}/org/invites/{invite_id}", headers=owner)).status_code == 200
     assert (await client.post(f"{P}/org/invite/preview", json={"token": token})).json()["data"] == {"state": "unknown"}
     r = await client.post(f"{P}/org/invite/accept", json={"token": token, "password": PAROLA})
@@ -279,8 +284,8 @@ async def test_member_decisions_name_the_right_actor_and_organisation_and_hold_n
     await client.post(f"{P}/org/switch", headers=headers, json={"org_id": b})
     await client.post(f"{P}/org/invite", headers=headers, json={"email": "yeni@example.com", "role": "viewer"})
     async with client._maker() as db:
-        inv = (await db.execute(select(OrgInvite))).scalar_one()
-        token = inv.token
+        assert (await db.execute(select(OrgInvite))).scalar_one()
+    token = await emailed_token(client, "org_invite", "yeni@example.com")
     await client.post(f"{P}/org/invite", headers=headers, json={"email": "iptal@example.com", "role": "viewer"})
     async with client._maker() as db:
         cancel_id = (await db.execute(select(OrgInvite.id).where(OrgInvite.email == "iptal@example.com"))).scalar_one()

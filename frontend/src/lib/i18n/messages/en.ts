@@ -2880,6 +2880,42 @@ export type MessageTree = {
     emptyCta: string;
     applyToVendor: string;
   };
+  passwordReset: {
+    forgot: {
+      title: string;
+      lead: string;
+      email: string;
+      submit: string;
+      submitting: string;
+      sentTitle: string;
+      sentBody: string;
+      tooMany: string;
+      failed: string;
+      back: string;
+    };
+    reset: {
+      title: string;
+      lead: string;
+      newPassword: string;
+      passwordHint: string;
+      confirm: string;
+      mismatch: string;
+      submit: string;
+      submitting: string;
+      successTitle: string;
+      successBody: string;
+      signIn: string;
+      invalidTitle: string;
+      invalidBody: string;
+      expiredTitle: string;
+      expiredBody: string;
+      usedTitle: string;
+      usedBody: string;
+      requestNew: string;
+      tooMany: string;
+      failed: string;
+    };
+  };
 };
 
 export const en: MessageTree = {
@@ -5582,7 +5618,7 @@ export const en: MessageTree = {
       button: "Send invite",
       hint: "The invitation is sent by e-mail and is valid for 7 days. The person opens the link to create their account or sign in.",
       roleLabel: "Role",
-      sent: "Invitation sent to {email}.",
+      sent: "The invitation to {email} is queued and goes out in a moment.",
       notSent: "The invitation was saved but the e-mail could not be sent; check the e-mail settings and send it again.",
     },
     pendingInvites: {
@@ -6079,5 +6115,41 @@ export const en: MessageTree = {
     emptyBody: "Upload a financial document and run an analysis to see and edit transactions.",
     emptyCta: "Upload document",
     applyToVendor: "Apply to all from vendor",
+  },
+  passwordReset: {
+    forgot: {
+      title: "Reset your password",
+      lead: "Enter the e-mail address of your account. If it can be reset here, we send a link that works for 30 minutes.",
+      email: "E-mail",
+      submit: "Send reset link",
+      submitting: "Sending…",
+      sentTitle: "Check your e-mail",
+      sentBody: "If an account at this address can be reset, a link is on its way. It works once and expires in 30 minutes. Accounts that sign in with Google or Microsoft keep using that sign-in.",
+      tooMany: "Too many attempts. Wait a little and try again.",
+      failed: "The request could not be sent. Try again.",
+      back: "Back to sign in",
+    },
+    reset: {
+      title: "Choose a new password",
+      lead: "Signing in again will be needed everywhere after this.",
+      newPassword: "New password",
+      passwordHint: "At least 8 characters",
+      confirm: "Repeat the new password",
+      mismatch: "The two passwords differ.",
+      submit: "Set new password",
+      submitting: "Saving…",
+      successTitle: "Your password is changed",
+      successBody: "All your earlier sessions have ended. Sign in with the new password.",
+      signIn: "Sign in",
+      invalidTitle: "This reset link is not valid",
+      invalidBody: "The link is incomplete or wrong. Request a new one.",
+      expiredTitle: "This reset link has expired",
+      expiredBody: "Reset links last 30 minutes. Request a new one.",
+      usedTitle: "This reset link was already used",
+      usedBody: "A link works once. If it was not you, request a new link and change your password again.",
+      requestNew: "Request a new link",
+      tooMany: "Too many attempts. Wait a little and try again.",
+      failed: "The password could not be changed. Try again.",
+    },
   },
 };

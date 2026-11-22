@@ -85,6 +85,6 @@ describe("the invite form", () => {
     await user.click(within(form).getByRole("button"));
     const post = fetchMock.mock.calls.find(([url, init]) => String(url).endsWith("/org/invite") && init?.method === "POST");
     expect(JSON.parse((post as [string, RequestInit])[1].body as string)).toEqual({ email: "m@x.com", role: "smmm" });
-    expect(await screen.findByText("Davet m@x.com adresine gönderildi.")).toBeInTheDocument();
+    expect(await screen.findByText("m@x.com adresine davet gönderilmek üzere sıraya alındı.")).toBeInTheDocument();
   });
 });

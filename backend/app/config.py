@@ -196,6 +196,20 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     notification_from: str = "noreply@aicfo.app"
 
+    # The outbox sender (app/services/outbox_transport.py), the only code that talks to a
+    # mail, WhatsApp, Slack or webhook endpoint. "auto": a recorded no-op in development
+    # (SQLite) and under pytest, live otherwise. "live" / "noop" force it.
+    outbox_transport: str = "auto"
+    # Deliver an immediate-class message (invite, password reset) as soon as it is written,
+    # instead of at the scheduler's next five-minute pass.
+    outbox_kick_on_enqueue: bool = True
+
+    # Password reset (POST /auth/forgot-password, /auth/reset-password)
+    password_reset_expire_minutes: int = 30
+    password_reset_per_email_per_hour: int = 3
+    # A request takes at least this long whether or not the account exists.
+    password_reset_response_floor_seconds: float = 0.5
+
     # TCMB EVDS API (optional — benchmark data falls back to static if not set)
     # Get free key: https://evds2.tcmb.gov.tr/index.php?lang=tr
     tcmb_api_key: str = ""

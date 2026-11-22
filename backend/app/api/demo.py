@@ -147,8 +147,8 @@ async def create_demo_guest(db: AsyncSession = Depends(get_db)) -> dict[str, Any
         except Exception:  # pragma: no cover - session already clean
             pass
 
-    access_token = create_access_token(user.id, user.email, user.role)
-    refresh_token = create_refresh_token(user.id)
+    access_token = create_access_token(user.id, user.email, user.role, token_version=user.token_version)
+    refresh_token = create_refresh_token(user.id, token_version=user.token_version)
 
     logger.info("Demo guest: org=%s user=%s", org.id, user.id)
     return {

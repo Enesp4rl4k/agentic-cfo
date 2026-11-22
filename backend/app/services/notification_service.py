@@ -6,11 +6,12 @@ Usage:
     await service.deliver(decisions, org_id=org_id, db=db)
 
 Channels:
-  - slack   → Incoming webhook POST (configured per-org or globally)
-  - email   → SMTP / aiosmtplib (async)
+  - slack, email, whatsapp → one outbox row each (ADR 0003). This module sends nothing:
+    the outbox delivers, retries and records, and checks the recipient against the
+    organisation's configured ones. The channel list is the organisation's standing preference.
   - dashboard → Persists InAppNotification rows for frontend polling
 
-All channels fail gracefully — one channel failure does not block others.
+A channel that cannot be queued does not block the others.
 """
 from __future__ import annotations
 
@@ -30,42 +31,6 @@ logger = logging.getLogger(__name__)
 
 def _alert_emoji(level: str) -> str:
     return {"critical": "🔴", "warning": "🟡", "info": "🔵"}.get(level, "⚪")
-
-
-async def send_plain_email(recipient: str, subject: str, body: str) -> str:
-    """Send one plain-text message and say what happened.
-
-    Returns "sent", "not_configured" (no SMTP credentials) or "failed:<reason>".
-    The outbox records the answer on its row; nothing is skipped in silence.
-    """
-    from app.config import get_settings
-
-    settings = get_settings()
-    if not settings.smtp_user or not settings.smtp_password:
-        return "not_configured"
-    try:
-        from email.mime.text import MIMEText
-
-        import aiosmtplib
-    except ImportError:
-        return "failed:aiosmtplib is not installed"
-    msg = MIMEText(body, "plain", "utf-8")
-    msg["Subject"] = subject
-    msg["From"] = settings.notification_from
-    msg["To"] = recipient
-    try:
-        await aiosmtplib.send(
-            msg,
-            hostname=settings.smtp_host,
-            port=settings.smtp_port,
-            username=settings.smtp_user,
-            password=settings.smtp_password,
-            start_tls=True,
-            timeout=15,
-        )
-    except Exception as exc:  # the reason is kept on the outbox row
-        return f"failed:{type(exc).__name__}: {exc}"
-    return "sent"
 
 
 def _build_email_body(decisions: list[AlertDecision], org_name: str = "") -> tuple[str, str]:
@@ -129,7 +94,7 @@ class NotificationService:
         if not actionable:
             return {}
 
-        results: dict[str, int] = {"slack": 0, "email": 0, "whatsapp": 0, "dashboard": 0}
+        results: dict[str, int] = {"slack": 0, "email": 0, "whatsapp": 0, "dashboard": 0}  # rows queued
 
         # Load per-org preferences (if DB available)
         prefs = await self._load_preferences(org_id, db)
@@ -148,14 +113,14 @@ class NotificationService:
         if "email" in channels:
             recipients = prefs.get("email_recipients", [])
             if recipients:
-                sent = await self._send_email(actionable, recipients, org_name)
+                sent = await self._queue_email(actionable, recipients, org_id, org_name, db)
                 results["email"] = sent
 
-        # WhatsApp delivery (via Meta Cloud API or Twilio)
+        # WhatsApp (queued; the outbox sends via Meta Cloud API or Twilio)
         if "whatsapp" in channels:
             whatsapp_number = prefs.get("whatsapp_number")
             if whatsapp_number:
-                sent = await self._send_whatsapp(actionable, whatsapp_number, org_name)
+                sent = await self._queue_whatsapp(actionable, whatsapp_number, org_id, org_name, db)
                 results["whatsapp"] = sent
 
         # In-app (always deliver dashboard notifications)
@@ -213,183 +178,83 @@ class NotificationService:
 
     # ── Email ─────────────────────────────────────────────────────────────────
 
-    async def _send_email(
+    async def _queue_email(
         self,
         decisions: list[AlertDecision],
         recipients: list[str],
+        org_id: str,
         org_name: str,
+        db: Any,
     ) -> int:
-        """
-        FAZ-3B: Send SMTP email via aiosmtplib (already in requirements.txt).
-
-        Sends one message per recipient so partial delivery is counted correctly.
-        Returns number of recipients successfully mailed.
-        Skips silently if SMTP credentials are not configured.
-        """
-        from app.config import get_settings
-        settings = get_settings()
-
-        if not settings.smtp_user or not settings.smtp_password:
-            logger.debug("SMTP credentials not configured — email delivery skipped")
+        """Write one outbox row per configured recipient (ADR 0003); delivery, retry and the
+        recipient check are the outbox's. Returns the number of rows queued."""
+        if db is None:
+            logger.warning("Alert e-mail not queued: no database session for the outbox")
             return 0
-
-        if not recipients:
-            return 0
-
-        try:
-            from email.mime.multipart import MIMEMultipart
-            from email.mime.text import MIMEText
-
-            import aiosmtplib
-        except ImportError:
-            logger.warning("aiosmtplib not installed — add it to requirements.txt")
-            return 0
+        from app.core.email_address import normalize_email
+        from app.services import outbox
 
         subject, body = _build_email_body(decisions, org_name)
-        delivered = 0
-
-        for recipient in recipients:
-            try:
-                msg = MIMEMultipart("alternative")
-                msg["Subject"] = subject
-                msg["From"]    = settings.notification_from
-                msg["To"]      = recipient
-                msg.attach(MIMEText(body, "plain", "utf-8"))
-
-                await aiosmtplib.send(
-                    msg,
-                    hostname=settings.smtp_host,
-                    port=settings.smtp_port,
-                    username=settings.smtp_user,
-                    password=settings.smtp_password,
-                    start_tls=True,
-                    timeout=15,
-                )
-                delivered += 1
-                logger.debug("Email sent to %s", recipient)
-
-            except Exception as exc:
-                # Log per-recipient failure — don't abort remaining recipients
-                logger.warning("Email delivery failed for %s: %s", recipient, exc)
-
-        if delivered > 0:
-            logger.info(
-                "Email notification: %d/%d recipients reached for org=%s",
-                delivered, len(recipients), org_name,
+        digest = hashlib.sha256(body.encode("utf-8")).hexdigest()[:16]
+        day = datetime.now(UTC).strftime("%Y%m%d")
+        queued = 0
+        for address in sorted({normalize_email(r) for r in recipients if r and r.strip()}):
+            await outbox.enqueue(
+                db,
+                key=f"notification:{org_id}:{day}:{digest}:email:{address}",
+                org_id=org_id,
+                channel="email",
+                recipient=address,
+                subject=subject,
+                body=body,
+                source="notification",
+                source_ref=digest,
             )
-        return delivered
+            queued += 1
+        return queued
 
     # ── WhatsApp ──────────────────────────────────────────────────────────────
 
-    async def _send_whatsapp(
+    async def _queue_whatsapp(
         self,
         decisions: list[AlertDecision],
         phone_number: str,
+        org_id: str,
         org_name: str,
+        db: Any,
     ) -> int:
-        """
-        Send WhatsApp message via Meta Cloud API (WhatsApp Business Platform).
+        """Write the WhatsApp text for the organisation's configured number to the outbox.
 
-        Configuration (set in .env):
-          WHATSAPP_PHONE_NUMBER_ID  — Sender phone number ID from Meta developer console
-          WHATSAPP_ACCESS_TOKEN     — Meta app access token (permanent system user token)
-          WHATSAPP_API_VERSION      — API version, default "v19.0"
-
-        Falls back to Twilio WhatsApp if Meta credentials not configured:
-          TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM
-
-        Returns 1 if sent successfully, 0 otherwise.
-
-        Free-tier note: Meta Cloud API has a 1000 free conversations/month limit.
-        Templates must be pre-approved for business-initiated messages.
-        Use a text template for alerts — e.g. "<Brand> Alert: {{1}}"
-        """
-        from app.config import get_settings
-        settings = get_settings()
-
-        # Build compact alert text (WhatsApp has 4096 char limit)
+        Returns 1 when a row was queued. WhatsApp has a 4096-character limit, so the text is
+        compact: at most 5 alerts. Sending (Meta Cloud API or Twilio) is the outbox's."""
         actionable = [d for d in decisions if d.is_actionable]
-        if not actionable:
+        if db is None or not actionable:
             return 0
+        from app.services import outbox
 
         org_label = f"[{org_name}] " if org_name else ""
         brand = get_brand()
         lines = [f"🔔 {brand.name} Alert {org_label}"]
-        for d in actionable[:5]:  # max 5 alerts per message
-            emoji = _alert_emoji(d.alert.level)
-            lines.append(f"{emoji} {d.alert.domain.upper()}: {d.alert.message[:120]}")
+        for d in actionable[:5]:
+            lines.append(f"{_alert_emoji(d.alert.level)} {d.alert.domain.upper()}: {d.alert.message[:120]}")
         if len(actionable) > 5:
             lines.append(f"... ve {len(actionable) - 5} uyarı daha. Dashboard'da görüntüleyin.")
         if brand.app_url:
             lines.append(f"📊 Dashboard: {brand.app_url}")
-        message_text = "\n".join(lines)
-
-        # ── Meta Cloud API ────────────────────────────────────────────────────
-        phone_number_id = getattr(settings, "whatsapp_phone_number_id", "")
-        access_token    = getattr(settings, "whatsapp_access_token", "")
-        api_version     = getattr(settings, "whatsapp_api_version", "v19.0")
-
-        if phone_number_id and access_token:
-            try:
-                import httpx
-                # Normalize phone number (must start with country code, no + or spaces)
-                to_number = phone_number.lstrip("+").replace(" ", "").replace("-", "")
-                payload = {
-                    "messaging_product": "whatsapp",
-                    "recipient_type":    "individual",
-                    "to":                to_number,
-                    "type":              "text",
-                    "text":              {"body": message_text},
-                }
-                url = f"https://graph.facebook.com/{api_version}/{phone_number_id}/messages"
-                async with httpx.AsyncClient(timeout=15.0) as client:
-                    resp = await client.post(
-                        url,
-                        json=payload,
-                        headers={
-                            "Authorization": f"Bearer {access_token}",
-                            "Content-Type": "application/json",
-                        },
-                    )
-                if resp.status_code in (200, 201):
-                    logger.info("WhatsApp (Meta) sent to %s for org=%s", phone_number[:6] + "***", org_name)
-                    return 1
-                else:
-                    logger.warning("WhatsApp Meta API failed: HTTP %d — %s", resp.status_code, resp.text[:200])
-            except Exception as exc:
-                logger.warning("WhatsApp Meta delivery error: %s", exc)
-            return 0
-
-        # ── Twilio fallback ───────────────────────────────────────────────────
-        twilio_sid    = getattr(settings, "twilio_account_sid", "")
-        twilio_token  = getattr(settings, "twilio_auth_token", "")
-        twilio_from   = getattr(settings, "twilio_whatsapp_from", "")  # e.g. "whatsapp:+14155238886"
-
-        if twilio_sid and twilio_token and twilio_from:
-            try:
-                import base64
-
-                import httpx
-                auth = base64.b64encode(f"{twilio_sid}:{twilio_token}".encode()).decode()
-                to_wa = f"whatsapp:{phone_number}" if not phone_number.startswith("whatsapp:") else phone_number
-                url = f"https://api.twilio.com/2010-04-01/Accounts/{twilio_sid}/Messages.json"
-                async with httpx.AsyncClient(timeout=15.0) as client:
-                    resp = await client.post(
-                        url,
-                        data={"From": twilio_from, "To": to_wa, "Body": message_text},
-                        headers={"Authorization": f"Basic {auth}"},
-                    )
-                if resp.status_code in (200, 201):
-                    logger.info("WhatsApp (Twilio) sent to %s for org=%s", phone_number[:6] + "***", org_name)
-                    return 1
-                else:
-                    logger.warning("WhatsApp Twilio failed: HTTP %d — %s", resp.status_code, resp.text[:200])
-            except Exception as exc:
-                logger.warning("WhatsApp Twilio delivery error: %s", exc)
-            return 0
-
-        logger.debug("WhatsApp credentials not configured — delivery skipped")
-        return 0
+        text = "\n".join(lines)
+        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+        day = datetime.now(UTC).strftime("%Y%m%d")
+        await outbox.enqueue_whatsapp(
+            db,
+            key=f"notification:{org_id}:{day}:{digest}:whatsapp",
+            org_id=org_id,
+            number=phone_number,
+            subject=f"{brand.name} Alert",
+            body=text,
+            source="notification",
+            source_ref=digest,
+        )
+        return 1
 
     # ── In-app ────────────────────────────────────────────────────────────────
 
@@ -444,6 +309,7 @@ class NotificationService:
                 "channels": channels,
                 "slack_webhook": pref.slack_webhook_url,
                 "email_recipients": recipients,
+                "whatsapp_number": pref.whatsapp_number,
                 "min_severity": pref.min_severity,
                 "quiet_hours_start": pref.quiet_hours_start,
                 "quiet_hours_end": pref.quiet_hours_end,

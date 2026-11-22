@@ -71,6 +71,7 @@ SPECIAL_TABLES: dict[str, str] = {
     "users": "members; deleted unless they belong to another organisation too",
     "audit_logs": "no org column; linked through the erased users' ids",
     "pilot_invites": "global table; linked through the erased users' ids / emails",
+    "password_reset_tokens": "no org column; linked through the erased users' ids",
     "smmm_muhasebeci": "an accountant's profile; linked through the erased users' ids",
     "smmm_musteri_kayit": "an accountant's client list; linked through client_org_id",
 }
@@ -456,6 +457,14 @@ async def _erase(
             await drop("audit_logs", audit.c.user_id.in_(chunk))
     for chunk in _chunks(erase_emails):
         await drop("pilot_invites", func.lower(tables["pilot_invites"].c.email).in_([normalize_email(e) for e in chunk]))
+        # A reset mail for a person with no organisation belongs to the system, not to an organisation.
+        mail = tables["outbox_messages"]
+        await drop(
+            "outbox_messages",
+            (mail.c.org_id == "system") & func.lower(mail.c.recipient).in_([normalize_email(e) for e in chunk]),
+        )
+    for chunk in _chunks(erase_users):
+        await drop("password_reset_tokens", tables["password_reset_tokens"].c.user_id.in_(chunk))
     for chunk in _chunks(erase_users):
         await drop("users", users.c.id.in_(chunk))
 

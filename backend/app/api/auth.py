@@ -37,6 +37,7 @@ from app.services.auth import (
     generate_api_key,
     hash_api_key,
     hash_password,
+    token_is_current,
     verify_password,
 )
 
@@ -137,7 +138,7 @@ async def get_current_user(
             raise credentials_exception
 
         user = await db.get(User, user_id)
-        if not user or not user.is_active:
+        if not user or not user.is_active or not token_is_current(payload, user.token_version):
             raise credentials_exception
 
         # Detached, so every caller gets the same kind of object (reads work; endpoints
@@ -258,8 +259,8 @@ async def login(
             detail="Hesabınız devre dışı bırakılmış.",
         )
 
-    access_token  = create_access_token(user.id, user.email, user.role)
-    refresh_token = create_refresh_token(user.id)
+    access_token  = create_access_token(user.id, user.email, user.role, token_version=user.token_version)
+    refresh_token = create_refresh_token(user.id, token_version=user.token_version)
 
     # Update last login
     user.last_login_at = datetime.now(UTC)
@@ -306,10 +307,10 @@ async def refresh_token(
         raise credentials_exception
 
     user = await db.get(User, user_id)
-    if not user or not user.is_active:
+    if not user or not user.is_active or not token_is_current(payload, user.token_version):
         raise credentials_exception
 
-    new_access = create_access_token(user.id, user.email, user.role)
+    new_access = create_access_token(user.id, user.email, user.role, token_version=user.token_version)
 
     return {
         "data": {
