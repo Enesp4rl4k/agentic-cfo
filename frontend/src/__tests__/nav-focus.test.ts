@@ -2,7 +2,7 @@
  * Plan v10 §O0 — focus mode keeps the pilot flow in the menu and nothing else.
  * The menu entries are listed here by hand, from what the pilot flow needs.
  */
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import { FINANCE_HREFS, FOCUS_HREFS, PROFILE_NAV, hiddenNavItems, visibleNavGroups, type SizeProfile } from "@/lib/nav-focus";
 import { NAV_GROUPS } from "@/lib/nav-items";
 
@@ -24,8 +24,11 @@ const GROUPS = [
 
 const hrefs = (groups: { items: { href: string }[] }[]) => groups.flatMap((g) => g.items.map((i) => i.href));
 
+afterEach(() => vi.unstubAllEnvs());
+
 describe("visibleNavGroups", () => {
-  it("shows every entry when focus mode is off", () => {
+  it("shows every entry when focus mode is off (legacy dashboards switched on)", () => {
+    vi.stubEnv("NEXT_PUBLIC_LEGACY_DASHBOARDS", "true");
     const shown = visibleNavGroups(GROUPS, { hasTrPack: true, focusMode: false });
     expect(hrefs(shown)).toEqual(hrefs(GROUPS));
   });
