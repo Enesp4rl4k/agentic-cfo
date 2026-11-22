@@ -20,7 +20,7 @@ def missing_assumptions(intent: str, params: dict[str, Any]) -> list[str]:
             need.append("kişi sayısı")
     elif intent == "marketing":
         if "amount_try" not in params:
-            need.append("aylık bütçe artışı (TL)")
+            need.append("aylık bütçe artışı (tutar)")
         if "expected_roas" not in params:
             need.append("beklenen ROAS (varsayımınız)")
     elif intent == "cascade":
