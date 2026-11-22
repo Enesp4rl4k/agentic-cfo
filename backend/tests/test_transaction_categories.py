@@ -160,9 +160,9 @@ def test_an_uploaded_category_column_is_checked_against_the_vocabulary() -> None
     from app.agents.data_ingestion import _try_parse_csv
 
     csv_text = (
-        "date,description,amount,category\n"
-        "2024-01-15,Ocak ofis kirası,-28500.00,Gıda\n"
-        "2024-01-16,Yazılım lisans geliri,285000.00,revenue\n"
+        "date,description,amount,category,balance\n"
+        "2024-01-15,Ocak ofis kirası,-28500.00,Gıda,71500.00\n"
+        "2024-01-16,Yazılım lisans geliri,285000.00,revenue,356500.00\n"
     )
     rows = _try_parse_csv(csv_text)
     assert rows and len(rows) == 2
