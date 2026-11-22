@@ -35,6 +35,7 @@ ALLOWED: dict[str, str] = {
     "app/models/": "column defaults of the stored schema (migrations own them), not presentation",
     "app/core/currency_totals.py": "the single module that defines DEFAULT_BASE and the lira sign",
     "app/core/financial.py": "format_currency_try / format_currency_usd helpers: the function name states the currency",
+    "app/agents/accounting/kayit_kimlik.py": "journal ids minted for lira rows must never change (approvals point at them)",
     # ── Turkish statute: the amounts are lira by law, whatever the company reports in ─────────────────
     "app/agents/tax_agent.py": "KDV, stopaj and corporate tax are computed and payable in lira",
     "app/agents/compliance/turkey_regulations.py": "Turkish regulatory thresholds are stated in lira",

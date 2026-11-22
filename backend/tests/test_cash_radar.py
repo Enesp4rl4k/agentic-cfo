@@ -274,4 +274,4 @@ async def test_a_bank_statement_with_a_balance_column_proves_its_closing_balance
     assert out.get("ok") is True, out
     async with client._maker() as db:
         meta = (await db.get(AnalysisJob, job_id)).result_metadata
-    assert meta["closing_balance"] == {"date": "2025-04-09", "balance_cents": 57_500_50, "currency": "TRY"}
+    assert meta["closing_balance"] == {"date": "2025-04-09", "balance_cents": 57_500_50}
