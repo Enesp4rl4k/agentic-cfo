@@ -215,13 +215,20 @@ def validate_rules(rules: Any) -> list[str]:
 
 
 async def load_active_rules(org_id: str | None, db: Any) -> list[dict[str, Any]]:
-    """Return the org's active policy rules, or the default set."""
+    """Return the org's active policy rules, or the default set.
+
+    The default set carries the org's materiality threshold in its "high value" rule once an owner or
+    admin acknowledged it (`services/materiality`); until then it reads exactly as it always did. A
+    policy the organisation saved itself is theirs and is returned as saved.
+    """
     if not org_id:
         return DEFAULT_POLICY_RULES
     try:
         from sqlalchemy import select
 
         from app.models.authority_policy import AuthorityPolicy
+        from app.models.organization import Organization
+        from app.services.materiality import default_rules
 
         row = (
             await db.execute(
@@ -233,6 +240,7 @@ async def load_active_rules(org_id: str | None, db: Any) -> list[dict[str, Any]]
         ).scalar_one_or_none()
         if row and row.rules:
             return list(row.rules)
+        return default_rules(await db.get(Organization, str(org_id)), DEFAULT_POLICY_RULES)
     except Exception:
         pass
     return DEFAULT_POLICY_RULES

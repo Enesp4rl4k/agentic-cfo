@@ -18,6 +18,8 @@ vi.mock("@/hooks/useNotifications", () => ({
   useTestSlack: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 vi.mock("@/components/org/SizeProfileCard", () => ({ SizeProfileCard: () => null }));
+vi.mock("@/components/org/MaterialityCard", () => ({ MaterialityCard: () => null }));
+vi.mock("@/components/org/BriefingRecipientsCard", () => ({ BriefingRecipientsCard: () => null }));
 vi.mock("@/lib/api/semantic", () => ({ rebuildSemantic: vi.fn() }));
 
 import WorkspaceSettingsPage from "@/app/(dashboard)/settings/workspace/page";

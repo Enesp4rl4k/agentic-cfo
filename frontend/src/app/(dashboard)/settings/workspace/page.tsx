@@ -27,6 +27,8 @@ import {
 } from "@/hooks/useNotifications";
 import { rebuildSemantic } from "@/lib/api/semantic";
 import { useI18n } from "@/hooks/useI18n";
+import { BriefingRecipientsCard } from "@/components/org/BriefingRecipientsCard";
+import { MaterialityCard } from "@/components/org/MaterialityCard";
 import { SizeProfileCard } from "@/components/org/SizeProfileCard";
 import { PageHead } from "@/components/brand-app/PageHead";
 import { OodaFooter } from "@/components/brand-app/OodaFooter";
@@ -757,6 +759,8 @@ export default function WorkspaceSettingsPage() {
       )}
 
       {org && loaded && !error && isAdmin && <SizeProfileCard />}
+      {org && loaded && !error && isAdmin && <MaterialityCard />}
+      {org && loaded && !error && isAdmin && <BriefingRecipientsCard />}
 
       {org && loaded && !error && (
         <LocaleSettingsPanel

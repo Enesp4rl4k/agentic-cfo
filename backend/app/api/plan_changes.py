@@ -25,9 +25,10 @@ from app.api.contract import Envelope
 from app.database import get_db
 from app.models.decision import DecidedVia, DecisionKind
 from app.models.open_item import OpenItem
+from app.models.organization import Organization
 from app.models.payment_plan_change import PENDING, STATUSES, PaymentPlanChange
 from app.models.user import User
-from app.services import payment_plan
+from app.services import payment_plan, self_approval
 from app.services.acting_role import acting_role
 from app.services.decisions import record_decision
 from app.services.payment_plan import PlanChangeError
@@ -43,6 +44,8 @@ class ProposeRequest(BaseModel):
 
 class DecisionRequest(BaseModel):
     note: str | None = Field(default=None, max_length=1000)
+    # Needed only to approve one's own proposal: the sentence `self_approval.SELF_DECISION_ACK`.
+    self_decision_ack: str | None = Field(default=None, max_length=500)
 
 
 class PlanChangeView(BaseModel):
@@ -60,10 +63,15 @@ class PlanChangeView(BaseModel):
     decided_by: str | None
     decided_at: str | None
     decision_note: str | None
+    # What the caller may do with their OWN waiting proposal: "acknowledge" (decide it after confirming that
+    # proposer and approver are the same person), "blocked" (another decider must), else null.
+    self_decision: str | None = None
+    self_decision_message: str | None = None
 
 
 class PlanChangeListMeta(BaseModel):
     can_decide: bool
+    self_decision_ack: str = self_approval.SELF_DECISION_ACK
 
 
 class PlanChangeList(Envelope[list[PlanChangeView]]):
@@ -80,7 +88,9 @@ def _fail(exc: PlanChangeError) -> HTTPException:
     return HTTPException(status_code=exc.status, detail=exc.message)
 
 
-def _view(change: PaymentPlanChange, item: OpenItem | None) -> dict[str, Any]:
+def _view(
+    change: PaymentPlanChange, item: OpenItem | None, self_state: self_approval.SelfDecision | None = None
+) -> dict[str, Any]:
     return {
         "id": change.id,
         "open_item_id": change.open_item_id,
@@ -96,11 +106,29 @@ def _view(change: PaymentPlanChange, item: OpenItem | None) -> dict[str, Any]:
         "decided_by": change.decided_by,
         "decided_at": change.decided_at.isoformat() if change.decided_at else None,
         "decision_note": change.decision_note,
+        "self_decision": self_state.state if self_state and self_state.state != self_approval.NOT_SELF else None,
+        "self_decision_message": self_state.message if self_state else None,
     }
+
+
+async def _self_state(
+    db: AsyncSession, change: PaymentPlanChange, item: OpenItem | None, user: User, role: str
+) -> self_approval.SelfDecision:
+    """The caller's position on their own waiting proposal (`services/self_approval`)."""
+    if change.status != PENDING or change.requested_by != str(user.id) or not payment_plan.can_decide(role):
+        return self_approval.SelfDecision(self_approval.NOT_SELF)
+    return self_approval.assess(
+        org=await db.get(Organization, str(change.org_id)),
+        proposer_id=change.requested_by, user_id=str(user.id),
+        others=await self_approval.other_decider_exists(db, str(change.org_id), str(user.id)),
+        amount_cents=(item.amount_cents - item.paid_cents) if item else 0,
+        currency=item.currency if item else None,
+    )
 
 
 async def _record(
     db: AsyncSession, change: PaymentPlanChange, user: User, outcome: str, *, reason: str | None = None,
+    acknowledgement: str | None = None,
 ) -> None:
     """One decision record per step of a proposal's life, in the caller's transaction.
 
@@ -111,6 +139,8 @@ async def _record(
     after: dict[str, Any] = {"from_date": change.from_date.isoformat(), "to_date": change.to_date.isoformat(), "status": change.status}
     if outcome in ("approved", "rejected"):
         after["self_decided"] = change.requested_by == str(user.id)
+        if acknowledgement:
+            after["self_decision_ack"] = acknowledgement
     await record_decision(
         db, org_id=str(change.org_id), kind=DecisionKind.PLAN_CHANGE, target_type="payment_plan_change",
         target_id=str(change.id), outcome=outcome, decided_via=DecidedVia.HUMAN, decided_by=str(user.id),
@@ -153,7 +183,9 @@ async def propose_change(
         raise _fail(exc) from exc
     await _record(db, change, current_user, "proposed", reason=change.request_note)
     await db.commit()
-    return {"data": _view(change, await _item(db, change)), "error": None}
+    item = await _item(db, change)
+    state = await _self_state(db, change, item, current_user, await acting_role(db, current_user))
+    return {"data": _view(change, item, state), "error": None}
 
 
 @router.get("/ledger/plan-changes", response_model=PlanChangeList)
@@ -177,9 +209,11 @@ async def list_changes(
         .scalars()
         .all()
     }
+    role = await acting_role(db, current_user)
+    states = {r.id: await _self_state(db, r, items.get(r.open_item_id), current_user, role) for r in rows}
     return {
-        "data": [_view(r, items.get(r.open_item_id)) for r in rows],
-        "meta": {"can_decide": payment_plan.can_decide(await acting_role(db, current_user))},
+        "data": [_view(r, items.get(r.open_item_id), states[r.id]) for r in rows],
+        "meta": {"can_decide": payment_plan.can_decide(role), "self_decision_ack": self_approval.SELF_DECISION_ACK},
         "error": None,
     }
 
@@ -187,13 +221,25 @@ async def list_changes(
 async def _apply_decision(
     db: AsyncSession, change: PaymentPlanChange, approve: bool, body: DecisionRequest, user: User
 ) -> dict[str, Any]:
+    role = await acting_role(db, user)
+    acknowledgement: str | None = None
+    if payment_plan.can_decide(role) and change.status == PENDING:
+        # Deciding one's own proposal: one honest step, or not at all (`services/self_approval`).
+        state = await _self_state(db, change, await _item(db, change), user, role)
+        if state.state == self_approval.BLOCKED and approve:
+            raise HTTPException(403, state.message)
+        if state.state == self_approval.ACKNOWLEDGE and approve:
+            if body.self_decision_ack != self_approval.SELF_DECISION_ACK:
+                raise HTTPException(422, "Öneren ve onaylayan aynı kişi: devam etmek için bunu onaylamanız gerekir.")
+            acknowledgement = body.self_decision_ack
     try:
-        payment_plan.decide(
-            change, user=user, role=await acting_role(db, user), approve=approve, note=body.note
-        )
+        payment_plan.decide(change, user=user, role=role, approve=approve, note=body.note)
     except PlanChangeError as exc:
         raise _fail(exc) from exc
-    await _record(db, change, user, "approved" if approve else "rejected", reason=change.decision_note)
+    await _record(
+        db, change, user, "approved" if approve else "rejected", reason=change.decision_note,
+        acknowledgement=acknowledgement,
+    )
     await db.commit()
     return {"data": _view(change, await _item(db, change)), "error": None}
 

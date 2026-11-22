@@ -20,6 +20,17 @@ export type OrgSettings = {
   regional_packs?: string[];
   focus_mode?: boolean;
   size_profile?: "micro" | "small" | "medium" | null;
+  /** An active accountant (smmm) belongs to the company: screens that send to the accountant adapt to it. */
+  has_smmm?: boolean;
+  /** The owner's recorded choice that the Monday briefing also goes to the accountant. */
+  briefing_to_smmm?: boolean;
+  /** What the confirmed size profile sets as a starting point (null until one is confirmed). Never a lock. */
+  profile_defaults?: ProfileDefaults | null;
+};
+
+export type ProfileDefaults = {
+  one_tap_first: boolean;
+  briefing_to_smmm_suggested: boolean;
 };
 
 export const ORG_SETTINGS_KEY = ["org-settings"] as const;
@@ -78,6 +89,8 @@ export function useOrgSettings() {
     hasTrPack: Boolean(org?.regional_packs?.includes("tr")),
     focusMode: Boolean(org?.focus_mode),
     sizeProfile: org?.size_profile ?? null,
+    hasSmmm: org?.has_smmm ?? null,
+    profileDefaults: org?.profile_defaults ?? null,
     baseCurrency: effectiveCurrencyOf(org),
     locale: org?.locale || "en-US",
   };

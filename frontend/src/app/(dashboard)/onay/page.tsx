@@ -17,6 +17,7 @@ import { useWaitingCounts } from "@/hooks/useWaitingCounts";
 import { OneTapQueue, type OneTapDecision } from "@/components/approvals/OneTapQueue";
 import { useCurrencyFormat } from "@/hooks/useCurrencyFormat";
 import { useI18n } from "@/hooks/useI18n";
+import { useOrgSettings } from "@/hooks/useOrgSettings";
 import {
   getPossibleDuplicates,
   getProposedSettlements,
@@ -46,6 +47,7 @@ export default function OnayPage() {
   const copy = t.onay;
   const ledger = t.ledger;
   const fmt = useCurrencyFormat();
+  const { profileDefaults } = useOrgSettings();
   const queryClient = useQueryClient();
   const [actionFailed, setActionFailed] = useState(false);
   const [reasons, setReasons] = useState<Record<string, string>>({});
@@ -77,7 +79,8 @@ export default function OnayPage() {
   });
 
   const planDecision = useMutation({
-    mutationFn: ({ id, action }: { id: string; action: "approve" | "reject" }) => decidePlanChange(id, action, reasons[id]),
+    mutationFn: ({ id, action, ack }: { id: string; action: "approve" | "reject"; ack?: string }) =>
+      ack ? decidePlanChange(id, action, reasons[id], ack) : decidePlanChange(id, action, reasons[id]),
     onSuccess: refreshed,
     onError: () => setActionFailed(true),
   });
@@ -93,6 +96,11 @@ export default function OnayPage() {
   const duplicateRows: LedgerRow[] = duplicates.data ?? [];
   const planRows = plans.data?.changes ?? [];
   const canDecide = Boolean(plans.data?.canDecide);
+  // Deciding one's own proposal is one honest step (the button says proposer and approver are the same
+  // person); with another owner or admin and an amount above the threshold it is not theirs to decide.
+  const selfDecision = t.scale.selfDecision;
+  const selfAck = plans.data?.selfDecisionAck ?? "";
+  const ackOf = (change: { self_decision?: string | null }) => (change.self_decision === "acknowledge" ? selfAck : undefined);
   // Every kind of decision, not only the three lists below: held analyses, held rows and role results too.
   const counts = useWaitingCounts();
   // The lists appear together, once every kind has answered: a late kind would push a button the person
@@ -127,19 +135,35 @@ export default function OnayPage() {
       ],
     })),
     ...(canDecide
-      ? planRows.map((change) => ({
+      ? planRows.filter((change) => change.self_decision !== "blocked").map((change) => ({
           key: `p-${change.id}`,
           kind: copy.kindPlan,
           title: change.counterparty ?? change.description ?? copy.noCounterparty,
           amount: change.amount_cents !== null ? fmt(change.amount_cents / 100) : "",
           meta: copy.planMove.replace("{from}", change.from_date).replace("{to}", change.to_date),
           options: [
-            { label: copy.planApprove, run: () => decidePlanChange(change.id, "approve").then(refreshed) },
+            {
+              label: ackOf(change) ? selfDecision.confirmApprove : copy.planApprove,
+              run: () =>
+                (ackOf(change)
+                  ? decidePlanChange(change.id, "approve", undefined, ackOf(change))
+                  : decidePlanChange(change.id, "approve")
+                ).then(refreshed),
+            },
             { label: copy.planReject, run: () => decidePlanChange(change.id, "reject").then(refreshed) },
           ],
         }))
       : []),
   ];
+
+  // A company profile may lead with the one-tap button (a default: the same button, the same lists, only first).
+  const oneTapLeads = Boolean(profileDefaults?.one_tap_first);
+  const oneTapButton =
+    decisions.length > 0 ? (
+      <Button className="min-h-[48px] w-full sm:w-auto" onClick={() => setOneTap(true)}>
+        {copy.oneTapStart}
+      </Button>
+    ) : null;
 
   if (oneTap && !loading && !failed) {
     return (
@@ -164,6 +188,7 @@ export default function OnayPage() {
         }
       />
       {settled && (<>
+      {oneTapLeads && oneTapButton}
       <WaitingSummary counts={counts} />
 
       <div id="analizler" className="scroll-mt-20">
@@ -191,11 +216,7 @@ export default function OnayPage() {
       {failed && <p role="alert" className="text-sm text-destructive">{copy.failed}</p>}
       {actionFailed && <p role="alert" className="text-sm text-destructive">{copy.actionFailed}</p>}
       {nothing && <p className="text-sm text-muted-foreground">{copy.empty}</p>}
-      {decisions.length > 0 && (
-        <Button className="min-h-[48px] w-full sm:w-auto" onClick={() => setOneTap(true)}>
-          {copy.oneTapStart}
-        </Button>
-      )}
+      {!oneTapLeads && oneTapButton}
 
       {settlementRows.length > 0 && (
         <section id="eslesmeler" aria-label={ledger.settlementsTitle.replace("{n}", String(settlementRows.length))} className="scroll-mt-20 space-y-3">
@@ -309,7 +330,25 @@ export default function OnayPage() {
                       <p className="m-0 text-xs text-muted-foreground">{copy.planBy.replace("{note}", change.request_note)}</p>
                     )}
                   </div>
-                  {canDecide ? (
+                  {canDecide && change.self_decision === "blocked" && (
+                    <div className="space-y-2">
+                      <p className="m-0 text-sm font-medium">{selfDecision.blockedTitle}</p>
+                      {change.self_decision_message && (
+                        <p className="m-0 text-xs text-muted-foreground">{change.self_decision_message}</p>
+                      )}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          variant="outline"
+                          className="min-h-[44px]"
+                          disabled={planWithdraw.isPending}
+                          onClick={() => planWithdraw.mutate(change.id)}
+                        >
+                          {copy.planWithdraw}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                  {canDecide && change.self_decision === "blocked" ? null : canDecide ? (
                     <div className="flex flex-wrap items-center gap-2">
                       <input
                         aria-label={copy.planReason}
@@ -321,9 +360,9 @@ export default function OnayPage() {
                       <Button
                         className="min-h-[44px]"
                         disabled={planDecision.isPending}
-                        onClick={() => planDecision.mutate({ id: change.id, action: "approve" })}
+                        onClick={() => planDecision.mutate({ id: change.id, action: "approve", ack: ackOf(change) })}
                       >
-                        {copy.planApprove}
+                        {ackOf(change) ? selfDecision.confirmApprove : copy.planApprove}
                       </Button>
                       <Button
                         variant="outline"

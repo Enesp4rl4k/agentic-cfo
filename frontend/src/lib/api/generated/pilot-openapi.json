@@ -718,6 +718,18 @@
               }
             ],
             "title": "Note"
+          },
+          "self_decision_ack": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Self Decision Ack"
           }
         },
         "title": "DecisionRequest",
@@ -1793,6 +1805,11 @@
           "can_decide": {
             "title": "Can Decide",
             "type": "boolean"
+          },
+          "self_decision_ack": {
+            "default": "Öneren ve onaylayan aynı kişi: bu öneriyi ben veriyorum ve ben onaylıyorum. Karar bu notla kaydedilir.",
+            "title": "Self Decision Ack",
+            "type": "string"
           }
         },
         "required": [
@@ -1899,6 +1916,28 @@
           "requested_by": {
             "title": "Requested By",
             "type": "string"
+          },
+          "self_decision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Self Decision"
+          },
+          "self_decision_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Self Decision Message"
           },
           "status": {
             "title": "Status",

@@ -2231,6 +2231,54 @@ export type MessageTree = {
     saved: string;
     error: string;
   };
+  scale: {
+    materiality: {
+      title: string;
+      intro: string;
+      current: string;
+      fixedNote: string;
+      basis: string;
+      proposalTitle: string;
+      proposalHint: string;
+      acknowledge: string;
+      own: string;
+      ownLabel: string;
+      reasonLabel: string;
+      save: string;
+      cancel: string;
+      saved: string;
+      stale: string;
+      error: string;
+      safety: string;
+    };
+    recipients: {
+      title: string;
+      toSmmm: string;
+      hint: string;
+      suggested: string;
+      noSmmm: string;
+      saved: string;
+      error: string;
+    };
+    workload: {
+      title: string;
+      subtitle: string;
+      empty: string;
+      onay: string;
+      close: string;
+      briefing: string;
+      switch: string;
+      nothing: string;
+      total: string;
+      failed: string;
+    };
+    selfDecision: {
+      confirmApprove: string;
+      note: string;
+      blockedTitle: string;
+      waitingOther: string;
+    };
+  };
   baslangic: {
     title: string;
     subtitle: string;
@@ -5263,6 +5311,56 @@ export const en: MessageTree = {
     },
     saved: "Your answers were saved.",
     error: "Could not save. Please try again.",
+  },
+  scale: {
+    materiality: {
+      title: "Approval threshold",
+      intro: "Decisions above this amount go to the company's owner or admin; the ones below do not need them.",
+      current: "In force now: {amount}",
+      fixedNote: "A fixed amount. It has not yet been calculated for your company's size and confirmed.",
+      basis: "Basis: {basis}",
+      proposalTitle: "Our proposal: {amount}",
+      proposalHint: "The current amount stays in force until you confirm; nothing changes by itself.",
+      acknowledge: "Confirm and apply the proposal",
+      own: "Enter my own amount",
+      ownLabel: "Amount",
+      reasonLabel: "Why (optional)",
+      save: "Save",
+      cancel: "Cancel",
+      saved: "Threshold saved; it is written to the decision record.",
+      stale: "The proposal changed while you were looking. Review the new one and confirm again.",
+      error: "Could not be saved. Please try again.",
+      safety:
+        "This is only an amount threshold. Rows that cannot be read, currency, direction, account identity and reconciliation questions never look at the amount; they are always asked.",
+    },
+    recipients: {
+      title: "Monday briefing recipients",
+      toSmmm: "Also send the briefing to my accountant",
+      hint: "The e-mail still goes out when the accountant releases it; this only adds the recipient.",
+      suggested: "A suggestion for your company's size: let the briefing go to the accountant too.",
+      noSmmm: "The company has no accountant. To send the briefing to one, first invite an accountant (smmm) under Members.",
+      saved: "Your preference was saved.",
+      error: "Could not be saved. Please try again.",
+    },
+    workload: {
+      title: "What waits in your companies",
+      subtitle: "Only the companies where you are the accountant. Switch into a company to see its data.",
+      empty: "Nothing is waiting for you in any company right now.",
+      onay: "{n} entries wait for your approval",
+      close: "{month} is waiting to be closed",
+      briefing: "{n} briefing e-mails wait for your release",
+      switch: "Switch to company",
+      nothing: "Nothing waiting",
+      total: "{n} items waiting in total",
+      failed: "The company list could not be read.",
+    },
+    selfDecision: {
+      confirmApprove: "Proposer and approver are the same person: I approve",
+      note: "That the proposer and the approver are the same person is written to the decision record.",
+      blockedTitle: "Another owner or admin of the company must approve this proposal",
+      waitingOther:
+        "The amount is above the threshold: the proposal went to the company's other owner or admin for approval. The route keeps the old date until then.",
+    },
   },
   baslangic: {
     title: "Getting started",

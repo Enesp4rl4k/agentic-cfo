@@ -21,7 +21,6 @@ from app.models.authority_policy import AuthorityPolicy
 from app.models.decision import DecidedVia, DecisionKind
 from app.models.user import User
 from app.platform.authority_matrix import (
-    DEFAULT_POLICY_RULES,
     AuthorityRequest,
     evaluate,
     load_active_rules,
@@ -73,7 +72,7 @@ async def get_policy(
     ).scalar_one_or_none()
     if row is None:
         return {
-            "data": {"is_default": True, "version": 0, "rules": DEFAULT_POLICY_RULES},
+            "data": {"is_default": True, "version": 0, "rules": await load_active_rules(org_id, db)},
             "error": None,
         }
     return {
