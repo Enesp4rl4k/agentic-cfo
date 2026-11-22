@@ -296,7 +296,7 @@ def _detect_cross_risks(
                 "title": "High early attrition while margins too thin for retention programs",
                 "domains": ["chro", "cfo"],
                 "severity": "high",
-                "financial_impact_cents": int(total_departures * 75_000 * 100),  # replacement cost
+                "financial_impact_cents": 0,  # not quantified: no source for a per-head / per-violation cost, so no figure is invented
                 "tech_impact": f"Early departure rate {early_departure_rate:.0%} — culture or onboarding issue",
                 "recommended_action": (
                     f"Early departures at {early_departure_rate:.0%}. "
@@ -319,7 +319,7 @@ def _detect_cross_risks(
                 "title": "Below-market compensation creating retention risk",
                 "domains": ["chro", "cfo"],
                 "severity": "medium",
-                "financial_impact_cents": int(below_market_count * 50_000 * 100),  # salary adjustment cost
+                "financial_impact_cents": 0,  # not quantified: no source for a per-head / per-violation cost, so no figure is invented
                 "tech_impact": f"{below_market_count} employees at risk — below market with low equity",
                 "recommended_action": (
                     f"{below_market_count} employees below market rate. "
@@ -335,7 +335,7 @@ def _detect_cross_risks(
             "title": "Critical compliance violations creating regulatory penalty risk",
             "domains": ["compliance", "cfo"],
             "severity": "critical" if critical_violations > 2 else "high",
-            "financial_impact_cents": critical_violations * 100_000 * 100,  # ~₺100k per critical violation estimate
+            "financial_impact_cents": 0,  # not quantified: no source for a per-head / per-violation cost, so no figure is invented
             "tech_impact": f"{critical_violations} critical violation(s) open — potential regulatory fines",
             "recommended_action": (
                 f"{critical_violations} critical violation(s) unresolved with {runway:.0f} months runway. "

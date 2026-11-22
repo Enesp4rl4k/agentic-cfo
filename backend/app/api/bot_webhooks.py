@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.database import get_db
 from app.services import outbox, outbox_immediate
-from app.services.bot_gateways import OmnichannelCFOBotGateway
+from app.services.bot_gateways import OmnichannelCFOBotGateway, resolve_linked_member
 
 router = APIRouter(tags=["bot-webhooks"])
 logger = logging.getLogger(__name__)
@@ -87,19 +87,16 @@ async def whatsapp_inbound(request: Request, db: AsyncSession = Depends(get_db))
         if not message_text:
             return {"status": "non_text_message"}
 
-        # Load basic financial context (use defaults if no active job)
-        financial_context: dict[str, Any] = {}
+        # Only a verified, linked member is answered (none exists yet: see services/bot_gateways.py).
+        if await resolve_linked_member(db, "whatsapp", sender_id) is None:
+            return {"status": "unlinked"}
 
-        # Dispatch to gateway
         bot_response = OmnichannelCFOBotGateway.handle_command(
-            channel="whatsapp",
-            sender_id=sender_id,
-            message_text=message_text,
-            financial_context=financial_context,
+            channel="whatsapp", sender_id=sender_id, message_text=message_text,
         )
 
-        # The reply is an outbox row (immediate class, bot_reply): to the number that wrote to us, with
-        # the gateway's answer to a message that carries no company context. The sender delivers it.
+        # The reply is an outbox row (immediate class, bot_reply): to the linked member's number, with an
+        # answer that carries no company data. The sender delivers it.
         await outbox_immediate.enqueue_bot_reply(
             db, reply_id=f"wa:{msg.get('id') or uuid.uuid4().hex}", channel="whatsapp",
             recipient=sender_id, text=bot_response.reply_text,
@@ -158,32 +155,10 @@ async def slack_events(request: Request, db: AsyncSession = Depends(get_db)) -> 
     if payload.get("type") == "url_verification":
         return {"challenge": payload.get("challenge")}
 
-    # Interactive action (button click: approve/reject)
+    # Interactive action (button click): nothing is approved or rejected from a chat button (the decision
+    # is made in the app, by a person with the authority for it), and a sender with no verified link gets
+    # no reply. No message carries an approve/reject button any more.
     if payload.get("type") == "block_actions":
-        actions = payload.get("actions", [])
-        for action in actions:
-            action_value = action.get("value", "")
-            user_id = payload.get("user", {}).get("id", "")
-            channel_id = payload.get("channel", {}).get("id", "")
-            logger.info("Slack interactive action: %s by %s", action_value, user_id)
-
-            # Wire to action_runner for approve/reject
-            if action_value.startswith(("approve_", "reject_")):
-                action_id = action_value.replace("approve_", "").replace("reject_", "")
-                # Nothing is approved or rejected from a chat button: the decision is made in the app, by a
-                # person with the authority for it, and recorded there. The reply says so.
-                reply_text = (
-                    f"`{action_id}` için kararınız alınmadı. Onay ve ret uygulamada, yetkili kişi tarafından "
-                    "verilir ve kayda geçer; lütfen uygulamayı açın."
-                )
-                # Reply in the same Slack channel, through the outbox.
-                if channel_id:
-                    await outbox_immediate.enqueue_bot_reply(
-                        db, reply_id=f"slack-action:{payload.get('trigger_id') or uuid.uuid4().hex}:{action_id}",
-                        channel="slack_bot", recipient=channel_id, text=reply_text,
-                    )
-                    await db.commit()
-                    outbox.kick()
         return {"status": "ok"}
 
     # Message event
@@ -199,11 +174,10 @@ async def slack_events(request: Request, db: AsyncSession = Depends(get_db)) -> 
             message_text=message_text,
         )
 
-        if channel_id:
+        if channel_id and await resolve_linked_member(db, "slack", sender_id) is not None:
             await outbox_immediate.enqueue_bot_reply(
                 db, reply_id=f"slack:{payload.get('event_id') or event.get('ts') or uuid.uuid4().hex}",
                 channel="slack_bot", recipient=channel_id, text=bot_response.reply_text,
-                blocks=bot_response.interactive_blocks or None,
             )
             await db.commit()
             outbox.kick()

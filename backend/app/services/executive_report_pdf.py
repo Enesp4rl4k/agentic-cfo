@@ -9,7 +9,7 @@ No external font or image dependencies.
 
 Usage:
     from app.services.executive_report_pdf import generate_executive_report
-    pdf_bytes = generate_executive_report(dashboard_data, company_name="Acme A.Ş.")
+    pdf_bytes = generate_executive_report(dashboard_data, company_name="<şirket adı>")
 """
 from __future__ import annotations
 
@@ -108,7 +108,7 @@ def _build_html(
         <tr class="{row_class}">
           <td>{label}</td>
           <td class="{_sign_class(net12)}">{fmt_lira(net12)}</td>
-          <td>{f"{rw} ay" if rw else "Stabil"}</td>
+          <td>{f"{rw} ay" if rw else "bilinmiyor"}</td>
         </tr>"""
 
     # Narrative
@@ -359,7 +359,7 @@ tr.base-row td {{ font-weight: 700; background: #eff6ff; }}
   <div class="kpi-card">
     <div class="kpi-label">Net Nakit</div>
     <div class="kpi-value {_sign_class(cashflow.get('net_change', 0))}">{fmt_lira(cashflow.get('net_change', 0))}</div>
-    <div class="kpi-sub">Nakit ömrü: {str(runway) + " ay" if runway else "Stabil"}</div>
+    <div class="kpi-sub">Nakit ömrü: {str(runway) + " ay" if runway else "bilinmiyor"}</div>
   </div>
 </div>
 

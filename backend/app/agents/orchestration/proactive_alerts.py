@@ -373,16 +373,26 @@ class ProactiveAlertOrchestrator:
         await self._set_cooldown(alert.org_id, alert.metadata.get("kri", {}).get("name", ""))
 
     async def _dispatch_in_app(self, alert: AlertEvent) -> None:
-        """In-app notification olustur. Hata yukari cikar; `_dispatch_alert` kaydeder."""
-        from app.services.notification_service import create_notification
+        """In-app notification: one `InAppNotification` row (the bell). Failure goes up; `_dispatch_alert` records it."""
+        if not self.db:
+            raise RuntimeError("in_app: veritabani yok, bildirim yazilamadi")
+        from app.models.in_app_notification import InAppNotification
+        from app.models.proactive_alert import ProactiveAlert
 
-        await create_notification(
-            org_id   = alert.org_id,
-            title    = alert.title,
-            body     = alert.body,
-            severity = alert.severity,
-            metadata = alert.metadata,
-        )
+        if await self.db.get(ProactiveAlert, alert.alert_id) is not None:
+            return  # redelivery of an alert already logged: the bell has it
+
+        level = {"critical": "critical", "high": "warning"}.get(alert.severity, "info")
+        self.db.add(InAppNotification(
+            org_id=alert.org_id,
+            level=level,
+            domain="cfo",
+            source="proactive_alert",
+            message=f"{alert.title}: {alert.body}"[:2000],
+            action="escalate" if level == "critical" else "route",
+            priority_score=1.0 if level == "critical" else 0.7 if level == "warning" else 0.5,
+        ))
+        await self.db.flush()
 
     async def _dispatch_slack(self, alert: AlertEvent) -> None:
         """Slack mesajini outbox'a yaz (webhook'u org tercihinden)."""

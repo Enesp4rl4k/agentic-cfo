@@ -66,7 +66,6 @@ ALLOWED: dict[str, str] = {
     "app/services/org_membership.py": "a new Turkish org is created with TRY",
     "app/services/demo_seeder.py": "the demo company's seed rows are lira",
     "app/services/eval_harness.py": "evaluation test cases with fixed sample answers",
-    "app/services/bot_gateways.py": "static demo approval card (sample amount, not the user's data)",
     "app/services/benchmark_intelligence.py": "benchmark metric unit label for a revenue-per-employee peer figure",
     # ── DEBT: literal known to be unproven; not fixed here ────────────────────────────────────────────
     "app/api/radar_schema.py": "DEBT: `currency: str = \"TRY\"` schema default, always overridden; changing it regenerates the OpenAPI contract",

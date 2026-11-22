@@ -197,3 +197,23 @@ async def test_the_test_transport_is_refused_outside_pytest(monkeypatch):
     # And a dispatch that hits the refusal reports no delivery rather than a fake one.
     sent = await alert_dispatcher.AlertDispatcher.dispatch_slack("https://x.example/h", "t", "m")
     assert sent.delivered is False
+
+
+async def test_in_app_alert_writes_one_bell_row_and_a_redelivery_adds_none(db):
+    from app.models.in_app_notification import InAppNotification
+
+    orch = ProactiveAlertOrchestrator(db=db)
+    alert = _alert(["in_app"])
+    await orch._dispatch_alert(alert)
+    await orch._dispatch_alert(alert)
+
+    rows = list((await db.execute(select(InAppNotification))).scalars())
+    assert [(r.org_id, r.level, r.source, r.is_read) for r in rows] == [("org-1", "critical", "proactive_alert", False)]
+    assert "Kasa kırmızı" in rows[0].message
+    assert alert.dispatched is True and alert.dispatch_errors == []
+
+
+async def test_in_app_alert_without_a_database_is_an_error_not_a_silent_skip():
+    alert = _alert(["in_app"])
+    await ProactiveAlertOrchestrator(db=None)._dispatch_alert(alert)
+    assert alert.dispatched is False and any(e.startswith("in_app") for e in alert.dispatch_errors)
