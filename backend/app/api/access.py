@@ -37,6 +37,7 @@ from app.api.auth import get_current_user
 from app.core.email_address import normalize_email
 from app.database import get_db
 from app.models.analysis_job import AnalysisJob
+from app.models.decision import DecisionKind, ReadClass, read_class
 from app.models.organization import OrgMembership
 from app.models.user import User, UserRole
 from app.services.acting_role import acting_role
@@ -115,6 +116,30 @@ WRITER_ROLES = frozenset({"owner", "admin", "cfo", "smmm"})
 CONTRIBUTOR_ROLES = frozenset({"owner", "admin", "cfo", "smmm", "analyst"})  # WRITER_ROLES + analyst (tested)
 DECIDER_ROLES = frozenset({"owner", "admin"})
 OWN_BOOKS_ROLES = frozenset({"owner", "admin", "cfo"})
+
+
+# Which roles each read class means: the same sets the guards below use. None = any member.
+READ_ROLES: dict[ReadClass, frozenset[str] | None] = {
+    ReadClass.MEMBER: None,
+    ReadClass.CONTRIBUTOR: CONTRIBUTOR_ROLES,
+    ReadClass.WRITER: WRITER_ROLES,
+    ReadClass.DECIDER: DECIDER_ROLES,
+}
+
+
+def may_read_decision_kind(role: str | None, kind: str) -> bool:
+    """Whether `role` may read decisions of `kind`. An unknown role reads nothing; an unknown kind is DECIDER's."""
+    if role is None:
+        return False
+    roles = READ_ROLES[read_class(kind)]
+    return roles is None or role in roles
+
+
+def readable_decision_kinds(role: str | None) -> frozenset[str] | None:
+    """The kinds `role` may read; None means every kind, including ones this code does not know (deciders)."""
+    if role in DECIDER_ROLES:
+        return None
+    return frozenset(k.value for k in DecisionKind if may_read_decision_kind(role, k.value))
 
 
 def _refuse(needed: str) -> HTTPException:

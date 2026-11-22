@@ -22,12 +22,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.access import require_decider
 from app.api.auth import get_current_user
 from app.database import get_db
+from app.models.decision import DecidedVia, DecisionKind
 from app.models.user import User
+from app.services.acting_role import acting_role
 from app.services.company_context import (
+    drop_cached_context,
     get_cache_stats,
     get_company_context,
-    invalidate_company_context,
+    reset_company_context_row,
 )
+from app.services.decisions import record_decision
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -87,7 +91,19 @@ async def reset_context(
     Useful when starting a new reporting period.
     """
     resolved_id = _resolve_org_id(org_id, current_user)
-    await invalidate_company_context(resolved_id, db)
+    # Every agent result the company's picture rests on goes (CEO synthesis, semantic snapshot and triggers
+    # read it): a decider's deliberate act, recorded with what was there, in the same transaction.
+    before = await get_company_context(resolved_id, db)
+    held = sorted(a for a, v in before.agent_summary().items() if v["has_result"])
+    await reset_company_context_row(resolved_id, db)
+    await record_decision(
+        db, org_id=resolved_id, kind=DecisionKind.CONTEXT_RESET, target_type="company_context",
+        target_id=resolved_id, outcome="reset", decided_via=DecidedVia.HUMAN, decided_by=str(current_user.id),
+        before={"agents_with_results": held, "reporting_period": before.reporting_period},
+        after={"agents_with_results": [], "acting_role": await acting_role(db, current_user)},
+    )
+    await db.commit()
+    await drop_cached_context(resolved_id)
     logger.info("Context reset for org=%s by user=%s", resolved_id, current_user.email)
     return {"data": {"org_id": resolved_id, "reset": True}, "error": None}
 

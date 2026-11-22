@@ -36,6 +36,7 @@ from app.core.timeutil import as_utc
 from app.database import get_db
 from app.models.compliance_extended import BreachNotification, ComplianceCertification
 from app.models.user import User
+from app.services.compliance_filing_decision import record_filing
 
 router = APIRouter(tags=["compliance-extended"])
 logger = logging.getLogger(__name__)
@@ -44,7 +45,7 @@ logger = logging.getLogger(__name__)
 # ── Request schemas ───────────────────────────────────────────────────────────
 
 class SOXCertifyRequest(BaseModel):
-    period:          str           # "2024-Q2"
+    period:          str           = Field(min_length=1, max_length=20)   # "2024-Q2"
     certifier_name:  str           = Field(min_length=3)
     certifier_role:  Literal["CEO", "CFO", "Audit Committee"]
     statements:      list[bool]    = Field(min_length=3, max_length=10)
@@ -291,9 +292,11 @@ async def sox_certify(
     }, sort_keys=True)
     signature_hash = hashlib.sha256(payload.encode()).hexdigest()
 
+    certified_at = datetime.now(UTC)
+    cert_id = uuid.uuid4().hex
     try:
         db.add(ComplianceCertification(
-            id             = uuid.uuid4().hex,
+            id             = cert_id,
             org_id         = org_id,
             framework      = "sox_302",
             period         = body.period,
@@ -301,13 +304,22 @@ async def sox_certify(
             certifier_role = body.certifier_role,
             statements     = json.dumps(body.statements),
             signature_hash = signature_hash,
-            certified_at   = datetime.now(UTC),
+            certified_at   = certified_at,
         ))
+        await db.flush()
+        await record_filing(
+            db, user, org_id=org_id, target_type="compliance_certification", target_id=cert_id,
+            outcome="certified", before=None,
+            after={"framework": "sox_302", "period": body.period, "certifier_role": body.certifier_role,
+                   "statements_confirmed": len(body.statements), "signature_hash": signature_hash},
+        )
         await db.commit()
-    except Exception:
+    except Exception as exc:
+        # A certification that was not stored (or not recorded) must not be reported as signed: the hash
+        # would be the only trace of something the company cannot show.
         await db.rollback()
         logger.exception("SOX cert persist failed for org=%s", org_id)
-        # Still return success — the hash itself was generated correctly
+        raise HTTPException(status_code=500, detail="Sertifikasyon kaydedilemedi; imzalanmadı.") from exc
 
     return {
         "data": {
@@ -315,7 +327,7 @@ async def sox_certify(
             "period":          body.period,
             "certifier":       body.certifier_name,
             "role":            body.certifier_role,
-            "certified_at":    datetime.now(UTC).isoformat(),
+            "certified_at":    certified_at.isoformat(),
             "framework":       "sox_302",
             "message":         f"SOX Section 302 sertifikasyonu başarıyla imzalandı. Hash: {signature_hash[:16]}...",
         },
@@ -430,10 +442,20 @@ async def gdpr_breach_notification(
             status         = "pending",
             created_at     = datetime.now(UTC),
         ))
+        await db.flush()
+        await record_filing(
+            db, user, org_id=org_id, target_type="breach_notification", target_id=breach_id,
+            outcome="breach_recorded", before=None,
+            after={"severity": body.severity, "affected_users": body.affected_users,
+                   "discovered_at": discovered_at.isoformat(), "deadline_72h": deadline_72h.isoformat(),
+                   "status": "pending"},
+        )
         await db.commit()
-    except Exception:
+    except Exception as exc:
+        # Answering 200 for a breach that was not stored would leave the 72-hour clock running for nobody.
         await db.rollback()
         logger.exception("Breach notification persist failed for org=%s", org_id)
+        raise HTTPException(status_code=500, detail="İhlal kaydı saklanamadı; yeniden deneyin.") from exc
 
     hours_remaining = (deadline_72h - datetime.now(UTC)).total_seconds() / 3600
 
@@ -511,8 +533,14 @@ async def mark_breach_notified(
             raise HTTPException(status_code=404, detail=f"Breach '{breach_id}' not found.")
         if not current_user_org_matches(user, row.org_id):
             raise HTTPException(status_code=404, detail=f"Breach '{breach_id}' not found.")
-        row.status = "notified"
-        row.notified_at = datetime.now(UTC)
+        if row.status != "notified":   # a second click on an already-filed breach decides nothing new
+            before = {"status": row.status}
+            row.status = "notified"
+            row.notified_at = datetime.now(UTC)
+            await record_filing(
+                db, user, org_id=str(row.org_id), target_type="breach_notification", target_id=breach_id,
+                outcome="marked_notified", before=before, after={"status": "notified"},
+            )
         await db.commit()
     except HTTPException:
         raise
