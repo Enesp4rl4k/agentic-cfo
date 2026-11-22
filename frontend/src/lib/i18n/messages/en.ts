@@ -3308,6 +3308,8 @@ export type MessageTree = {
     registered: { title: string; body: string; resend: string };
     unverified: { body: string; resend: string };
   };
+  /** The "not found" screen, also what a switched-off legacy dashboard answers with. */
+  notFound: { title: string; body: string; home: string };
 };
 
 export const en: MessageTree = {
@@ -7000,5 +7002,10 @@ export const en: MessageTree = {
       body: "Your e-mail address is not verified yet. Open the link we sent you, or ask for a new one.",
       resend: "Send the verification link again",
     },
+  },
+  notFound: {
+    title: "This page is not available",
+    body: "The address is wrong, or this screen is not part of your workspace.",
+    home: "Back to the app",
   },
 };

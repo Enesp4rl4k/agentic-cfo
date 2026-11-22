@@ -3689,4 +3689,9 @@ export const tr: MessageTree = {
       resend: "Doğrulama bağlantısını yeniden gönder",
     },
   },
+  notFound: {
+    title: "Bu sayfa kullanılamıyor",
+    body: "Adres yanlış ya da bu ekran çalışma alanınızın parçası değil.",
+    home: "Uygulamaya dön",
+  },
 };
