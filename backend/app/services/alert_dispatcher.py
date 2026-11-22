@@ -42,6 +42,11 @@ class AlertDispatcher:
     transport: httpx.AsyncBaseTransport | None = None
 
     @classmethod
+    def test_transport_injected(cls) -> bool:
+        """Whether a test has injected a transport (so a send goes to it, never to the network)."""
+        return cls.transport is not None
+
+    @classmethod
     def _client(cls) -> httpx.AsyncClient:
         if cls.transport is not None and "PYTEST_CURRENT_TEST" not in os.environ:
             raise RuntimeError("AlertDispatcher.transport is a test seam; refused outside pytest")

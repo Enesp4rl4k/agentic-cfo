@@ -148,10 +148,11 @@ async def sso_callback(
         user_id = str(user.id),
         email   = user.email,
         role    = str(user.role),
+        token_version = user.token_version,
     )
     refresh_token = create_refresh_token(
         user_id = str(user.id),
-        email   = user.email,
+        token_version = user.token_version,
     )
 
     # Redirect to frontend with tokens

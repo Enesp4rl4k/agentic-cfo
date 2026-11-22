@@ -144,8 +144,9 @@ class OrgInvite(Base):
     def _normalise_email(self, _key: str, value: str) -> str:
         return normalize_email(value)
 
-    # Secure token sent by email
-    token: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    # SHA-256 digest of the token e-mailed to the invitee (`app.services.secret_tokens`); the token
+    # itself is never stored. The column keeps its original name, `token` (migration 071).
+    token_hash: Mapped[str] = mapped_column("token", String(64), unique=True, nullable=False, index=True)
 
     accepted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

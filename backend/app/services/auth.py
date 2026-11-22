@@ -57,6 +57,8 @@ def create_access_token(
     email: str,
     role: str,
     expires_delta: timedelta | None = None,
+    *,
+    token_version: int = 0,
 ) -> str:
     expire = datetime.now(UTC) + (
         expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -66,6 +68,7 @@ def create_access_token(
         "email": email,
         "role":  role,
         "type":  "access",
+        "tv":    token_version,
         "exp":   expire,
         "iat":   datetime.now(UTC),
         "jti":   str(uuid.uuid4()),
@@ -73,11 +76,12 @@ def create_access_token(
     return jwt.encode(payload, _secret(), algorithm=ALGORITHM)
 
 
-def create_refresh_token(user_id: str) -> str:
+def create_refresh_token(user_id: str, *, token_version: int = 0) -> str:
     expire = datetime.now(UTC) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     payload: dict[str, Any] = {
         "sub":  user_id,
         "type": "refresh",
+        "tv":   token_version,
         "exp":  expire,
         "iat":  datetime.now(UTC),
         "jti":  str(uuid.uuid4()),
@@ -88,6 +92,15 @@ def create_refresh_token(user_id: str) -> str:
 def decode_token(token: str) -> dict[str, Any]:
     """Decode and validate a JWT token. Raises JWTError if invalid."""
     return jwt.decode(token, _secret(), algorithms=[ALGORITHM])
+
+
+def token_is_current(payload: dict[str, Any], user_token_version: int) -> bool:
+    """Whether a decoded token was issued under the user's current token version.
+
+    A password reset raises `users.token_version`, which ends every session and refresh token
+    issued before it. A token without the claim (issued before this existed) counts as version 0."""
+    claimed = payload.get("tv", 0)
+    return isinstance(claimed, int) and claimed == int(user_token_version or 0)
 
 
 def generate_api_key() -> str:
