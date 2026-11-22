@@ -323,10 +323,11 @@ class TurkishInvoiceParser(BankParser):
 
         tx = ParsedTransaction(
             date=parsed_date or datetime.now(UTC),
+            date_estimated=parsed_date is None,
             description=description,
             amount_cents=amount_cents,
             tx_type=tx_type,
-            currency=fields.get("currency", "TRY"),
+            currency=fields.get("currency") or "",   # "" = not stated (see ingest.hold)
             vendor=vendor,
             reference=fields.get("invoice_no"),
             raw_row=text[:500],  # first 500 chars for audit
@@ -440,7 +441,7 @@ class InvoiceBatchParser(TurkishInvoiceParser):
             sub_stmt = base_parser.parse(section, file_path)
             for tx in sub_stmt.transactions:
                 statement.transactions.append(tx)
-                if tx.date:
+                if tx.date and not tx.date_estimated:
                     dates_seen.append(tx.date)
             statement.parse_warnings.extend(sub_stmt.parse_warnings)
 

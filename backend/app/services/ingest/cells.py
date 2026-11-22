@@ -9,34 +9,45 @@ from __future__ import annotations
 import re
 from datetime import UTC, datetime
 
+# A currency the document STATES. Symbols and codes only count as whole tokens: "ENTRY" and
+# "COUNTRY" contain TRY and say nothing about lira.
+_PARA_BIRIMI_ALANI = re.compile(
+    r"(?:hesap\s+para\s+birimi|para\s+birimi|d[oö]viz\s+cinsi|d[oö]viz\s+kodu|currency|account\s+currency)"
+    r"\s*[:=\-]?\s*([A-Za-z₺$€£]{1,12})",
+    re.IGNORECASE,
+)
+_ALAN_DEGERLERI = {
+    "TL": "TRY", "TRY": "TRY", "TRL": "TRY", "TURK LIRASI": "TRY", "TÜRK LİRASI": "TRY", "₺": "TRY",
+    "USD": "USD", "$": "USD", "DOLAR": "USD", "EUR": "EUR", "EURO": "EUR", "€": "EUR",
+    "GBP": "GBP", "£": "GBP", "STERLIN": "GBP",
+}
+_ISARETLER = (
+    ("TRY", re.compile(r"(?<![A-Z0-9])(?:TL|TRY)(?![A-Z0-9])|₺|T[ÜU]RK L[İI]RASI")),
+    ("EUR", re.compile(r"(?<![A-Z0-9])(?:EUR|EURO)(?![A-Z0-9])|€")),
+    ("GBP", re.compile(r"(?<![A-Z0-9])GBP(?![A-Z0-9])|£")),
+    ("USD", re.compile(r"(?<![A-Z0-9])USD(?![A-Z0-9])|\$|(?<![A-Z0-9])DOLLAR(?![A-Z0-9])")),
+)
 
-def _detect_currency(raw_text: str) -> str:
+
+def _detect_currency(raw_text: str) -> str | None:
     """
-    Detect the primary currency from document text.
-    Returns ISO-4217 code: "TRY", "USD", "EUR", "GBP" etc.
-    Defaults to "TRY" for documents that appear to be Turkish.
+    The currency a document *states*, as an ISO-4217 code, or None.
+
+    In this order: a header field naming it ("Hesap Para Birimi: USD", "Döviz Cinsi: EUR"), else the
+    one currency whose symbol or code appears in the header (₺, TL, TRY, €, EUR, £, GBP, $, USD)
+    as a whole token. A document that merely reads as Turkish has not said TRY, and used to be
+    given it; a document that mentions two currencies (a "USD ALIŞ" line on a lira statement) has
+    not said which one its amounts are in, so it states none. The caller decides what to do then
+    (organisation base currency, marked as assumed, else the row waits for a person).
     """
-    text_upper = raw_text[:2000].upper()  # Only scan the header
-
-    # Explicit Turkish lira markers
-    if any(marker in text_upper for marker in ["₺", "TL ", " TL\n", "TRY", "TÜRK LİRASI", "TÜRK LIRASI"]):
-        return "TRY"
-    # Euro markers
-    if any(marker in text_upper for marker in ["€", "EUR ", " EUR\n", "EURO"]):
-        return "EUR"
-    # GBP
-    if any(marker in text_upper for marker in ["£", "GBP ", " GBP\n"]):
-        return "GBP"
-    # USD
-    if any(marker in text_upper for marker in ["$", "USD ", " USD\n", "DOLLAR"]):
-        return "USD"
-
-    # Turkish document heuristics (common Turkish words in financial docs)
-    turkish_markers = ["HESAP", "BANKA", "FATURA", "TARİH", "TUTAR", "BORÇ", "ALACAK"]
-    if sum(1 for m in turkish_markers if m in text_upper) >= 2:
-        return "TRY"
-
-    return "TRY"  # safe default for this product's target market
+    head = raw_text[:2000]
+    if field := _PARA_BIRIMI_ALANI.search(head):
+        value = field.group(1).strip().upper()
+        if value in _ALAN_DEGERLERI:
+            return _ALAN_DEGERLERI[value]
+    upper = head.upper()
+    found = {code for code, pattern in _ISARETLER if pattern.search(upper)}
+    return found.pop() if len(found) == 1 else None
 
 
 def _parse_amount(raw: str) -> int | None:

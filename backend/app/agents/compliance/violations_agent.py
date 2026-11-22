@@ -324,7 +324,7 @@ def _build_remediation_recommendations(
             "effort": "medium",
         })
 
-    if metrics.get("remediation_rate", 100) < 60:
+    if (metrics.get("remediation_rate") if metrics.get("remediation_rate") is not None else 100) < 60:
         recs.append({
             "priority": "P2",
             "action": "Establish weekly violation review cadence",

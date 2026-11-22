@@ -32,6 +32,10 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from app.services.counterfactual_engine import CounterfactualInputsMissing
+from app.services.nl_simulation_needs import NeedsInput as _NeedsInput
+from app.services.nl_simulation_needs import missing_assumptions
+
 logger = logging.getLogger(__name__)
 
 
@@ -70,6 +74,8 @@ class SimulationQueryResult:
     answer:          str      # Turkce aciklama
     follow_up_questions: list[str]
     error:           str | None = None
+
+
 
 
 # ── NL Simulation Bridge ──────────────────────────────────────────────────────
@@ -197,6 +203,11 @@ class NLSimulationBridge:
                 val *= 1_000
             params["amount_try"] = val
 
+        # ROAS: only when the question states it (it is the user's assumption)
+        m = re.search(r"roas\s*(?:=|:|of|olarak)?\s*(\d+(?:\.\d+)?)", q)
+        if m:
+            params["expected_roas"] = float(m.group(1))
+
         # Rolu tahmin et
         if intent == "headcount":
             for role, keywords in [
@@ -230,7 +241,7 @@ class NLSimulationBridge:
     ) -> dict[str, Any]:
         from app.services.multidomain_counterfactual import get_multidomain_cf
 
-        delta    = params.get("count", 3)
+        delta    = params["count"]
         if "azalt" in str(params.get("_raw_query", "")).lower() or delta < 0:
             delta = -abs(delta)
 
@@ -244,7 +255,7 @@ class NLSimulationBridge:
         result = engine.analyze_headcount_change(
             delta        = delta,
             role_type    = params.get("role_type", "general"),
-            horizon_months = int(params.get("months", 12)),
+            horizon_months = 12,
         )
         return result.to_dict()
 
@@ -255,9 +266,9 @@ class NLSimulationBridge:
     ) -> dict[str, Any]:
         from app.services.multidomain_counterfactual import get_multidomain_cf
 
-        monthly_rev  = (context.get("pnl", {}).get("revenue", 0) or 0) / 100 / 12
-        budget_inc   = params.get("amount_try") or (monthly_rev * params.get("pct", 0.20))
-        expected_roas = params.get("pct", 1.0) * 2.5 if params.get("pct") else 2.5
+        # The budget and the ROAS are the user's assumptions: stated in the question, never defaulted.
+        budget_inc    = params["amount_try"]
+        expected_roas = params["expected_roas"]
 
         engine = get_multidomain_cf(
             pnl      = context.get("pnl"),
@@ -265,7 +276,7 @@ class NLSimulationBridge:
             cmo_data = context.get("cmo"),
         )
         result = engine.analyze_marketing_investment(
-            monthly_increase_try = max(budget_inc, 10_000),
+            monthly_increase_try = budget_inc,
             expected_roas        = expected_roas,
         )
         return result.to_dict()
@@ -275,16 +286,19 @@ class NLSimulationBridge:
         params:  dict[str, Any],
         context: dict[str, Any],
     ) -> dict[str, Any]:
-        from app.services.cascade_simulator import TriggerType, get_cascade_simulator
+        from app.services.cascade_simulator import (
+            CascadeInputsMissing,
+            TriggerType,
+            get_cascade_simulator,
+        )
 
-        trigger_str  = params.get("trigger", "cash_crisis")
         trigger_map  = {
             "cash_crisis":      TriggerType.CASH_CRISIS,
             "revenue_drop":     TriggerType.REVENUE_DROP,
             "key_person_loss":  TriggerType.KEY_PERSON_LOSS,
             "market_shock":     TriggerType.MARKET_SHOCK,
         }
-        trigger = trigger_map.get(trigger_str, TriggerType.CASH_CRISIS)
+        trigger = trigger_map[params["trigger"]]
 
         sim = get_cascade_simulator(
             pnl      = context.get("pnl"),
@@ -293,20 +307,22 @@ class NLSimulationBridge:
             chro_data = context.get("chro"),
             cto_data  = context.get("cto"),
             cmo_data  = context.get("cmo"),
+            **(context.get("measured") or {}),
         )
 
+        # Scenario parameters are the user's assumptions, taken from the question and never defaulted.
         kwargs: dict[str, Any] = {}
         if trigger == TriggerType.CASH_CRISIS:
-            kwargs["runway_months"] = params.get("months", 3.0)
+            kwargs["runway_months"] = params["months"]
         elif trigger == TriggerType.REVENUE_DROP:
-            kwargs["drop_pct"] = params.get("pct", 0.30)
+            kwargs["drop_pct"] = params["pct"]
         elif trigger == TriggerType.KEY_PERSON_LOSS:
-            kwargs["role"] = params.get("role_type", "cto")
-        elif trigger == TriggerType.MARKET_SHOCK:
-            kwargs["usd_try_increase_pct"] = params.get("pct", 30) * 100
-            kwargs["inflation_pct"]        = 50
+            kwargs["role"] = params["role_type"]
 
-        result = sim.simulate(trigger, **kwargs)
+        try:
+            result = sim.simulate(trigger, **kwargs)
+        except CascadeInputsMissing as exc:
+            raise _NeedsInput(exc.missing) from exc
         return result.to_dict()
 
     async def _run_cost_cut_simulation(
@@ -321,9 +337,13 @@ class NLSimulationBridge:
             cashflow = context.get("cashflow"),
             forecast = context.get("forecast"),
         )
+        # The cut targets the largest real expense line; no category or share is guessed.
+        opex = (context.get("pnl") or {}).get("opex") or {}
+        if not opex:
+            raise _NeedsInput(["gider kalemleri (P&L)"])
         result = engine.simulate_cost_reduction(
-            target_category = "general",
-            reduction_pct   = params.get("pct", 0.20),
+            target_category = max(opex, key=lambda k: opex[k]),
+            reduction_pct   = params["pct"],
         )
         return result.to_dict()
 
@@ -339,8 +359,8 @@ class NLSimulationBridge:
             cashflow = context.get("cashflow"),
         )
         result = engine.simulate_price_increase(
-            increase_pct        = params.get("pct", 0.15),
-            churn_rate_increase = 0.04,
+            increase_pct        = params["pct"],
+            churn_rate_increase = params["churn_pct"],
         )
         return result.to_dict()
 
@@ -468,7 +488,18 @@ class NLSimulationBridge:
             context = await self._load_context(org_id)
         context = context or {}
 
-        # 4. Simulasyonu calistir
+        # 4. Simulasyonu calistir. An assumption the question does not state is asked for, never filled in.
+        needed = missing_assumptions(intent, params)
+        if needed:
+            return SimulationQueryResult(
+                original_query     = query,
+                simulation_type    = intent,
+                intent_confidence  = confidence,
+                extracted_params   = {k: v for k, v in params.items() if not k.startswith("_")},
+                simulation_result  = None,
+                answer             = "Bu simülasyon için şunları belirtmelisiniz: " + ", ".join(needed) + ".",
+                follow_up_questions = [],
+            )
         try:
             sim_runners = {
                 "headcount": self._run_headcount_simulation,
@@ -492,6 +523,16 @@ class NLSimulationBridge:
                 follow_up_questions = follow_ups,
             )
 
+        except (_NeedsInput, CounterfactualInputsMissing) as exc:
+            return SimulationQueryResult(
+                original_query     = query,
+                simulation_type    = intent,
+                intent_confidence  = confidence,
+                extracted_params   = {k: v for k, v in params.items() if not k.startswith("_")},
+                simulation_result  = None,
+                answer             = "Hesaplanamıyor, şirket verisinde eksik: " + ", ".join(exc.missing) + ".",
+                follow_up_questions = [],
+            )
         except Exception as exc:
             logger.error("NL Simulation Bridge hatasi: intent=%s err=%s", intent, exc)
             return SimulationQueryResult(

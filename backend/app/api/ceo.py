@@ -21,11 +21,12 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.access import load_owned_job
+from app.api.access import load_owned_job, require_writer
 from app.api.auth import get_current_user
 from app.core.http_headers import content_disposition
 from app.database import get_db
 from app.models.user import User
+from app.services.runway_display import view_from_fin
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -173,7 +174,7 @@ def _compute_overall_health(result: dict[str, Any]) -> float | None:
     if fin:
         fin_score = 60.0  # neutral baseline
         net_margin = fin.get("net_margin", 0) or 0
-        runway = fin.get("cash_runway_months")
+        runway = fin.get("cash_runway_months") if view_from_fin(fin).proven else None
 
         # Margin contribution: 0% margin → 0, 20%+ margin → +25 pts
         fin_score += min(25.0, max(-25.0, net_margin * 125))
@@ -202,7 +203,7 @@ def _compute_overall_health(result: dict[str, Any]) -> float | None:
     return round(sum(scores) / len(scores), 1)
 
 
-@router.post("/ceo/analyze-async")
+@router.post("/ceo/analyze-async", dependencies=[Depends(require_writer)])
 async def run_ceo_analysis_async(
     body: CEOAnalyzeRequest,
     current_user: User = Depends(get_current_user),
@@ -514,7 +515,7 @@ async def run_ceo_from_job(
     }
 
 
-@router.post("/ceo/synthesize")
+@router.post("/ceo/synthesize", dependencies=[Depends(require_writer)])
 async def synthesize_ceo_from_context(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),

@@ -129,8 +129,8 @@ def _predict_breach_risk(
         age_hrs = (now - created).total_seconds() / 3600
         cat = t.get("category", "unknown")
         tier = t.get("tier", "p3")
-        cat_br = category_breach_rates.get(cat, 0.1)
-        tier_br = tier_breach_rates.get(tier, 0.1)
+        cat_br = category_breach_rates.get(cat, 0.0)    # no history: no uplift, no guess
+        tier_br = tier_breach_rates.get(tier, 0.0)
         skor = _breach_risk_score(tier, age_hrs, cat_br, tier_br)
 
         sla_hrs = _SLA_THRESHOLDS.get(tier, _SLA_THRESHOLDS["p3"])["resolution"]

@@ -1,0 +1,114 @@
+"""The period a statement says it covers, read from the header of the file's own text.
+
+Bank and ERP exports usually open with it ("Dönem: 01.01.2026 - 31.03.2026", "Tarih Aralığı",
+"Başlangıç Tarihi / Bitiş Tarihi"). It says which days the statement is MEANT to cover; whether the
+rows actually reach them is checked against the data (`app.services.coverage.apply_period`). Row
+parsing is not touched: this reads the text the readers already produced.
+
+Only the header counts, and only a labelled period:
+- the header is the lines BEFORE the table's column-header line (Tarih; Açıklama; Tutar ...) as
+  `app.parsers.lines` finds it. With no such line there is no header, so nothing is read: a row
+  description such as "Dönem 01.01.2026 - 31.01.2026 aidat" is never a statement period;
+- the period must sit on a line with a period label (`Dönem`, `Tarih Aralığı`, `Hesap/Ekstre
+  Dönemi`, `Başlangıç Tarihi` + `Bitiş Tarihi`); a print date or a bare pair of dates is not one;
+- it is ignored when inconsistent: two different periods, an end before the start, longer than ten
+  years, or a transaction dated outside it.
+"""
+from __future__ import annotations
+
+import re
+from datetime import date
+from typing import Any
+
+from app.parsers.lines import _is_header, read_lines
+
+MAX_PERIOD_DAYS = 3660
+
+_D = r"(\d{1,2}[./]\d{1,2}[./]\d{4}|\d{4}-\d{2}-\d{2})"
+_DASH = r"\s*(?:-|–|—|~|/|;|\t|ile|ila|to)\s*"
+_LABELLED = re.compile(
+    r"(?:dönem|donem|tarih\s*aralığı|tarih\s*araligi|period|date\s*range)"
+    r"[^\n\d]{0,30}" + _D + _DASH + _D,
+    re.IGNORECASE,
+)
+_START = re.compile(r"(?:başlangıç|baslangic|başlama|baslama|start|from)\s*tarihi?[\s:;=,\"]*" + _D, re.IGNORECASE)
+_END = re.compile(r"(?:bitiş|bitis|bitim|end|to)\s*tarihi?[\s:;=,\"]*" + _D, re.IGNORECASE)
+
+def _header_lines(text: str) -> list[str] | None:
+    """The lines before the table's column-header line, as the line reader defines it; None with no such line.
+
+    `app.parsers.lines` is the one reader of a statement's lines: its `read_lines` units and its
+    column-header test (`_is_header`, the same one `account_for_lines` uses for "above the header a
+    row cannot be"). The file is not read a second way here.
+    """
+    lines = read_lines(text)
+    header_at = next((i for i, line in enumerate(lines) if _is_header(line)), None)
+    return None if header_at is None else lines[:header_at]
+
+
+def _parse(text: str) -> date | None:
+    try:
+        if len(text) == 10 and text[4] == "-":
+            return date.fromisoformat(text)
+        day, month, year = re.split(r"[./]", text)
+        return date(int(year), int(month), int(day))
+    except ValueError:
+        return None
+
+
+def _candidates(head: str) -> set[tuple[date, date]]:
+    found: set[tuple[date, date]] = set()
+    for m in _LABELLED.finditer(head):
+        a, b = _parse(m.group(1)), _parse(m.group(2))
+        if a and b:
+            found.add((a, b))
+    start, end = _START.search(head), _END.search(head)
+    if start and end:
+        a, b = _parse(start.group(1)), _parse(end.group(1))
+        if a and b:
+            found.add((a, b))
+    return found
+
+
+def stated_period(text: str, transaction_dates: list[str] | None = None) -> dict[str, Any] | None:
+    """{"start", "end"} (ISO dates) the file's header states, or None when it states none it can stand by."""
+    header = _header_lines(text)
+    if header is None:
+        return None
+    candidates = _candidates("\n".join(header))
+    if len(candidates) != 1:
+        return None  # nothing stated, or two periods: not proof of either
+    start, end = next(iter(candidates))
+    if start > end or (end - start).days > MAX_PERIOD_DAYS:
+        return None
+    dates = sorted(str(d)[:10] for d in (transaction_dates or []) if d)
+    if dates and (dates[0] < start.isoformat() or dates[-1] > end.isoformat()):
+        return None
+    # Only what the file's text says, checked against its rows by `coverage.apply_period`. The text can never carry
+    # `pulled`: that is set from the job's own metadata (`services.pull_coverage`), never from content.
+    return {"start": start.isoformat(), "end": end.isoformat()}
+
+
+def attach_period(patch: dict[str, Any]) -> dict[str, Any]:
+    """The ingestion patch with `statement_period` when its file's header states one, and the statement's
+    extent measured against it (`coverage.apply_period`: an edge is stated only where the rows agree)."""
+    from app.services.coverage import apply_period
+
+    rows = [*(patch.get("transactions") or []), *(patch.get("held_transactions") or [])]
+    period = stated_period(str(patch.get("raw_text") or ""), [r.get("transaction_date") for r in rows])
+    if period is None:
+        return patch
+    out = {**patch, "statement_period": period}
+    if out.get("statement_extent"):
+        out["statement_extent"] = apply_period(out["statement_extent"], period)
+    return out
+
+
+async def attach_periods(patch: dict[str, Any], state: Any) -> dict[str, Any]:
+    """`attach_period` for a single document (its header may state the period it covers), then the pull coverage a job
+    made by our own fetch code carries as metadata (`services.pull_coverage`): never text from the file."""
+    from app.services.pull_coverage import attach_pull
+
+    if not state.get("ek_belgeler"):
+        patch = attach_period(patch)
+    return await attach_pull(patch, state)

@@ -17,7 +17,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.access import load_owned_job
+from app.api.access import load_owned_job, require_writer
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.user import User
@@ -31,7 +31,8 @@ async def veri_turleri(current_user: User = Depends(get_current_user)) -> dict[s
     return {"data": secilebilir_turler(), "error": None}
 
 
-@router.post("/veri/ekle", status_code=status.HTTP_201_CREATED)
+@router.post("/veri/ekle",
+    dependencies=[Depends(require_writer)], status_code=status.HTTP_201_CREATED)
 async def veri_ekle(
     files: list[UploadFile] = File(..., description="Bir ya da daha fazla dosya"),
     secimler: str | None = Form(default=None, description='{"dosya adı": "tür"} — belirsiz dosyalar için'),

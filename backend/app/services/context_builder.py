@@ -30,6 +30,9 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.core.currency_totals import fmt_amount
+from app.services.runway_display import runway_for_display
+
 logger = logging.getLogger(__name__)
 
 # ── Token counting ────────────────────────────────────────────────────────────
@@ -73,10 +76,11 @@ class ContextResult:
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _fmt_currency(cents: int | float | None) -> str:
+def _fmt_currency(cents: int | float | None, currency: str | None = None) -> str:
+    """Kuruş labelled with the currency the figures state (`pnl["currency"]`); bare when none is stated."""
     if cents is None:
         return "N/A"
-    return f"₺{cents / 100:,.0f}"
+    return fmt_amount(cents / 100, currency)
 
 
 def _summarise_transactions(
@@ -115,41 +119,43 @@ def _summarise_transactions(
 
 
 def _summarise_pnl(pnl: dict[str, Any]) -> str:
+    cur = pnl.get("currency")  # the currency the figures state; bare when none
     if not pnl:
         return "(no P&L data)"
     opex_lines = "\n".join(
-        f"  {k}: {_fmt_currency(v)}"
+        f"  {k}: {_fmt_currency(v, cur)}"
         for k, v in (pnl.get("opex") or {}).items()
         if v
     )
     return (
-        f"Revenue:      {_fmt_currency(pnl.get('revenue'))}\n"
-        f"COGS:         {_fmt_currency(pnl.get('cogs'))}\n"
-        f"Gross Profit: {_fmt_currency(pnl.get('gross_profit'))} "
+        f"Revenue:      {_fmt_currency(pnl.get('revenue'), cur)}\n"
+        f"COGS:         {_fmt_currency(pnl.get('cogs'), cur)}\n"
+        f"Gross Profit: {_fmt_currency(pnl.get('gross_profit'), cur)} "
         f"({pnl.get('gross_margin', 0) * 100:.1f}%)\n"
         f"OPEX:\n{opex_lines}\n"
-        f"EBITDA:       {_fmt_currency(pnl.get('ebitda'))} "
+        f"EBITDA:       {_fmt_currency(pnl.get('ebitda'), cur)} "
         f"({pnl.get('ebitda_margin', 0) * 100:.1f}%)\n"
-        f"Net Income:   {_fmt_currency(pnl.get('net_income'))} "
+        f"Net Income:   {_fmt_currency(pnl.get('net_income'), cur)} "
         f"({pnl.get('net_margin', 0) * 100:.1f}%)"
     )
 
 
 def _summarise_cashflow(cf: dict[str, Any]) -> str:
+    cur = cf.get("currency")  # the currency the figures state; bare when none
     if not cf:
         return "(no cash flow data)"
     monthly = cf.get("monthly_series") or []
     recent = monthly[-3:] if len(monthly) >= 3 else monthly
     recent_lines = "\n".join(
-        f"  {m.get('month', '?')}: in={_fmt_currency(m.get('in'))}, "
-        f"out={_fmt_currency(m.get('out'))}, net={_fmt_currency(m.get('net'))}"
+        f"  {m.get('month', '?')}: in={_fmt_currency(m.get('in'), cur)}, "
+        f"out={_fmt_currency(m.get('out'), cur)}, net={_fmt_currency(m.get('net'), cur)}"
         for m in recent
     )
     return (
-        f"Operating:  {_fmt_currency(cf.get('operating'))}\n"
-        f"Investing:  {_fmt_currency(cf.get('investing'))}\n"
-        f"Financing:  {_fmt_currency(cf.get('financing'))}\n"
-        f"Net Change: {_fmt_currency(cf.get('net_change'))}\n"
+        f"Operating:  {_fmt_currency(cf.get('operating'), cur)}\n"
+        f"Investing:  {_fmt_currency(cf.get('investing'), cur)}\n"
+        f"Financing:  {_fmt_currency(cf.get('financing'), cur)}\n"
+        f"Net Change: {_fmt_currency(cf.get('net_change'), cur)}\n"
         f"Last 3 months:\n{recent_lines}"
     )
 
@@ -161,8 +167,8 @@ def _summarise_forecast(fc: dict[str, Any]) -> str:
     lines = []
     for name, s in scenarios.items():
         lines.append(
-            f"  {name}: 12mo_net={_fmt_currency(s.get('twelve_month_net'))}, "
-            f"runway={s.get('runway_months', 'stable')} months"
+            f"  {name}: 12mo_net={_fmt_currency(s.get('twelve_month_net'), None)}, "
+            f"runway={runway_for_display(fc, name).text()}"
         )
     return "Forecast scenarios:\n" + "\n".join(lines)
 

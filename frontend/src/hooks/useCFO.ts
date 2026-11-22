@@ -2,6 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
+import { APPROVAL_AFFECTED_KEYS } from "@/hooks/useWaitingCounts";
 import {
   getDashboard,
   getJobStatus,
@@ -18,15 +19,34 @@ import {
   getCommandCenterData,
 } from "@/lib/api/cfo";
 import { useToast } from "@/components/ui/toast";
+import { useI18n } from "@/hooks/useI18n";
 
+/** The run is still working: its dashboard does not exist yet, and asking for it only caches "no data". */
+export const isRunning = (status: string | undefined) =>
+  status === "pending" || status === "ingesting" || status === "analyzing";
+
+/**
+ * A run's dashboard. While the run is going it is not asked for (it would answer "none" and keep
+ * that for the page's lifetime); the run's own status is polled instead, and the dashboard is read the
+ * moment the run stops. `isLoading` stays true until then, so a page shows its loading state, not "no data".
+ */
 export function useDashboard(jobId: string | null) {
-  return useQuery({
+  const job = useJobStatus(jobId);
+  const running = isRunning(job.data?.status);
+  const statusKnown = job.isSuccess || job.isError;
+  const dashboard = useQuery({
     queryKey: ["dashboard", jobId],
     queryFn: () => getDashboard(jobId!),
-    enabled: !!jobId,
+    enabled: !!jobId && statusKnown && !running,
     staleTime: 30_000,
     retry: 2,
   });
+  return {
+    ...dashboard,
+    isLoading: dashboard.isLoading || (!!jobId && !statusKnown) || running,
+    running,
+    job: job.data,
+  };
 }
 
 export function useJobStatus(jobId: string | null, enabled = true) {
@@ -34,13 +54,7 @@ export function useJobStatus(jobId: string | null, enabled = true) {
     queryKey: ["job", jobId],
     queryFn: () => getJobStatus(jobId!),
     enabled: !!jobId && enabled,
-    refetchInterval: (query) => {
-      const status = query.state.data?.status;
-      if (status === "pending" || status === "ingesting" || status === "analyzing") {
-        return 2_000;
-      }
-      return false;
-    },
+    refetchInterval: (query) => (isRunning(query.state.data?.status) ? 2_000 : false),
   });
 }
 
@@ -64,6 +78,8 @@ export function useApproveJob() {
       // After approval, invalidate dashboard so it refetches when SSE signals done
       queryClient.invalidateQueries({ queryKey: ["dashboard", jobId] });
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      // The held list, its counts, the radar and the company view change with an approval too.
+      for (const key of APPROVAL_AFFECTED_KEYS) queryClient.invalidateQueries({ queryKey: [...key] });
     },
   });
 }
@@ -134,6 +150,7 @@ export function useTransactions(
 export function useCorrectCategory(jobId: string | null) {
   const queryClient = useQueryClient();
   const { success, error: toastError } = useToast();
+  const { t } = useI18n();
   return useMutation({
     mutationFn: ({
       transactionId,
@@ -148,12 +165,13 @@ export function useCorrectCategory(jobId: string | null) {
       queryClient.invalidateQueries({ queryKey: ["transactions", jobId] });
       queryClient.invalidateQueries({ queryKey: ["dashboard", jobId] });
       success(
-        "Category updated",
-        vars.applyAlways ? `Saved as rule for future transactions` : undefined
+        t.categoryEditor.updated,
+        vars.applyAlways ? t.categoryEditor.savedAsRule : undefined,
+        "category-updated-toast"
       );
     },
     onError: (err: Error) => {
-      toastError("Failed to update category", err.message);
+      toastError(t.categoryEditor.updateFailed, err.message, "category-update-failed-toast");
     },
   });
 }
@@ -172,17 +190,18 @@ export function useAnomalies(jobId: string | null, severity?: string) {
 export function useScanAnomalies(jobId: string | null) {
   const queryClient = useQueryClient();
   const { success, error: toastError } = useToast();
+  const { t } = useI18n();
   return useMutation({
     mutationFn: () => scanAnomalies(jobId!),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["anomalies", jobId] });
       success(
-        `Scan complete: ${data.anomalies_found} anomalies found`,
-        data.critical > 0 ? `${data.critical} critical issues need attention` : undefined
+        t.scanToast.complete.replace("{n}", String(data.anomalies_found)),
+        data.critical > 0 ? t.scanToast.critical.replace("{n}", String(data.critical)) : undefined
       );
     },
     onError: (err: Error) => {
-      toastError("Scan failed", err.message);
+      toastError(t.scanToast.failed, err.message);
     },
   });
 }

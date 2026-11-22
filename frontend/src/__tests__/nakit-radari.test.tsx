@@ -40,6 +40,7 @@ vi.mock("next/link", () => ({
 }));
 
 import NakitRadariPage from "@/app/(dashboard)/nakit-radari/page";
+import { noBasis, openingCashFixture } from "./dashboard-mocks";
 
 const week = (n: number, over: Record<string, unknown> = {}) => ({
   week: n,
@@ -51,6 +52,8 @@ const week = (n: number, over: Record<string, unknown> = {}) => ({
   end_balance_cents: 0,
   receivables: [],
   payables: [],
+  inflow_basis: noBasis,
+  outflow_basis: noBasis,
   ...over,
 });
 
@@ -58,6 +61,7 @@ const radar = (over: Record<string, unknown> = {}) => ({
   anchor_date: "2025-01-01",
   starting_cash_cents: 100_000_00,
   starting_cash_as_of: "2025-01-01",
+  opening_cash: openingCashFixture,
   weeks: [
     week(1, { end_balance_cents: 100_000_00 }),
     week(2, { inflow_cents: 50_000_00, net_cents: 50_000_00, end_balance_cents: 150_000_00 }),
@@ -71,6 +75,20 @@ const radar = (over: Record<string, unknown> = {}) => ({
   beyond_horizon_cents: 0,
   other_currency_items: 0,
   not_included: ["Kira, maaş gibi düzenli ödemeler", "Vergi ve SGK yükümlülükleri", "Çek ve senetler"],
+  other_currency_balances: [],
+  unproven_statements: [],
+  runway: null,
+  ...over,
+});
+
+const runway = (over: Record<string, unknown> = {}) => ({
+  status: "computed",
+  message: "31 Mart 2026 ekstresindeki bakiyeye göre kasa ₺120.000,00. Bu hızla nakit yaklaşık 4,0 ay yeter.",
+  months_needed: 3,
+  months_used: 3,
+  runway_months: 4,
+  level: "warning",
+  basis: "known",
   ...over,
 });
 
@@ -93,7 +111,7 @@ describe("Nakit Radarı", () => {
     getCashRadar.mockResolvedValue(radar());
     show();
     expect(await screen.findByText("Başlangıç nakdi")).toBeTruthy();
-    expect(screen.getByText("2025-01-01")).toBeTruthy();
+    expect(screen.getByText("1 Ocak ekstresine göre kasa")).toBeTruthy();
     expect(screen.getByText("Bakiye")).toBeTruthy();
     expect(screen.queryByText("Banka bakiyesi bilinmiyor")).toBeNull();
   });
@@ -140,6 +158,51 @@ describe("Nakit Radarı", () => {
     expect(screen.getByText(/Eski Musteri/)).toBeTruthy();
     expect(screen.getByText("13 hafta sonrası")).toBeTruthy();
     expect(screen.getByText("Başka para birimli kalem")).toBeTruthy();
+  });
+
+  it("puts the two queues that wait for a person in one block, each with its own link", async () => {
+    getCashRadar.mockResolvedValue(radar({
+      not_included: [
+        "Kira, maaş gibi düzenli ödemeler",
+        "3 kayıt incelemenizi bekliyor",
+        "Karar bekleyen 1 belge (₺1.000,00 ödeme): mükerrer olabilir, siz karar verene kadar radarda yok",
+      ],
+      awaiting_decision: {
+        rows: { count: 3, text: "3 kayıt incelemenizi bekliyor", path: "/bekleyen-kayitlar" },
+        documents: {
+          count: 1,
+          text: "Karar bekleyen 1 belge (₺1.000,00 ödeme): mükerrer olabilir, siz karar verene kadar radarda yok",
+          path: "/onay",
+        },
+      },
+    }));
+    show();
+    expect(await screen.findByText("Kararınızı bekleyenler")).toBeTruthy();
+    expect(screen.getByText("İncelenmesi gereken kayıtlar:")).toBeTruthy();
+    expect(screen.getByText("Mükerrer olabilecek belgeler:")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Karar ver" }).getAttribute("href")).toBe("/bekleyen-kayitlar");
+    expect(screen.getByRole("link", { name: "Belgeleri gör ve karar ver" }).getAttribute("href")).toBe("/onay");
+    // each sentence is said once: in the block, not again in the plain list
+    expect(screen.getAllByText(/3 kayıt incelemenizi bekliyor/).length).toBe(1);
+    expect(screen.getAllByText(/Karar bekleyen 1 belge/).length).toBe(1);
+    expect(screen.getByText("Kira, maaş gibi düzenli ödemeler")).toBeTruthy();
+  });
+
+  it("shows no block when nothing waits", async () => {
+    getCashRadar.mockResolvedValue(radar({ awaiting_decision: null }));
+    show();
+    await screen.findByText("Radara dahil değil");
+    expect(screen.queryByText("Kararınızı bekleyenler")).toBeNull();
+  });
+
+  it("links the held-documents line to the screen where a person answers", async () => {
+    getCashRadar.mockResolvedValue(radar({
+      not_included: ["Karar bekleyen 2 belge"],
+      held_documents: { count: 2, review_path: "/onay", by_reason: { many_versions: 2 } },
+    }));
+    show();
+    const link = await screen.findByText("Belgeleri gör ve karar ver");
+    expect(link.closest("a")?.getAttribute("href")).toBe("/onay");
   });
 
   it("points an empty company at its documents", async () => {
@@ -195,5 +258,54 @@ describe("Nakit Radarı", () => {
     await waitFor(() =>
       expect(respondToMondayBriefing).toHaveBeenCalledWith("done", "2025-02-03", "fp-radar"),
     );
+  });
+
+  it("shows the measured runway in the summary, and a critical one before the answer", async () => {
+    getCashRadar.mockResolvedValue(radar({ runway: runway() }));
+    const first = show();
+    expect(await screen.findByTestId("runway-value")).toBeTruthy();
+    expect(screen.getByTestId("runway-text").textContent).toContain("yaklaşık 4,0 ay yeter");
+    first.unmount();
+
+    getCashRadar.mockResolvedValue(radar({ runway: runway({ level: "critical", runway_months: 1.7, message: "KRİTİK: yaklaşık 1,7 ay." }) }));
+    show();
+    const card = await screen.findByRole("alert");
+    expect(card.textContent).toContain("KRİTİK: yaklaşık 1,7 ay.");
+  });
+
+  it("says unknown with no figure when there is no proven balance, and names the statement that failed", async () => {
+    getCashRadar.mockResolvedValue(radar({
+      starting_cash_cents: null,
+      starting_cash_as_of: null,
+      opening_cash: null,
+      runway: runway({ status: "no_balance", runway_months: null, level: null, basis: null, message: "Kasa bakiyesi bilinmiyor — nakit pisti hesaplanamadı." }),
+      unproven_statements: [{ job_id: "j1", filename: "ekstre.pdf", reason: "2 satır bekliyor" }],
+    }));
+    show();
+    expect(await screen.findByTestId("runway-value")).toHaveProperty("textContent", "Bilinmiyor");
+    expect(screen.getByText("ekstre.pdf: 2 satır bekliyor")).toBeTruthy();
+  });
+
+  it("badges an assumption, lists accounts with their dates and keeps other currencies apart", async () => {
+    getCashRadar.mockResolvedValue(radar({
+      runway: runway({ basis: "assumed" }),
+      opening_cash: {
+        ...openingCashFixture,
+        basis: "assumed",
+        basis_note: "yalnızca 2 bakiye adımıyla doğrulandı",
+        accounts: [
+          { name: "banka-a.pdf", job_id: "a", as_of: "2025-01-01", balance_cents: 80_000_00, currency: "TRY", behind_days: 0, lagging: false },
+          { name: "banka-b.pdf", job_id: "b", as_of: "2024-11-20", balance_cents: 20_000_00, currency: "TRY", behind_days: 42, lagging: true },
+        ],
+      },
+      other_currency_balances: [{ currency: "USD", balance_cents: 5_000_00, as_of: "2025-01-01", accounts: 1 }],
+    }));
+    show();
+    expect(await screen.findByTestId("runway-assumed")).toBeTruthy();
+    const details = screen.getByTestId("balance-details");
+    expect(details.textContent).toContain("yalnızca 2 bakiye adımıyla doğrulandı");
+    expect(details.textContent).toContain("banka-b.pdf");
+    expect(details.textContent).toContain("42 gün eski");
+    expect(details.textContent).toContain("Ayrı gösterilir");
   });
 });

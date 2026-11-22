@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import uuid
 from datetime import UTC, datetime
 from typing import Any
 
@@ -23,12 +24,13 @@ from pydantic import BaseModel
 from sqlalchemy import desc, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import require_writer
 from app.api.auth import get_current_user
-from app.core.branding import get_brand
 from app.database import get_db
 from app.models.alert_preference import AlertPreference
 from app.models.in_app_notification import InAppNotification
 from app.models.user import User
+from app.services.acting_role import acting_role
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -132,7 +134,7 @@ async def list_notifications(
     }
 
 
-@router.patch("/notifications/{notification_id}/read")
+@router.patch("/notifications/{notification_id}/read", dependencies=[Depends(require_writer)])
 async def mark_read(
     notification_id: str,
     current_user: User = Depends(get_current_user),
@@ -152,7 +154,7 @@ async def mark_read(
     return {"data": {"id": notification_id, "is_read": True}, "error": None}
 
 
-@router.patch("/notifications/read-all")
+@router.patch("/notifications/read-all", dependencies=[Depends(require_writer)])
 async def mark_all_read(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -171,7 +173,7 @@ async def mark_all_read(
     return {"data": {"marked_read": True}, "error": None}
 
 
-@router.delete("/notifications/{notification_id}")
+@router.delete("/notifications/{notification_id}", dependencies=[Depends(require_writer)])
 async def delete_notification(
     notification_id: str,
     current_user: User = Depends(get_current_user),
@@ -228,7 +230,7 @@ async def get_preferences(
     return {"data": _pref_dict(pref), "error": None}
 
 
-@router.put("/notifications/preferences")
+@router.put("/notifications/preferences", dependencies=[Depends(require_writer)])
 async def update_preferences(
     body: UpdatePreferencesRequest,
     current_user: User = Depends(get_current_user),
@@ -283,9 +285,27 @@ async def update_preferences(
     return {"data": _pref_dict(pref), "error": None}
 
 
+# ── Delivery status (owner / admin) ───────────────────────────────────────────
+
+@router.get("/notifications/delivery-status")
+async def delivery_status(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Per configured destination: last success, last failure and why (tr/en words).
+
+    Owner and admin only. No URL, no response body: the destination is shown by its host."""
+    org_id = _require_org(current_user)
+    if await acting_role(db, current_user) not in ("owner", "admin"):
+        raise HTTPException(status_code=403, detail="Sadece admin ve owner erişebilir")
+    from app.services.delivery_status import destination_status
+
+    return {"data": {"destinations": await destination_status(db, org_id)}, "error": None}
+
+
 # ── Test endpoint ─────────────────────────────────────────────────────────────
 
-@router.post("/notifications/test-slack")
+@router.post("/notifications/test-slack", dependencies=[Depends(require_writer)])
 async def test_slack(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -306,22 +326,18 @@ async def test_slack(
     if not webhook_url:
         raise HTTPException(400, detail="Slack webhook URL yapılandırılmamış.")
 
+    from app.services import outbox, outbox_immediate
+
     try:
-        import httpx
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(
-                webhook_url,
-                json={
-                    "text": (
-                        f"✅ {get_brand().name} — Slack entegrasyonu başarıyla test edildi!\n"
-                        f"Org: `{org_id}` | {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}"
-                    )
-                },
-            )
-            if resp.status_code == 200:
-                return {"data": {"sent": True}, "error": None}
-            raise HTTPException(502, detail=f"Slack returned {resp.status_code}: {resp.text[:200]}")
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(502, detail=f"Slack test başarısız: {exc}")
+        row = await outbox_immediate.enqueue_connection_test(
+            db, test_id=uuid.uuid4().hex, org_id=org_id, channel="slack", destination=webhook_url
+        )
+    except outbox_immediate.ImmediateKindRefused as exc:
+        message = await outbox_immediate.record_test_refusal(
+            db, org_id=org_id, user_id=str(current_user.id), channel="slack", reason=str(exc),
+        )
+        raise HTTPException(400, detail=message) from exc
+    await db.commit()
+    outbox.kick()
+    # Queued, not delivered: the outbox sender posts it and records sent or failed on the row.
+    return {"data": {"sent": False, "queued": True, "outbox_id": row.id, "status": row.status}, "error": None}

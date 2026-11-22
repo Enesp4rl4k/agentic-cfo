@@ -29,13 +29,14 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.access import current_user_org_matches
+from app.api.access import current_user_org_matches, require_decider
 from app.api.auth import get_current_user
 from app.core.branding import get_brand
 from app.core.timeutil import as_utc
 from app.database import get_db
 from app.models.compliance_extended import BreachNotification, ComplianceCertification
 from app.models.user import User
+from app.services.compliance_filing_decision import record_filing
 
 router = APIRouter(tags=["compliance-extended"])
 logger = logging.getLogger(__name__)
@@ -44,7 +45,7 @@ logger = logging.getLogger(__name__)
 # ── Request schemas ───────────────────────────────────────────────────────────
 
 class SOXCertifyRequest(BaseModel):
-    period:          str           # "2024-Q2"
+    period:          str           = Field(min_length=1, max_length=20)   # "2024-Q2"
     certifier_name:  str           = Field(min_length=3)
     certifier_role:  Literal["CEO", "CFO", "Audit Committee"]
     statements:      list[bool]    = Field(min_length=3, max_length=10)
@@ -152,7 +153,8 @@ async def _get_anomalies_for_sox(org_id: str, db: AsyncSession) -> dict[str, Any
         }
     except Exception as exc:
         logger.debug("SOX anomaly lookup failed: %s", exc)
-        return {"critical_unacked": 0, "medium_count": 0, "low_count": 0}
+        # A failed lookup is "unknown", never "zero anomalies": zero would read as a clean control environment.
+        return {"critical_unacked": None, "medium_count": None, "low_count": None}
 
 
 # ── GET /compliance/sox/status ────────────────────────────────────────────────
@@ -201,26 +203,31 @@ async def sox_status(
 
     # Section 404: Check for unacknowledged critical anomalies
     anomaly_data = await _get_anomalies_for_sox(org_id, db)
-    critical_cnt = anomaly_data["critical_unacked"]
+    critical_known = anomaly_data["critical_unacked"] is not None
+    critical_cnt = anomaly_data["critical_unacked"] or 0
 
     section_404 = {
-        "status":               "clean" if critical_cnt == 0 else "material_weakness",
-        "critical_anomalies":   critical_cnt,
+        "status": (
+            "unknown" if not critical_known
+            else "clean" if critical_cnt == 0 else "material_weakness"
+        ),
+        "critical_anomalies":   anomaly_data["critical_unacked"],   # None = unknown, not zero
         "medium_anomalies":     anomaly_data["medium_count"],
-        "internal_control_gap": critical_cnt > 0,
-        "action_required":      critical_cnt > 0,
+        "internal_control_gap": (critical_cnt > 0) if critical_known else None,
+        "action_required":      (critical_cnt > 0) if critical_known else None,
         "description": (
-            "İç kontroller etkin" if critical_cnt == 0
+            "Anomali verisi okunamadı; iç kontrol durumu bilinmiyor" if not critical_known
+            else "Son 30 günde kritik anomali yok" if critical_cnt == 0
             else f"{critical_cnt} kritik anomaly onay bekliyor — material weakness riski"
         ),
     }
 
     # Section 409: Real-time disclosure triggers
-    section_409 = {
-        "status":          "no_triggers",
+    section_409: dict[str, Any] = {
+        "status":          "no_triggers" if critical_known else "unknown",
         "triggers":        [],
         "disclosure_window_days": 4,
-        "action_required": False,
+        "action_required": False if critical_known else None,
     }
     if critical_cnt > 0:
         section_409["triggers"].append({
@@ -234,10 +241,10 @@ async def sox_status(
     # Overall SOX score
     issues = sum([
         section_302["action_required"],
-        section_404["action_required"],
-        section_409["action_required"],
+        bool(section_404["action_required"]),
+        bool(section_409["action_required"]),
     ])
-    sox_score = round(100 - issues * 33.3)
+    sox_score = round(100 - issues * 33.3) if critical_known else None
 
     return {
         "data": {
@@ -253,7 +260,8 @@ async def sox_status(
 
 # ── POST /compliance/sox/certify ──────────────────────────────────────────────
 
-@router.post("/compliance/sox/certify")
+@router.post("/compliance/sox/certify",
+    dependencies=[Depends(require_decider)])
 async def sox_certify(
     body: SOXCertifyRequest,
     user: User = Depends(get_current_user),
@@ -284,9 +292,11 @@ async def sox_certify(
     }, sort_keys=True)
     signature_hash = hashlib.sha256(payload.encode()).hexdigest()
 
+    certified_at = datetime.now(UTC)
+    cert_id = uuid.uuid4().hex
     try:
         db.add(ComplianceCertification(
-            id             = uuid.uuid4().hex,
+            id             = cert_id,
             org_id         = org_id,
             framework      = "sox_302",
             period         = body.period,
@@ -294,13 +304,22 @@ async def sox_certify(
             certifier_role = body.certifier_role,
             statements     = json.dumps(body.statements),
             signature_hash = signature_hash,
-            certified_at   = datetime.now(UTC),
+            certified_at   = certified_at,
         ))
+        await db.flush()
+        await record_filing(
+            db, user, org_id=org_id, target_type="compliance_certification", target_id=cert_id,
+            outcome="certified", before=None,
+            after={"framework": "sox_302", "period": body.period, "certifier_role": body.certifier_role,
+                   "statements_confirmed": len(body.statements), "signature_hash": signature_hash},
+        )
         await db.commit()
-    except Exception:
+    except Exception as exc:
+        # A certification that was not stored (or not recorded) must not be reported as signed: the hash
+        # would be the only trace of something the company cannot show.
         await db.rollback()
         logger.exception("SOX cert persist failed for org=%s", org_id)
-        # Still return success — the hash itself was generated correctly
+        raise HTTPException(status_code=500, detail="Sertifikasyon kaydedilemedi; imzalanmadı.") from exc
 
     return {
         "data": {
@@ -308,7 +327,7 @@ async def sox_certify(
             "period":          body.period,
             "certifier":       body.certifier_name,
             "role":            body.certifier_role,
-            "certified_at":    datetime.now(UTC).isoformat(),
+            "certified_at":    certified_at.isoformat(),
             "framework":       "sox_302",
             "message":         f"SOX Section 302 sertifikasyonu başarıyla imzalandı. Hash: {signature_hash[:16]}...",
         },
@@ -386,7 +405,8 @@ async def gdpr_article30_register(
 
 # ── POST /compliance/gdpr/breach-notification ────────────────────────────────
 
-@router.post("/compliance/gdpr/breach-notification")
+@router.post("/compliance/gdpr/breach-notification",
+    dependencies=[Depends(require_decider)])
 async def gdpr_breach_notification(
     body:  BreachNotificationRequest,
     user:  User = Depends(get_current_user),
@@ -422,10 +442,20 @@ async def gdpr_breach_notification(
             status         = "pending",
             created_at     = datetime.now(UTC),
         ))
+        await db.flush()
+        await record_filing(
+            db, user, org_id=org_id, target_type="breach_notification", target_id=breach_id,
+            outcome="breach_recorded", before=None,
+            after={"severity": body.severity, "affected_users": body.affected_users,
+                   "discovered_at": discovered_at.isoformat(), "deadline_72h": deadline_72h.isoformat(),
+                   "status": "pending"},
+        )
         await db.commit()
-    except Exception:
+    except Exception as exc:
+        # Answering 200 for a breach that was not stored would leave the 72-hour clock running for nobody.
         await db.rollback()
         logger.exception("Breach notification persist failed for org=%s", org_id)
+        raise HTTPException(status_code=500, detail="İhlal kaydı saklanamadı; yeniden deneyin.") from exc
 
     hours_remaining = (deadline_72h - datetime.now(UTC)).total_seconds() / 3600
 
@@ -487,7 +517,8 @@ async def list_breaches(
 
 # ── POST /compliance/gdpr/breach/{id}/notify ─────────────────────────────────
 
-@router.post("/compliance/gdpr/breach/{breach_id}/notify")
+@router.post("/compliance/gdpr/breach/{breach_id}/notify",
+    dependencies=[Depends(require_decider)])
 async def mark_breach_notified(
     breach_id: str,
     user:      User = Depends(get_current_user),
@@ -502,8 +533,14 @@ async def mark_breach_notified(
             raise HTTPException(status_code=404, detail=f"Breach '{breach_id}' not found.")
         if not current_user_org_matches(user, row.org_id):
             raise HTTPException(status_code=404, detail=f"Breach '{breach_id}' not found.")
-        row.status = "notified"
-        row.notified_at = datetime.now(UTC)
+        if row.status != "notified":   # a second click on an already-filed breach decides nothing new
+            before = {"status": row.status}
+            row.status = "notified"
+            row.notified_at = datetime.now(UTC)
+            await record_filing(
+                db, user, org_id=str(row.org_id), target_type="breach_notification", target_id=breach_id,
+                outcome="marked_notified", before=before, after={"status": "notified"},
+            )
         await db.commit()
     except HTTPException:
         raise
@@ -541,16 +578,16 @@ async def iso27001_controls(
     else:
         controls = ISO_27001_CONTROLS
 
-    # Build structured response with mock compliance status
-    # In production: check actual control implementation status from DB
+    # The catalogue is a fact; whether a control is implemented is not recorded anywhere in this system,
+    # so no control is reported as implemented (that would be a compliance claim with no evidence).
     items = []
     for domain_name, control_list in controls.items():
         for control in control_list:
             items.append({
                 "domain":  domain_name,
                 "control": control,
-                "status":  "implemented",  # TODO: pull from compliance_records
-                "notes":   None,
+                "status":  "not_assessed",
+                "notes":   "Uygulama durumu bu sistemde kayıtlı değil; kanıt eklenmeden 'uygulandı' denmez.",
             })
 
     return {
@@ -583,8 +620,9 @@ async def compliance_dashboard(
         raise HTTPException(status_code=404, detail="Kayıt bulunamadı.")
     now = datetime.now(UTC)
 
-    # GDPR score: based on open breaches
-    gdpr_score = 100
+    # A framework whose figures could not be read is "unknown" (score None), never 100.
+    gdpr_score: int | None = None
+    open_breaches: int | None = None
     try:
         breach_cnt = await db.execute(
             select(func.count())
@@ -597,10 +635,9 @@ async def compliance_dashboard(
         open_breaches = breach_cnt.scalar() or 0
         gdpr_score = max(0, 100 - open_breaches * 25)
     except Exception:
-        open_breaches = 0
+        logger.exception("GDPR breach lookup failed for org=%s", org_id)
 
-    # SOX score: check certifications
-    sox_score = 100
+    sox_score: int | None = None
     try:
         cert_count = await db.execute(
             select(func.count())
@@ -611,19 +648,18 @@ async def compliance_dashboard(
             )
         )
         has_cert = (cert_count.scalar() or 0) > 0
-        if not has_cert:
-            sox_score = 70
-
         anomalies = await _get_anomalies_for_sox(org_id, db)
-        sox_score = max(0, sox_score - anomalies["critical_unacked"] * 20)
+        if anomalies["critical_unacked"] is not None:
+            sox_score = max(0, (100 if has_cert else 70) - anomalies["critical_unacked"] * 20)
     except Exception:
-        pass
+        logger.exception("SOX lookup failed for org=%s", org_id)
 
-    # ISO 27001 score: static baseline (TODO: track control implementation)
-    iso_score = 85
+    def _status(score: int | None) -> str:
+        return "unknown" if score is None else "compliant" if score >= 80 else "needs_attention"
 
-    # Overall
-    overall = round((gdpr_score + sox_score + iso_score) / 3)
+    # ISO 27001: control implementation is not tracked, so it has no score and is left out of the overall.
+    scored = [x for x in (gdpr_score, sox_score) if x is not None]
+    overall = round(sum(scored) / len(scored)) if scored else None
 
     return {
         "data": {
@@ -633,15 +669,15 @@ async def compliance_dashboard(
                 "gdpr": {
                     "score":         gdpr_score,
                     "open_breaches": open_breaches,
-                    "status":        "compliant" if gdpr_score >= 80 else "needs_attention",
+                    "status":        _status(gdpr_score),
                 },
                 "sox": {
                     "score":  sox_score,
-                    "status": "compliant" if sox_score >= 80 else "needs_attention",
+                    "status": _status(sox_score),
                 },
                 "iso27001": {
-                    "score":  iso_score,
-                    "status": "compliant" if iso_score >= 80 else "needs_attention",
+                    "score":  None,
+                    "status": "not_assessed",
                 },
             },
             "generated_at": now.isoformat(),

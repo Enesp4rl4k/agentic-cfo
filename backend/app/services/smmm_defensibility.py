@@ -17,9 +17,11 @@ from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.agent_run import AgentRun
+from app.models.decision import DecidedVia, DecisionKind
 from app.models.defensibility_packet import DefensibilityPacket
 from app.models.report import Report, ReportFormat
 from app.models.smmm_onay import OnayDurumu, SMMMOnayKaydi
+from app.services.decisions import record_decision
 
 _JOURNAL_REPORT = "tr_muhasebe_journal"
 
@@ -74,6 +76,8 @@ def _item(entry: dict[str, Any], onay: SMMMOnayKaydi | None) -> dict[str, Any]:
         "date": entry.get("tarih"),
         "description": entry.get("aciklama"),
         "amount_kurus": entry.get("toplam_borc"),
+        # The currency the entry is kept in: the accountant sees every entry, each in its own.
+        "currency": entry.get("para_birimi"),
         "balanced": entry.get("dengeli"),
         "account_code": entry.get("thp_hesap_kodu"),
         "classification_confidence": entry.get("confidence"),
@@ -139,7 +143,15 @@ async def build_packet(
     for it in items:
         counts[it["decision_source"]] = counts.get(it["decision_source"], 0) + 1
 
-    total_amount = sum(int(it["amount_kurus"] or 0) for it in items)
+    # Totals per currency: an entry in USD is never added to one in TRY. `total_amount_kurus` is the
+    # journal's primary currency (an untagged, older journal is all one currency).
+    primary = str(journal.get("birincil_para_birimi") or "")
+    by_currency: dict[str, int] = {}
+    for it in items:
+        cur = str(it.get("currency") or primary or "")
+        by_currency[cur] = by_currency.get(cur, 0) + int(it["amount_kurus"] or 0)
+    primary = primary or next(iter(by_currency), "")
+    total_amount = by_currency.get(primary, 0)
     human_touched = counts.get(DS_HUMAN_OK, 0) + counts.get(DS_HUMAN_FIX, 0)
 
     summary = {
@@ -147,6 +159,9 @@ async def build_packet(
         "job_id": job_id,
         "entry_count": len(items),
         "total_amount_kurus": total_amount,
+        "primary_currency": primary,
+        "total_amount_by_currency": by_currency,
+        "currency_balance": journal.get("para_birimleri") or {},
         "by_decision_source": counts,
         "human_reviewed": human_touched,
         "ai_auto_posted": counts.get(DS_AI_AUTO, 0),
@@ -218,5 +233,14 @@ async def finalize_packet(
         {"payload": packet.payload, "statement": packet.smmm_statement,
          "finalized_by": user_id}
     )
+    if packet.org_id:
+        # The accountant's seal is a decision: recorded with the seal itself, so one cannot exist without the other.
+        await record_decision(
+            db, org_id=str(packet.org_id), kind=DecisionKind.PACKET_FINALIZATION,
+            target_type="defensibility_packet", target_id=str(packet.id), outcome="finalized",
+            decided_via=DecidedVia.HUMAN, decided_by=user_id,
+            evidence_refs=[{"type": "analysis_job", "id": str(packet.job_id)}],
+            before={"status": "draft"}, after={"status": "finalized", "content_hash": packet.content_hash},
+        )
     await db.commit()
     return packet

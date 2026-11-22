@@ -32,9 +32,11 @@ import {
 import { cn } from "@/lib/utils";
 import { useJobs, useAnomalies } from "@/hooks/useCFO";
 import { useOrgSettings } from "@/hooks/useOrgSettings";
-import { visibleNavGroups } from "@/lib/nav-focus";
+import { hiddenNavItems, visibleNavGroups } from "@/lib/nav-focus";
 import { NAV_GROUPS } from "@/lib/nav-items";
 import { useI18n } from "@/hooks/useI18n";
+import { codeLabel } from "@/lib/i18n/codes";
+import { useWaitingCounts } from "@/hooks/useWaitingCounts";
 
 // Flat list for helpers
 const allNavItems = NAV_GROUPS.flatMap((g) => g.items);
@@ -52,6 +54,7 @@ const STATUS_CONFIG = {
 
 function UserMenu() {
   const { data: session } = useSession();
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
 
   if (!session) return null;
@@ -70,7 +73,7 @@ function UserMenu() {
         )}
         aria-haspopup="true"
         aria-expanded={open}
-        aria-label="Kullanıcı menüsü"
+        aria-label={t.shell.userMenu}
       >
         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[11px] font-bold text-foreground ring-1 ring-primary/20">
           {initials}
@@ -99,7 +102,7 @@ function UserMenu() {
                 </div>
               </div>
               <span className="mt-2 inline-flex items-center rounded-md border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                {session.user.role}
+                {codeLabel(t, "role", session.user.role)}
               </span>
             </div>
 
@@ -110,7 +113,7 @@ function UserMenu() {
                 className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               >
                 <Building2 className="h-3.5 w-3.5" aria-hidden="true" />
-                Workspace Ayarları
+                {t.shell.workspaceSettings}
               </Link>
               <Link
                 href="/billing"
@@ -118,7 +121,7 @@ function UserMenu() {
                 className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               >
                 <CreditCard className="h-3.5 w-3.5" aria-hidden="true" />
-                Faturalama
+                {t.shell.billing}
               </Link>
             </div>
 
@@ -128,7 +131,7 @@ function UserMenu() {
                 className="flex w-full items-center gap-2 px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-destructive"
               >
                 <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
-                Çıkış Yap
+                {t.shell.signOut}
               </button>
             </div>
           </div>
@@ -160,7 +163,9 @@ function SidebarContent({
   const { data: jobs } = useJobs();
   const { data: anomalyData } = useAnomalies(jobId);
   const anomalyCritical = anomalyData?.critical ?? 0;
-  const { hasTrPack, focusMode } = useOrgSettings();
+  // Decisions waiting for this person (held analyses, rows, matches, plan changes): one badge on the approvals entry.
+  const waiting = useWaitingCounts();
+  const { hasTrPack, focusMode, sizeProfile } = useOrgSettings();
   const { t, locale } = useI18n();
 
   function navHref(href: string) {
@@ -170,13 +175,56 @@ function SidebarContent({
 
   const activeBase = pathname === "/" ? "/" : `/${pathname.split("/")[1]}`;
 
-  const groups = visibleNavGroups(NAV_GROUPS, { hasTrPack, focusMode });
+  const navOptions = { hasTrPack, focusMode, sizeProfile };
+  const groups = visibleNavGroups(NAV_GROUPS, navOptions);
+  // Focus mode hides entries from the menu, never from the product: they wait under "Daha fazla".
+  const more = focusMode ? hiddenNavItems(NAV_GROUPS, navOptions) : [];
+
+  const entry = (navItem: (typeof allNavItems)[number]) => {
+    const { href, labelKey, icon: Icon } = navItem;
+    const isActive = activeBase === href || (href !== "/" && pathname.startsWith(href));
+    return (
+      <Link
+        key={href}
+        href={navHref(href)}
+        onClick={onNavigate}
+        className={cn(
+          "group relative flex min-h-[44px] items-center gap-2.5 rounded-lg px-3 py-2 text-[14.5px]",
+          "transition-[color,background-color] duration-150 ease-out",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          isActive
+            ? "bg-foreground font-semibold text-background"
+            : "font-normal text-muted-foreground hover:bg-muted hover:text-foreground"
+        )}
+        aria-current={isActive ? "page" : undefined}
+      >
+        <Icon className="h-4 w-4 shrink-0 text-current opacity-90" aria-hidden="true" />
+        <span className="flex-1 truncate">{t.menu.items[labelKey]}</span>
+        {href === "/onay" && waiting.total > 0 && (
+          <span
+            className="tc-mono rounded-full bg-[color:var(--tc-ember)] px-1.5 py-0.5 text-[10px] font-bold text-white"
+            aria-label={t.heldAnalysis.queues.badge.replace("{n}", String(waiting.total))}
+          >
+            {waiting.total}
+          </span>
+        )}
+        {href === "/anomalies" && anomalyCritical > 0 && (
+          <span
+            className="rounded-full bg-destructive px-1.5 py-0.5 text-[10px] font-bold text-destructive-foreground"
+            aria-label={t.shell.criticalAnomalies.replace("{n}", String(anomalyCritical))}
+          >
+            {anomalyCritical}
+          </span>
+        )}
+      </Link>
+    );
+  };
 
   return (
     <div className="flex h-full flex-col">
       {/* Sidebar header */}
       <div className="flex h-16 shrink-0 items-center px-5">
-        <Link href="/" className="rounded-md text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={`${t.product.name} — ana sayfa`}>
+        <Link href="/" className="rounded-md text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={t.shell.homeAria.replace("{name}", t.product.name)}>
           <Logo size="md" />
         </Link>
       </div>
@@ -184,7 +232,7 @@ function SidebarContent({
       {/* Nav groups */}
       <nav
         className="flex-1 overflow-y-auto py-3"
-        aria-label="Ana gezinme"
+        aria-label={t.shell.mainNav}
         style={{ scrollbarWidth: "none" }}
       >
         {groups.map((group, index) => {
@@ -197,52 +245,27 @@ function SidebarContent({
               <ChevronDown className="h-3 w-3 transition-transform group-open/nav:rotate-180" aria-hidden="true" />
             </summary>
             <div className="space-y-0.5 px-2 pb-1">
-              {group.items.map((navItem) => {
-                const { href, labelKey, icon: Icon } = navItem;
-                const isActive = activeBase === href || (href !== "/" && pathname.startsWith(href));
-                return (
-                  <Link
-                    key={href}
-                    href={navHref(href)}
-                    onClick={onNavigate}
-                    className={cn(
-                      "group relative flex min-h-[44px] items-center gap-2.5 rounded-lg px-3 py-2 text-[14.5px]",
-                      "transition-[color,background-color] duration-150 ease-out",
-                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                      isActive
-                        ? "bg-foreground font-semibold text-background"
-                        : "font-normal text-muted-foreground hover:bg-muted hover:text-foreground"
-                    )}
-                    aria-current={isActive ? "page" : undefined}
-                  >
-                    <Icon
-                      className="h-4 w-4 shrink-0 text-current opacity-90"
-                      aria-hidden="true"
-                    />
-
-                    <span className="flex-1 truncate">{t.menu.items[labelKey]}</span>
-
-                    {href === "/anomalies" && anomalyCritical > 0 && (
-                      <span
-                        className="rounded-full bg-destructive px-1.5 py-0.5 text-[10px] font-bold text-destructive-foreground"
-                        aria-label={`${anomalyCritical} kritik anomali`}
-                      >
-                        {anomalyCritical}
-                      </span>
-                    )}
-                  </Link>
-                );
-              })}
+              {group.items.map(entry)}
             </div>
           </details>
           );
         })}
 
+        {more.length > 0 && (
+          <details className="group/nav mb-1" open={more.some(({ href }) => pathname.startsWith(href))}>
+            <summary className="tc-eyebrow mx-2 flex min-h-[36px] cursor-pointer list-none items-center justify-between rounded-md px-2 text-[10px] text-muted-foreground transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
+              <span>{t.menu.more.toLocaleUpperCase(locale)}</span>
+              <ChevronDown className="h-3 w-3 transition-transform group-open/nav:rotate-180" aria-hidden="true" />
+            </summary>
+            <div className="space-y-0.5 px-2 pb-1">{more.map(entry)}</div>
+          </details>
+        )}
+
         {/* Recent analyses */}
         {jobs && jobs.length > 0 && (
           <div className="mb-2 mt-4 px-2">
             <p className="tc-eyebrow mb-1 px-3 text-[10px] text-muted-foreground">
-              Son Analizler
+              {t.shell.recentAnalyses}
             </p>
             <div className="space-y-0.5">
               {jobs.slice(0, 6).map((job) => {
@@ -282,8 +305,8 @@ function SidebarContent({
         >
           <Zap className="h-4 w-4 text-primary" aria-hidden="true" />
           <div className="min-w-0">
-            <p className="text-xs font-semibold text-foreground">Planı yükselt</p>
-            <p className="text-[10px] text-muted-foreground">Tüm yönetim görünümleri</p>
+            <p className="text-xs font-semibold text-foreground">{t.shell.upgradePlan}</p>
+            <p className="text-[10px] text-muted-foreground">{t.shell.upgradeHint}</p>
           </div>
         </Link>
       </div>
@@ -300,7 +323,7 @@ function Breadcrumb({ pathname }: { pathname: string }) {
   if (!current || pathname === "/") return null;
 
   return (
-    <nav aria-label="Breadcrumb" className="hidden items-center gap-1.5 text-xs text-muted-foreground sm:flex">
+    <nav aria-label={t.shell.breadcrumb} className="hidden items-center gap-1.5 text-xs text-muted-foreground sm:flex">
       <Link href="/" className="transition-colors hover:text-foreground">
         {t.menu.items.dashboard}
       </Link>
@@ -317,6 +340,7 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const { t } = useI18n();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const jobId = searchParams.get("job");
@@ -329,7 +353,7 @@ export default function DashboardLayout({
       {/* Desktop sidebar */}
       <aside
         className="dark hidden w-64 shrink-0 border-r border-border bg-background text-foreground lg:flex lg:flex-col"
-        aria-label="Sidebar navigation"
+        aria-label={t.shell.sidebarNav}
       >
         <SidebarContent pathname={pathname} jobId={jobId} />
       </aside>
@@ -350,12 +374,12 @@ export default function DashboardLayout({
           "transition-transform duration-200 ease-out lg:hidden",
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         )}
-        aria-label="Mobile navigation"
+        aria-label={t.shell.mobileNav}
       >
         <button
           onClick={() => setMobileOpen(false)}
           className="absolute right-3 top-3 rounded-md p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          aria-label="Menüyü kapat"
+          aria-label={t.shell.closeMenu}
         >
           <X className="h-4 w-4" />
         </button>
@@ -376,7 +400,7 @@ export default function DashboardLayout({
           <button
             onClick={() => setMobileOpen(true)}
             className="rounded-md p-1.5 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:hidden"
-            aria-label="Menüyü aç"
+            aria-label={t.shell.openMenu}
           >
             <Menu className="h-4 w-4" />
           </button>

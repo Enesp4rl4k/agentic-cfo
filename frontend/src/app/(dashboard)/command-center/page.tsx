@@ -30,6 +30,11 @@ import { MacroStressTestCard } from "@/components/macro/MacroStressTestCard";
 import type { AgentHealthItem, CrossRiskItem, QuickWinItem } from "@/lib/api/cfo";
 import type { ContextSummary } from "@/lib/api/context";
 import { brand } from "@/lib/branding";
+import { codeLabel } from "@/lib/i18n/codes";
+
+function agentName(t: MessageTree, name: string): string {
+  return (t.codesAgent as Record<string, string>)[name] ?? name;
+}
 
 // ── Types (re-use API types, add icon/color locally) ──────────────────────────
 
@@ -98,6 +103,7 @@ function TrendIcon({ trend }: { trend?: "up" | "down" | "stable" }) {
 // ── Components ────────────────────────────────────────────────────────────────
 
 function CompanyHealthGauge({ avgScore, subtitle }: { avgScore: number; subtitle?: string }) {
+  const { t } = useI18n();
   const color = avgScore >= 75 ? "text-emerald-400" : avgScore >= 60 ? "text-yellow-400" : "text-red-400";
   const r = 50;
   const circ = 2 * Math.PI * r;
@@ -119,14 +125,15 @@ function CompanyHealthGauge({ avgScore, subtitle }: { avgScore: number; subtitle
         </text>
       </svg>
       <div className="text-center">
-        <p className="text-sm font-semibold">Company Health</p>
-        <p className="text-xs text-muted-foreground">{subtitle ?? "9-agent average"}</p>
+        <p className="text-sm font-semibold">{t.ccPage.companyHealth}</p>
+        <p className="text-xs text-muted-foreground">{subtitle ?? t.ccPage.nineAgentAvg}</p>
       </div>
     </div>
   );
 }
 
 function AgentCard({ agent }: { agent: AgentHealth }) {
+  const { t } = useI18n();
   const Icon = agent.icon;
   const healthColor = agent.health_score >= 75 ? "text-emerald-400" : agent.health_score >= 60 ? "text-yellow-400" : "text-red-400";
 
@@ -136,7 +143,7 @@ function AgentCard({ agent }: { agent: AgentHealth }) {
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Icon className={cn("h-5 w-5", agent.color)} aria-hidden="true" />
-          <span className="font-semibold text-sm">{agent.agent}</span>
+          <span className="font-semibold text-sm">{agentName(t, agent.agent)}</span>
         </div>
         <span className={cn("text-xl font-bold tabular-nums", healthColor)}>
           {agent.health_score}
@@ -144,8 +151,8 @@ function AgentCard({ agent }: { agent: AgentHealth }) {
       </div>
 
       {/* Status badge */}
-      <div className={cn("mb-3 rounded border px-2 py-1 text-xs font-medium capitalize", getStatusColor(agent.status))}>
-        {agent.status}
+      <div className={cn("mb-3 rounded border px-2 py-1 text-xs font-medium", getStatusColor(agent.status))}>
+        {codeLabel(t, "health", agent.status)}
       </div>
 
       {/* Top alert */}
@@ -173,6 +180,7 @@ function AgentCard({ agent }: { agent: AgentHealth }) {
 }
 
 function CrossRiskCard({ risk }: { risk: CrossRiskItem }) {
+  const { t } = useI18n();
   return (
     <div className={cn("rounded-lg border p-4", getSeverityStyle(risk.severity))}>
       <div className="mb-2 flex items-start justify-between gap-3">
@@ -180,8 +188,7 @@ function CrossRiskCard({ risk }: { risk: CrossRiskItem }) {
           <div className="flex items-center gap-2 flex-wrap mb-1">
             <span className="font-semibold text-sm">{risk.title}</span>
             <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold border", getSeverityStyle(risk.severity))}>
-              {/* JS casing: CSS uppercase follows html lang (tr → dotted I in "CRITICAL"). */}
-              {risk.severity.toUpperCase()}
+              {codeLabel(t, "severity", risk.severity)}
             </span>
           </div>
           <p className="text-xs opacity-80">{risk.impact}</p>
@@ -190,7 +197,7 @@ function CrossRiskCard({ risk }: { risk: CrossRiskItem }) {
       <div className="flex flex-wrap gap-1 mt-2">
         {risk.domains.map((d) => (
           <span key={d} className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-            {d}
+            {agentName(t, d)}
           </span>
         ))}
       </div>
@@ -199,6 +206,7 @@ function CrossRiskCard({ risk }: { risk: CrossRiskItem }) {
 }
 
 function QuickWinCard({ win }: { win: QuickWinItem }) {
+  const { t } = useI18n();
   return (
     <div className="rounded-lg border border-border bg-muted/20 p-4">
       <div className="mb-2 flex items-start justify-between gap-2">
@@ -208,7 +216,7 @@ function QuickWinCard({ win }: { win: QuickWinItem }) {
         </span>
       </div>
       <p className="mb-1 text-xs text-muted-foreground">{win.estimated_impact}</p>
-      <p className="text-xs text-muted-foreground">Owner: {win.owner}</p>
+      <p className="text-xs text-muted-foreground">{t.ccPage.owner.replace("{owner}", win.owner)}</p>
     </div>
   );
 }
@@ -262,20 +270,20 @@ function ManagementLayerCard() {
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <ShieldCheck className="h-4 w-4 text-primary" aria-hidden="true" />
-          <h2 className="text-sm font-semibold">Management Layer v1.5</h2>
+          <h2 className="text-sm font-semibold">{t.ccPage.managementLayer}</h2>
         </div>
         <span className={cn("rounded border px-2 py-0.5 text-xs font-medium", statusBadge)}>
-          {health?.status ?? "checking"}
+          {health?.status ?? t.ccPage.checking}
         </span>
       </div>
       {hasEscalation && (
         <div className="mb-3 rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2">
-          <p className="text-xs font-medium text-amber-300">Escalation Active</p>
+          <p className="text-xs font-medium text-amber-300">{t.ccPage.escalationActive}</p>
           <p className="text-[11px] text-amber-200/80">
             {breaches.length > 0
-              ? `${breaches.length} SLA breach detected`
-              : "Recent failures require operator review"}
-            {openConflicts > 0 ? ` · ${openConflicts} open agent conflicts` : ""}
+              ? t.ccPage.slaBreachDetected.replace("{n}", String(breaches.length))
+              : t.ccPage.recentFailuresReview}
+            {openConflicts > 0 ? ` · ${t.ccPage.openConflicts.replace("{n}", String(openConflicts))}` : ""}
           </p>
         </div>
       )}
@@ -288,46 +296,46 @@ function ManagementLayerCard() {
           className="inline-flex items-center gap-2 rounded border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/20 disabled:opacity-50"
         >
           {deckBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <FileDown className="h-3 w-3" />}
-          Generate board deck
+          {t.ccPage.generateDeck}
         </button>
         {deckMsg && <p className="w-full text-[11px] text-muted-foreground">{deckMsg}</p>}
       </div>
 
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="rounded border border-border bg-muted/20 p-2">
-          <p className="text-[10px] text-muted-foreground">Completed Jobs</p>
+          <p className="text-[10px] text-muted-foreground">{t.ccPage.completedJobs}</p>
           <p className="text-base font-semibold text-emerald-400">{completedCount}</p>
         </div>
         <div className="rounded border border-border bg-muted/20 p-2">
-          <p className="text-[10px] text-muted-foreground">Failed Jobs</p>
+          <p className="text-[10px] text-muted-foreground">{t.ccPage.failedJobs}</p>
           <p className="text-base font-semibold text-red-400">{failedCount}</p>
         </div>
         <div className="rounded border border-border bg-muted/20 p-2">
-          <p className="text-[10px] text-muted-foreground">Awaiting Review</p>
+          <p className="text-[10px] text-muted-foreground">{t.ccPage.awaitingReview}</p>
           <p className={cn("text-base font-semibold", awaitingReview > 0 ? "text-amber-400" : "text-muted-foreground")}>
             {awaitingReview}
           </p>
         </div>
         <div className="rounded border border-border bg-muted/20 p-2">
-          <p className="text-[10px] text-muted-foreground">Queue Depth</p>
+          <p className="text-[10px] text-muted-foreground">{t.ccPage.queueDepth}</p>
           <p className="text-base font-semibold text-blue-400">
-            {typeof ops?.sla.queue_depth === "number" ? ops.sla.queue_depth : "n/a"}
+            {typeof ops?.sla.queue_depth === "number" ? ops.sla.queue_depth : t.ccPage.notAvailable}
           </p>
         </div>
         <div className="rounded border border-border bg-muted/20 p-2 col-span-2 sm:col-span-4">
-          <p className="text-[10px] text-muted-foreground">SLA (P95)</p>
+          <p className="text-[10px] text-muted-foreground">{t.ccPage.slaP95}</p>
           <p className="text-xs text-muted-foreground">
-            completion: {ops?.sla.job_completion_p95_ms ? `${Math.round(ops.sla.job_completion_p95_ms / 1000)}s` : "n/a"} ·
-            first-result: {ops?.sla.time_to_first_result_p95_ms ? `${Math.round(ops.sla.time_to_first_result_p95_ms / 1000)}s` : "n/a"}
+            {t.ccPage.completion}: {ops?.sla.job_completion_p95_ms ? `${Math.round(ops.sla.job_completion_p95_ms / 1000)} sn` : t.ccPage.notAvailable} ·
+            {t.ccPage.firstResult}: {ops?.sla.time_to_first_result_p95_ms ? `${Math.round(ops.sla.time_to_first_result_p95_ms / 1000)} sn` : t.ccPage.notAvailable}
           </p>
         </div>
       </div>
 
       <div className="mb-4">
-        <p className="mb-2 text-xs font-medium text-muted-foreground">SLA Breaches</p>
+        <p className="mb-2 text-xs font-medium text-muted-foreground">{t.ccPage.slaBreaches}</p>
         {breaches.length === 0 ? (
           <p className="rounded border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-            No active SLA breaches.
+            {t.ccPage.noSlaBreaches}
           </p>
         ) : (
           <div className="space-y-2">
@@ -335,7 +343,7 @@ function ManagementLayerCard() {
               <div key={b.job_id} className="rounded border border-amber-500/20 bg-amber-500/5 px-3 py-2">
                 <p className="text-xs font-medium text-amber-200">{b.job_id}</p>
                 <p className="text-[11px] text-amber-100/80">
-                  {b.status} for {b.age_minutes}m (threshold {b.threshold_minutes}m)
+                  {t.ccPage.breachLine.replace("{status}", codeLabel(t, "jobStatus", b.status)).replace("{age}", String(b.age_minutes)).replace("{threshold}", String(b.threshold_minutes))}
                 </p>
               </div>
             ))}
@@ -344,17 +352,17 @@ function ManagementLayerCard() {
       </div>
 
       <div>
-        <p className="mb-2 text-xs font-medium text-muted-foreground">Recent Failures</p>
+        <p className="mb-2 text-xs font-medium text-muted-foreground">{t.ccPage.recentFailures}</p>
         {failed.length === 0 ? (
           <p className="rounded border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-            No failed jobs in recent window.
+            {t.ccPage.noRecentFailures}
           </p>
         ) : (
           <div className="space-y-2">
             {failed.slice(0, 3).map((f) => (
               <div key={f.job_id} className="rounded border border-red-500/20 bg-red-500/5 px-3 py-2">
                 <p className="text-xs font-medium text-red-300">{f.job_id}</p>
-                <p className="text-[11px] text-red-200/80">{f.error_message || "Unknown error"}</p>
+                <p className="text-[11px] text-red-200/80">{f.error_message || t.ccPage.unknownError}</p>
               </div>
             ))}
           </div>
@@ -362,7 +370,7 @@ function ManagementLayerCard() {
       </div>
 
       <div className="mt-4">
-        <p className="mb-2 text-xs font-medium text-muted-foreground">Suggested Actions</p>
+        <p className="mb-2 text-xs font-medium text-muted-foreground">{t.ccPage.suggestedActions}</p>
         <ul className="space-y-1">
           {suggestedActions.map((action, idx) => (
             <li key={`${idx}-${action}`} className="rounded border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
@@ -464,7 +472,7 @@ function PipelineNodeCard({
           <CheckCircle2 className="absolute -right-1.5 -top-1.5 h-3 w-3 text-emerald-400" aria-hidden="true" />
         )}
       </div>
-      <span className="text-[10px] font-semibold leading-tight">{node.label}</span>
+      <span className="text-[10px] font-semibold leading-tight">{node.key === "ceo" ? t.ccPage.ceoSynthesisNode : agentName(t, node.label)}</span>
       {isActive && (
         <span className="flex items-center gap-0.5 text-[10px] text-primary">
           <Loader2 className="h-2.5 w-2.5 animate-spin" aria-hidden="true" />
@@ -505,7 +513,7 @@ function AgentPipelineStatus({ summary }: { summary: ContextSummary }) {
       <div className="mb-4 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Activity className="h-4 w-4 text-primary" aria-hidden="true" />
-          <h2 className="text-sm font-semibold">Auto-Chain Pipeline</h2>
+          <h2 className="text-sm font-semibold">{t.ccPage.autoChain}</h2>
           {totalActive > 0 && (
             <span className="flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-[color:var(--tc-ember-text)]">
               <Loader2 className="h-2.5 w-2.5 animate-spin" aria-hidden="true" />
@@ -525,14 +533,14 @@ function AgentPipelineStatus({ summary }: { summary: ContextSummary }) {
         <div
           className="h-full rounded-full bg-emerald-500 transition-all duration-700"
           style={{ width: `${(totalDone / PIPELINE_NODES.length) * 100}%` }}
-          aria-label={`${totalDone} of ${PIPELINE_NODES.length} agents completed`}
+          aria-label={t.ccPage.agentsCompletedAria.replace("{done}", String(totalDone)).replace("{total}", String(PIPELINE_NODES.length))}
         />
       </div>
 
       {/* CFO auto-chain row */}
       <div className="mb-3">
         <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-          CFO Auto-Chain
+          {t.ccPage.cfoAutoChain}
         </p>
         <div className="flex items-center gap-1 flex-wrap">
           {CHAIN_ROWS[0].map((node, i) => {
@@ -587,8 +595,9 @@ function AgentPipelineStatus({ summary }: { summary: ContextSummary }) {
 // ── Skeleton ──────────────────────────────────────────────────────────────────
 
 function CommandCenterSkeleton() {
+  const { t } = useI18n();
   return (
-    <div className="space-y-6 p-4 sm:p-6 lg:p-8" aria-busy="true" aria-label="Loading Command Center">
+    <div className="space-y-6 p-4 sm:p-6 lg:p-8" aria-busy="true" aria-label={t.ccPage.loadingAria}>
       <div className="h-8 w-64 animate-pulse rounded bg-muted" />
       <div className="rounded-lg border border-border bg-card p-6">
         <div className="flex flex-wrap items-center gap-8">
@@ -662,6 +671,7 @@ function DownloadBoardDeckButton() {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function CommandCenterPage() {
+  const { t, locale } = useI18n();
   const searchParams = useSearchParams();
   const urlJobId = searchParams.get("job");
 
@@ -766,16 +776,16 @@ export default function CommandCenterPage() {
         <div className="mb-4 rounded-full bg-destructive/10 p-4">
           <AlertCircle className="h-8 w-8 text-destructive" aria-hidden="true" />
         </div>
-        <h2 className="text-base font-semibold">Analysis failed</h2>
+        <h2 className="text-base font-semibold">{t.ccPage.analysisFailed}</h2>
         <p className="mt-1.5 max-w-xs text-sm text-muted-foreground">
-          Could not load Command Center data. Make sure the backend is running.
+          {t.ccPage.loadFailedBody}
         </p>
         <button
           onClick={() => refetch()}
           className="mt-5 flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
         >
           <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
-          Retry
+          {t.ccPage.retry}
         </button>
       </div>
     );
@@ -788,15 +798,15 @@ export default function CommandCenterPage() {
         <div className="flex items-center gap-3">
           <Activity className="h-6 w-6 text-primary" aria-hidden="true" />
           <div>
-            <h1 className="text-xl font-bold">Executive Command Center</h1>
+            <h1 className="text-xl font-bold">{t.ccPage.heading}</h1>
             <p className="text-sm text-muted-foreground">
               {ctxSummary?.company_name
                 ? <><Building2 className="inline h-3.5 w-3.5 mr-1 opacity-60" aria-hidden="true" />{ctxSummary.company_name} · </>
                 : null}
-              {brand.name} · {agents.length || 9} agents
+              {brand.name} · {t.ccPage.agentsCount.replace("{n}", String(agents.length || 9))}
               {liveStatus?.live_sync_enabled && (
                 <span className="ml-1 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-400">
-                  live sync · {liveStatus.baseline_source}
+                  {t.ccPage.liveSync} · {liveStatus.baseline_source}
                 </span>
               )}
             </p>
@@ -805,11 +815,11 @@ export default function CommandCenterPage() {
         <button
           onClick={() => refetch()}
           disabled={isFetching}
-          aria-label="Refresh Command Center"
+          aria-label={t.ccPage.refreshAria}
           className="flex shrink-0 items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted disabled:opacity-50 transition-colors"
         >
           <RefreshCw className={cn("h-3 w-3", isFetching && "animate-spin")} aria-hidden="true" />
-          {isFetching ? "Refreshing…" : "Refresh"}
+          {isFetching ? t.ccPage.refreshing : t.ccPage.refresh}
         </button>
 
         {/* Unified PDF Export */}
@@ -829,7 +839,7 @@ export default function CommandCenterPage() {
 
       {isError && (
         <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
-          Agent health API unavailable — showing semantic brief from CompanyContext.
+          {t.ccPage.healthApiDown}
         </div>
       )}
 
@@ -838,7 +848,7 @@ export default function CommandCenterPage() {
         <div className="flex flex-wrap items-center gap-8">
           <CompanyHealthGauge
             avgScore={avgScore}
-            subtitle={brief ? "Semantic decision brief" : "9-agent average"}
+            subtitle={brief ? t.ccPage.semanticBrief : t.ccPage.nineAgentAvg}
           />
 
           <div className="flex-1 grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -846,25 +856,25 @@ export default function CommandCenterPage() {
               <p className="text-2xl font-bold text-emerald-400">
                 {agents.filter(a => a.status === "excellent").length}
               </p>
-              <p className="text-xs text-muted-foreground">Excellent</p>
+              <p className="text-xs text-muted-foreground">{t.codes.health.excellent}</p>
             </div>
             <div className="text-center">
               <p className="text-2xl font-bold text-blue-400">
                 {agents.filter(a => a.status === "good").length}
               </p>
-              <p className="text-xs text-muted-foreground">Good</p>
+              <p className="text-xs text-muted-foreground">{t.codes.health.good}</p>
             </div>
             <div className="text-center">
               <p className={cn("text-2xl font-bold", warningCount > 0 ? "text-amber-400" : "text-muted-foreground")}>
                 {warningCount}
               </p>
-              <p className="text-xs text-muted-foreground">Warning</p>
+              <p className="text-xs text-muted-foreground">{t.codes.health.warning}</p>
             </div>
             <div className="text-center">
               <p className={cn("text-2xl font-bold", criticalCount > 0 ? "text-red-400" : "text-muted-foreground")}>
                 {criticalCount}
               </p>
-              <p className="text-xs text-muted-foreground">Critical</p>
+              <p className="text-xs text-muted-foreground">{t.codes.health.critical}</p>
             </div>
           </div>
         </div>
@@ -873,9 +883,9 @@ export default function CommandCenterPage() {
           <div className="mt-4 flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" aria-hidden="true" />
             <p className="text-sm text-amber-400">
-              {criticalCount > 0 && `${criticalCount} agent${criticalCount > 1 ? "s" : ""} require immediate attention`}
+              {criticalCount > 0 && t.ccPage.agentsNeedAttention.replace("{n}", String(criticalCount))}
               {criticalCount > 0 && criticalRisks > 0 && " · "}
-              {criticalRisks > 0 && `${criticalRisks} high-severity cross-domain risk${criticalRisks > 1 ? "s" : ""}`}
+              {criticalRisks > 0 && t.ccPage.highRisks.replace("{n}", String(criticalRisks))}
             </p>
           </div>
         )}
@@ -898,14 +908,14 @@ export default function CommandCenterPage() {
       {/* Agent grid — collapsed when semantic brief is primary */}
       <div>
         <div className="mb-3 flex items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold">Agent Health Status</h2>
+          <h2 className="text-sm font-semibold">{t.ccPage.agentHealthStatus}</h2>
           {brief && (
             <button
               type="button"
               onClick={() => setShowAgentHealth((v) => !v)}
               className="text-xs text-muted-foreground hover:text-foreground"
             >
-              {showAgentHealth ? "Hide details" : "Show agent health"}
+              {showAgentHealth ? t.ccPage.hideDetails : t.ccPage.showAgentHealth}
             </button>
           )}
         </div>
@@ -918,7 +928,7 @@ export default function CommandCenterPage() {
         )}
         {brief && !showAgentHealth && agents.length > 0 && (
           <p className="text-xs text-muted-foreground">
-            {agents.length} agents tracked · expand for per-agent health scores
+            {t.ccPage.agentsTracked.replace("{n}", String(agents.length))}
           </p>
         )}
       </div>
@@ -948,7 +958,7 @@ export default function CommandCenterPage() {
         <div className="rounded-lg border border-border bg-card p-5">
           <div className="mb-4 flex items-center gap-2">
             <Shield className="h-4 w-4 text-red-400" aria-hidden="true" />
-            <h2 className="text-sm font-semibold">Cross-Domain Risks</h2>
+            <h2 className="text-sm font-semibold">{t.ccPage.crossDomainRisks}</h2>
             <span className="rounded-full bg-red-500/10 px-2 py-0.5 text-xs font-medium text-red-400">
               {crossRisks.length}
             </span>
@@ -966,7 +976,7 @@ export default function CommandCenterPage() {
         <div className="rounded-lg border border-border bg-card p-5">
           <div className="mb-4 flex items-center gap-2">
             <Zap className="h-4 w-4 text-primary" aria-hidden="true" />
-            <h2 className="text-sm font-semibold">Quick Wins — Actionable Now</h2>
+            <h2 className="text-sm font-semibold">{t.ccPage.quickWins}</h2>
             <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-[color:var(--tc-ember-text)]">
               {quickWins.length}
             </span>
@@ -983,8 +993,8 @@ export default function CommandCenterPage() {
       <div className="rounded-lg border border-border bg-muted/30 p-4 text-center">
         <p className="text-xs text-muted-foreground">
           {data?.generated_at
-            ? `Last updated: ${new Date(data.generated_at).toLocaleString()} · Data synthesized from all executive agents`
-            : "💡 This dashboard synthesizes data from all executive agents. Refresh to run a new analysis."}
+            ? t.ccPage.lastUpdated.replace("{when}", new Date(data.generated_at).toLocaleString(locale === "tr" ? "tr-TR" : "en-US"))
+            : t.ccPage.footerHint}
         </p>
       </div>
     </main>

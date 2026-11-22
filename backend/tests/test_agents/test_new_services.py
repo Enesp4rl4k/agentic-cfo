@@ -30,6 +30,7 @@ class TestCascadeSimulator:
             "cash_balance": 6_000_000_00,       # 6M TL
             "monthly_burn": 500_000_00,          # 500K TL
             "monthly_revenue": 1_000_000_00,
+            "monthly_opex": 1_500_000_00,
             "gross_margin": 0.60,
         }
         defaults.update(kwargs)
@@ -68,7 +69,7 @@ class TestCascadeSimulator:
     def test_market_shock_trigger(self):
         from app.services.cascade_simulator import TriggerType
         sim = self._make_simulator()
-        result = sim.simulate(TriggerType.MARKET_SHOCK, shock_type="fx_crisis", severity=0.4)
+        result = sim.simulate(TriggerType.MARKET_SHOCK, usd_try_increase_pct=40.0, inflation_pct=50.0)
         assert result is not None
 
     def test_high_runway_means_low_severity(self):
@@ -97,7 +98,12 @@ class TestCascadeSimulator:
         from app.services.cascade_simulator import get_cascade_simulator
         s1 = get_cascade_simulator()
         s2 = get_cascade_simulator()
-        assert s1 is s2  # Same instance
+        assert s1 is not s2  # no shared default instance: an empty simulator has every input missing
+        import pytest
+
+        from app.services.cascade_simulator import CascadeInputsMissing, TriggerType
+        with pytest.raises(CascadeInputsMissing):
+            s1.simulate(TriggerType.CASH_CRISIS, runway_months=2.0)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -189,6 +195,19 @@ class TestBenchmarkIntelligenceService:
 class TestLLMTaskRouter:
     """LLMTaskRouter — model selection and cost tracking tests."""
 
+    @pytest.fixture(autouse=True)
+    def _tiered_priced_models(self, monkeypatch):
+        """Distinct, priced tier models (ids are deployment config, not code)."""
+        from app.config import get_settings
+
+        s = get_settings()
+        monkeypatch.setattr(s, "llm_model_cheap", "tier-cheap-model")
+        monkeypatch.setattr(s, "llm_model_strong", "tier-strong-model")
+        monkeypatch.setattr(
+            s, "llm_model_prices",
+            {"tier-cheap-model": (0.0002, 0.0006), "tier-strong-model": (0.0025, 0.01)},
+        )
+
     def _make_router(self):
         from app.services.llm_router import LLMTaskRouter
         return LLMTaskRouter()
@@ -197,14 +216,13 @@ class TestLLMTaskRouter:
         from app.services.llm_router import TaskType
         router = self._make_router()
         cfg = router.select_model(TaskType.CLASSIFY_INTENT)
-        # Should be gpt-4o-mini (cheap), not gpt-4o
-        assert "mini" in cfg.model_id or "3.5" in cfg.model_id
+        assert cfg.tier == "cheap" and cfg.model_id == "tier-cheap-model"
 
     def test_deep_analysis_uses_powerful_model(self):
         from app.services.llm_router import TaskType
         router = self._make_router()
         cfg = router.select_model(TaskType.DEEP_ANALYSIS)
-        assert "gpt-4o" in cfg.model_id
+        assert cfg.tier == "strong" and cfg.model_id == "tier-strong-model"
 
     def test_deterministic_task_raises(self):
         from app.services.llm_router import TaskType
@@ -215,7 +233,7 @@ class TestLLMTaskRouter:
     def test_long_prompt_upgrades_model(self):
         from app.services.llm_router import TaskType
         router = self._make_router()
-        # Very long prompt (>8000 chars) should use gpt-4o for context window
+        # Very long prompt (>8000 chars) should use the strong tier for context window
         cfg = router.select_model(TaskType.SHORT_NARRATIVE, prompt_length=9000)
         assert cfg.context_window >= 128000
 

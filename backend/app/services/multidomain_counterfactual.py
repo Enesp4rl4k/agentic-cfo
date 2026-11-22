@@ -18,6 +18,8 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+from app.services.counterfactual_engine import CounterfactualInputsMissing
+
 logger = logging.getLogger(__name__)
 
 
@@ -115,18 +117,30 @@ class MultidomainCounterfactual:
         self.cmo_data  = cmo_data or {}
         self.coo_data  = coo_data or {}
 
-        self.monthly_revenue = (self.pnl.get("revenue", 0) or 0) / 100 / 12
-        self.monthly_opex    = (self.pnl.get("total_opex", 0) or 0) / 100 / 12
-        self.net_margin      = self.pnl.get("net_margin", 0) or 0
-        self.headcount       = self.chro_data.get("total_headcount", 0) or 50
-        self.avg_salary      = self.chro_data.get("avg_monthly_salary_try", 30000) or 30000
-        self.turnover_rate   = self.chro_data.get("annual_turnover_rate", 0.12) or 0.12
-        self.tech_health     = self.cto_data.get("overall_health_score", 7.0) or 7.0
-        self.monthly_cac     = (self.cmo_data.get("avg_cac_cents", 0) or 0) / 100
-        self.monthly_roas    = self.cmo_data.get("overall_roas", 2.0) or 2.0
+        # A figure the company's data does not carry is missing (None / absent), never a constant:
+        # `_need` refuses to compute from it.
+        self.absent: set[str] = set()
+        revenue = self.pnl.get("revenue")
+        if revenue is None:
+            self.absent.add("gelir")
+        self.monthly_revenue = float(revenue or 0) / 100 / 12
+        opex = self.pnl.get("total_opex")
+        self.monthly_opex    = float(opex or 0) / 100 / 12
+        self.net_margin      = self.pnl.get("net_margin")
+        headcount = self.chro_data.get("total_headcount")
+        self.headcount: float | None = float(headcount) if headcount else None
+        salary = self.chro_data.get("avg_monthly_salary_try")
+        self.avg_salary: float | None = float(salary) if salary else None
+        roas = self.cmo_data.get("overall_roas")
+        self.monthly_roas: float | None = float(roas) if roas else None
 
         base_sc = (self.forecast.get("scenarios") or {}).get("base") or {}
-        self.runway_months = base_sc.get("runway_months") or 12.0
+        self.runway_months = base_sc.get("runway_months")
+
+    def _need(self, *names: str) -> None:
+        missing = [n for n in names if n in self.absent]
+        if missing:
+            raise CounterfactualInputsMissing(missing)
 
     def _build_scenarios(
         self,
@@ -173,13 +187,23 @@ class MultidomainCounterfactual:
         self,
         delta: int,
         avg_monthly_salary_try: float | None = None,
-        productivity_gain_pct: float = 0.10,
+        productivity_gain_pct: float | None = None,
         onboarding_months: int = 2,
         horizon_months: int = 12,
         role_type: str = "general",
     ) -> MultidomainCFResult:
         """Personel degisimi -- CFO + CHRO + CTO + CMO birlesik analizi."""
         salary = avg_monthly_salary_try or self.avg_salary
+        missing = []
+        if "gelir" in self.absent:
+            missing.append("gelir")
+        if salary is None:
+            missing.append("ortalama maaş (girin veya İK verisi yükleyin)")
+        if self.headcount is None:
+            missing.append("mevcut çalışan sayısı")
+        if missing:
+            raise CounterfactualInputsMissing(missing)
+        assert salary is not None and self.headcount is not None
         monthly_cost = delta * salary * (1 + self.SGK_RATE)
         annual_cost  = monthly_cost * horizon_months
         ramp = max(0.0, (horizon_months - onboarding_months)) / horizon_months
@@ -203,7 +227,10 @@ class MultidomainCounterfactual:
                 "net_impact_try":    round(cfo_net),
                 "payback_months":    round(abs(annual_cost) / max(1, rev_gain / horizon_months), 1),
             },
-            risks=["Verimlilik ramp-up beklenenden uzun surebilir"],
+            risks=[
+                "Verimlilik ramp-up beklenenden uzun surebilir",
+                f"varsayım: bu rol için gelir etkisi %{rev_boost * 100:.0f} (model katsayısı, şirket verisi değil)",
+            ],
             opportunities=["Dogru kisi alimi revenue'yu ongoruden fazla artirir"],
             timeline_months=float(onboarding_months),
         )
@@ -293,10 +320,10 @@ class MultidomainCounterfactual:
     def analyze_marketing_investment(
         self,
         monthly_increase_try: float,
-        expected_roas: float = 2.5,
+        expected_roas: float,
         horizon_months: int = 12,
     ) -> MultidomainCFResult:
-        """Pazarlama yatirimi artisinin cok boyutlu etkisi."""
+        """Pazarlama yatirimi artisinin cok boyutlu etkisi. `expected_roas` is the user's assumption."""
         annual_invest    = monthly_increase_try * horizon_months
         expected_revenue = annual_invest * expected_roas
         cfo_net          = expected_revenue - annual_invest
@@ -322,7 +349,7 @@ class MultidomainCounterfactual:
             financial_impact_try=round(expected_revenue),
             key_metrics={
                 "roas_target":    round(expected_roas, 2),
-                "current_roas":   round(self.monthly_roas, 2),
+                "current_roas":   round(self.monthly_roas, 2) if self.monthly_roas is not None else None,
                 "monthly_budget": round(monthly_increase_try),
             },
             risks=["Kanal doygunlugu ROAS'i dusebilir"],
@@ -356,11 +383,12 @@ class MultidomainCounterfactual:
     def analyze_tech_investment(
         self,
         one_time_invest_try: float,
+        velocity_gain_pct: float,
         monthly_ops_increase_try: float = 0.0,
-        velocity_gain_pct: float = 0.15,
         horizon_months: int = 12,
     ) -> MultidomainCFResult:
-        """Teknoloji/altyapi yatiriminin cok boyutlu etkisi."""
+        """Teknoloji/altyapi yatiriminin cok boyutlu etkisi. `velocity_gain_pct` is the user's assumption."""
+        self._need("gelir")
         total_cost    = one_time_invest_try + monthly_ops_increase_try * horizon_months
         revenue_up    = self.monthly_revenue * velocity_gain_pct * horizon_months
         cfo_net       = revenue_up - total_cost

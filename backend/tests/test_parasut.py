@@ -207,6 +207,7 @@ async def test_another_organisation_cannot_sync_or_disconnect_it(client, parasut
 @pytest.mark.asyncio
 async def test_a_schedule_cannot_pull_another_organisations_parasut(client, parasut):
     from app.models.organization import Organization
+    from app.services.ingest.feed import FeedFailed
     from app.services.scheduled_sync import ScheduledSyncRunner
 
     owner = await _login(client, "a@example.com")
@@ -215,8 +216,8 @@ async def test_a_schedule_cannot_pull_another_organisations_parasut(client, para
     await _login(client, "b@example.com")
     async with client._maker() as db:
         other = (await db.execute(select(Organization).where(Organization.name == "b@example.com"))).scalar_one()
-        data, name = await ScheduledSyncRunner()._pull_parasut({"integration_id": integ}, None, db=db, org_id=other.id)
-    assert (data, name) == (b"", "")
+        with pytest.raises(FeedFailed, match="bu kuruluşa ait değil"):
+            await ScheduledSyncRunner()._pull_parasut({"integration_id": integ}, None, db=db, org_id=other.id)
 
 
 # ── Automatic pulls ─────────────────────────────────────────────────────────

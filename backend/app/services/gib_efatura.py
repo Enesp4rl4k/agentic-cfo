@@ -33,13 +33,13 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
 import httpx
 
 from app.core.financial import amount_to_cents
+from app.services.ingest.feed import evidence_text, read_money
 
 logger = logging.getLogger(__name__)
 
@@ -186,25 +186,38 @@ class EFaturaClient:
 
         direction: "inbound" (gider) | "outbound" (gelir)
         """
-        items = raw if isinstance(raw, list) else raw.get("documents", raw.get("data", []))
+        if isinstance(raw, list):
+            items = raw
+        elif isinstance(raw, dict) and isinstance(raw.get("documents", raw.get("data")), list):
+            items = raw.get("documents", raw.get("data"))
+        else:
+            raise GIBError("Fatura listesi beklenmeyen biçimde (documents/data listesi yok).")
         invoices: list[dict[str, Any]] = []
-        skipped = 0
+        unreadable = 0
 
         for item in items:
+            if not isinstance(item, dict):
+                item = {}
             # Fatura tarihi
-            raw_date = item.get("issueDate") or item.get("date") or item.get("faturaTarihi", "")
-            try:
-                if "T" in raw_date:
-                    invoice_date = raw_date[:10]
-                else:
-                    invoice_date = raw_date
-            except Exception:
-                invoice_date = datetime.now(UTC).strftime("%Y-%m-%d")
+            raw_date = item.get("issueDate") or item.get("date") or item.get("faturaTarihi") or ""
+            invoice_date = raw_date[:10] if isinstance(raw_date, str) and "T" in raw_date else raw_date
+            if not isinstance(invoice_date, str):
+                invoice_date = ""
 
-            # Tutarlar
-            net_amount = float(item.get("lineExtensionAmount") or item.get("netAmount") or item.get("matrah", 0) or 0)
-            vat_amount = float(item.get("taxAmount") or item.get("kdvTutari", 0) or 0)
-            gross_amount = float(item.get("payableAmount") or item.get("toplamTutar", 0) or 0)
+            # Tutarlar: through the one money parser; a stated-but-garbled figure is NOT zero.
+            garbled = False
+            figures: dict[str, float] = {}
+            for name, keys in (
+                ("net", ("lineExtensionAmount", "netAmount", "matrah")),
+                ("vat", ("taxAmount", "kdvTutari")),
+                ("gross", ("payableAmount", "toplamTutar")),
+            ):
+                stated = next((item[k] for k in keys if item.get(k) not in (None, "")), None)
+                money = read_money(stated)
+                if stated is not None and money.cents is None:
+                    garbled = True
+                figures[name] = 0.0 if money.cents is None else money.cents / 100
+            net_amount, vat_amount, gross_amount = figures["net"], figures["vat"], figures["gross"]
             if gross_amount == 0:
                 gross_amount = net_amount + vat_amount
 
@@ -222,18 +235,29 @@ class EFaturaClient:
                 )
                 tx_type = "income"
 
-            # Every field above is read by guessing among three key spellings,
-            # because this client was written against a response nobody had
-            # seen. When all the guesses miss, the result is a transaction with
-            # no date and no amount — a phantom row that reconciles to nothing.
-            # Say so rather than emitting it.
-            if gross_amount <= 0 or not invoice_date:
+            # Every field above is read by guessing among three key spellings, because this client was written
+            # against a response nobody had seen. When the guesses miss, the invoice is NOT dropped (a real
+            # invoice with an unexpected shape would vanish from the VAT calendar): it is returned flagged
+            # `unreadable`, counted, with nothing summed from it, and the endpoints say how many there were.
+            if garbled or gross_amount <= 0 or not invoice_date:
                 logger.warning(
-                    "GİB faturası atlandı — beklenen alanlar yok "
+                    "GİB faturası okunamadı — beklenen alanlar yok "
                     "(tarih=%r tutar=%r, anahtarlar=%s)",
                     invoice_date, gross_amount, sorted(item)[:12],
                 )
-                skipped += 1
+                unreadable += 1
+                invoices.append({
+                    "invoice_id": item.get("uuid") or item.get("faturaNo") or str(uuid.uuid4()),
+                    "direction": direction, "unreadable": True, "needs_review": True,
+                    "amount_cents": None, "transaction_date": invoice_date or None, "tx_type": tx_type,
+                    "net_amount": 0.0, "vat_amount": 0.0, "gross_amount": 0.0,
+                    "raw_summary": evidence_text({
+                        "date": raw_date, "payable": item.get("payableAmount") or item.get("toplamTutar"),
+                        "net": item.get("lineExtensionAmount") or item.get("netAmount"),
+                        "keys": ",".join(sorted(item)[:8]),
+                    }),
+                    "raw_source": "gib_efatura",
+                })
                 continue
 
             invoices.append({
@@ -245,7 +269,8 @@ class EFaturaClient:
                 "vat_amount":    vat_amount,
                 "gross_amount":  gross_amount,
                 "vat_rate":      round(vat_amount / net_amount, 2) if net_amount > 0 else 0.0,
-                "currency":      item.get("currency") or item.get("dovizKodu", "TRY"),
+                # As the invoice states it; an invoice that states none has none (never assumed lira).
+                "currency":      item.get("currency") or item.get("dovizKodu"),
                 "counterparty":  counterparty,
                 "description":   item.get("description") or item.get("aciklama", ""),
                 "status":        item.get("status") or item.get("durum", "accepted"),
@@ -261,11 +286,11 @@ class EFaturaClient:
                 "raw_source":    "gib_efatura",
             })
 
-        if skipped:
+        if unreadable:
             logger.warning(
                 "GİB %s listesinde %d/%d fatura okunamadı — alan adları "
                 "beklenenden farklı olabilir",
-                direction, skipped, skipped + len(invoices),
+                direction, unreadable, len(invoices),
             )
         return invoices
 
@@ -277,18 +302,10 @@ class EFaturaClient:
         """
         Hem gelen hem giden faturaları çekip CFO transaction formatında döndür.
         """
-        try:
-            inbox  = await self.get_inbox(start_date, end_date)
-        except GIBError as exc:
-            logger.warning("GİB inbox hatası: %s", exc)
-            inbox = []
-
-        try:
-            outbox = await self.get_outbox(start_date, end_date)
-        except GIBError as exc:
-            logger.warning("GİB outbox hatası: %s", exc)
-            outbox = []
-
+        # Both sides or an error: with one side missing the VAT is wrong and nothing says so. (It used to log the
+        # failure and return the other half as if it were everything.)
+        inbox  = await self.get_inbox(start_date, end_date)
+        outbox = await self.get_outbox(start_date, end_date)
         return inbox + outbox
 
     async def close(self) -> None:
@@ -322,6 +339,8 @@ def compute_tax_calendar(
         }
     """
     # KDV hesaplama
+    unreadable = sum(1 for inv in invoices if inv.get("unreadable"))
+    invoices = [inv for inv in invoices if not inv.get("unreadable")]
     outbound = [inv for inv in invoices if inv.get("direction") == "outbound"]
     inbound  = [inv for inv in invoices if inv.get("direction") == "inbound"]
 
@@ -388,6 +407,9 @@ def compute_tax_calendar(
             "inbound":  len(inbound),
             "outbound": len(outbound),
         },
+        # Invoices the client could not read are in NO figure above: with any, the calendar is incomplete.
+        "unreadable_invoices":     unreadable,
+        "complete":                unreadable == 0,
     }
 
 

@@ -147,16 +147,15 @@ async def test_action_runner_execution_and_rejection(tmp_path: Path):
     runner = ActionRunner()
     runner.memory = memory_svc
 
-    # Approve & execute
+    # Approve: no connector exists, so nothing is executed and nothing is recorded as done.
     result = await runner.execute_action(action_id, approved_by_user_id="CEO@agentic.ai")
-    assert result.success is True
-    assert result.target_system == "GoogleAdsAPI"
-    assert "Google Ads API" in result.message
+    assert result.success is False
+    assert result.outcome == "not_connected"
+    assert memory_svc.get_action_by_id(action_id).status == "pending"
 
-    # Verify status changed in memory
-    updated_act = memory_svc.get_action_by_id(action_id)
-    assert updated_act.status == "executed"
-    assert updated_act.execution_result["approved_by"] == "CEO@agentic.ai"
+    # A person can still reject it.
+    assert await runner.reject_action(action_id, "CEO@agentic.ai", "gerek yok") is True
+    assert memory_svc.get_action_by_id(action_id).status == "rejected"
 
 
 @pytest.mark.asyncio

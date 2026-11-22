@@ -31,6 +31,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import require_writer
 from app.api.deps_regional import require_tr_pack
 from app.database import get_db
 
@@ -134,6 +135,8 @@ async def list_invoices(
             "direction":       direction,
             "period":          f"{start_date} – {end_date}",
             "invoice_count":   len(invoices),
+            # Invoices that could not be read are listed (flagged) and in no total.
+            "unreadable_count": sum(1 for inv in invoices if inv.get("unreadable")),
             "invoices":        invoices[:50],  # Cap at 50 for API response
             "total_net":       sum(inv.get("net_amount", 0) for inv in invoices),
             "total_vat":       sum(inv.get("vat_amount", 0) for inv in invoices),
@@ -190,7 +193,8 @@ async def get_tax_calendar(
     return {"data": calendar, "error": None}
 
 
-@router.post("/efatura/sync")
+@router.post("/efatura/sync",
+    dependencies=[Depends(require_writer)])
 async def sync_efatura(
     body: EFaturaSyncRequest,
     db: AsyncSession = Depends(get_db),

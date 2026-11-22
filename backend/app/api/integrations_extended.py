@@ -13,13 +13,14 @@ PUT  /integrations/webhook/config       → Webhook ayarlarını güncelle
 from __future__ import annotations
 
 import logging
+import uuid
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.access import can_access
+from app.api.access import can_access, require_writer
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.user import User
@@ -147,7 +148,8 @@ async def list_integration_channels(
 
 # ── E-ticaret ─────────────────────────────────────────────────────────────────
 
-@router.post("/integrations/ecommerce/sync")
+@router.post("/integrations/ecommerce/sync",
+    dependencies=[Depends(require_writer)])
 async def sync_ecommerce(
     req:          EcommerceSyncRequest,
     current_user: User = Depends(get_current_user),
@@ -155,14 +157,16 @@ async def sync_ecommerce(
     """E-ticaret kanalından siparişleri çek."""
     from app.services.integrations import ShopifyConnector, TrendyolConnector
 
-    orders = []
     if req.channel == "shopify":
         token  = req.credentials.get("access_token") or req.credentials.get("api_key", "")
         domain = req.credentials.get("shop_domain", "")
         if not token or not domain:
             raise HTTPException(400, "Shopify için shop_domain ve access_token gerekli")
-        conn   = ShopifyConnector(domain, token)
-        orders = await conn.get_orders(req.from_date, req.to_date)
+        try:
+            connector = ShopifyConnector(domain, token)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        result = await connector.get_orders(req.from_date, req.to_date)
 
     elif req.channel == "trendyol":
         sid    = req.credentials.get("supplier_id", "")
@@ -170,18 +174,37 @@ async def sync_ecommerce(
         secret = req.credentials.get("api_secret", "")
         if not sid or not key:
             raise HTTPException(400, "Trendyol için supplier_id, api_key ve api_secret gerekli")
-        conn   = TrendyolConnector(sid, key, secret)
-        orders = await conn.get_orders(req.from_date, req.to_date)
+        try:
+            trendyol = TrendyolConnector(sid, key, secret)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        result = await trendyol.get_orders(req.from_date, req.to_date)
 
     else:
         raise HTTPException(400, f"Desteklenmeyen kanal: {req.channel}")
 
+    outcome = result.outcome()
+    if result.failed:
+        # An outage or a refusal is a failed sync, not a shop with no orders.
+        raise HTTPException(502, f"{req.channel} siparişleri alınamadı: {result.failed}")
+
+    # Totals count only the orders whose amount, direction and date the channel stated, per currency
+    # (a lira order and a euro order are not added); the rest are counted and listed, not summed as zero.
+    totals: dict[str, int] = {}
+    for o in result.rows:
+        if not o["feed_flags"]:
+            totals[o["currency"] or ""] = totals.get(o["currency"] or "", 0) + int(o["amount_cents"])
     return {
         "data": {
             "channel":     req.channel,
-            "order_count": len(orders),
-            "total_revenue": sum(o.get("amount_try", 0) for o in orders),
-            "orders":      orders[:200],
+            "order_count": len(result.rows),
+            "sync_status": outcome["status"],
+            "period_covered": outcome["complete"],
+            "reason":      outcome["reason"],
+            "counts":      outcome["counts"],
+            "held_candidates": outcome["held_candidates"],
+            "total_revenue_cents_by_currency": totals,
+            "orders":      result.rows[:200],
         },
         "error": None,
     }
@@ -189,7 +212,7 @@ async def sync_ecommerce(
 
 # ── Google Sheets ─────────────────────────────────────────────────────────────
 
-@router.post("/integrations/sheets/export")
+@router.post("/integrations/sheets/export", dependencies=[Depends(require_writer)])
 async def export_to_sheets(
     req:          SheetsExportRequest,
     current_user: User = Depends(get_current_user),
@@ -230,7 +253,8 @@ async def export_to_sheets(
         raise HTTPException(502, f"Google Sheets export hatası: {exc}")
 
 
-@router.post("/integrations/sheets/import")
+@router.post("/integrations/sheets/import",
+    dependencies=[Depends(require_writer)])
 async def import_from_sheets(
     req:          SheetsImportRequest,
     current_user: User = Depends(get_current_user),
@@ -261,33 +285,47 @@ async def import_from_sheets(
 
 # ── Webhook ───────────────────────────────────────────────────────────────────
 
-@router.post("/integrations/webhook/test")
+@router.post("/integrations/webhook/test", dependencies=[Depends(require_writer)])
 async def test_webhook(
     req:          WebhookTestRequest,
     current_user: User = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    """Webhook bağlantısını test et."""
-    from app.services.integrations import get_webhook_dispatcher
-    dispatcher = get_webhook_dispatcher()
+    """Queue a fixed connection-test message to a destination (a connection-test outbox row).
 
-    success = False
-    if req.channel == "slack":
-        success = await dispatcher.send_slack(req.target, req.message, {"Test": "✓ Bağlantı başarılı"})
-    elif req.channel == "teams":
-        success = await dispatcher.send_teams(req.target, "Agentic CFO Test", req.message)
-    elif req.channel == "custom":
-        success = await dispatcher.send_custom(req.target, {"message": req.message, "source": "agentic_cfo"})
-    elif req.channel == "email":
-        success = await dispatcher.send_email(req.target, "Agentic CFO — Test", f"<p>{req.message}</p>")
-    else:
+    The text is fixed and the destination is checked: an https URL that is not an internal
+    address, or an e-mail address the organisation may be mailed (a member or a listed recipient).
+    The outbox sender delivers it and records the outcome; this route reports it queued."""
+    from app.services import outbox, outbox_immediate
+
+    channels = {"slack": "slack", "teams": "webhook", "custom": "webhook", "email": "email"}
+    channel = channels.get(req.channel)
+    if channel is None:
         raise HTTPException(400, f"Bilinmeyen kanal: {req.channel}")
+    if not current_user.org_id:
+        raise HTTPException(400, "Organizasyona üye değilsiniz.")
+    try:
+        row = await outbox_immediate.enqueue_connection_test(
+            db, test_id=uuid.uuid4().hex, org_id=str(current_user.org_id), channel=channel,
+            destination=req.target,
+        )
+    except outbox_immediate.ImmediateKindRefused as exc:
+        message = await outbox_immediate.record_test_refusal(
+            db, org_id=str(current_user.org_id), user_id=str(current_user.id), channel=channel, reason=str(exc),
+        )
+        raise HTTPException(400, message) from exc
+    await db.commit()
+    outbox.kick()
+    success = False  # queued, not delivered: the outbox row records what happened
 
     return {
         "data": {
             "channel": req.channel,
             "target":  req.target,
             "success": success,
-            "message": "Webhook başarıyla gönderildi" if success else "Webhook gönderilemedi",
+            "queued":  True,
+            "outbox_id": row.id,
+            "message": "Test mesajı gönderim kuyruğuna alındı; sonucu giden kutusunda görünür.",
         },
         "error": None,
     }

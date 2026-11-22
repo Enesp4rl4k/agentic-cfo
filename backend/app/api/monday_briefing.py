@@ -20,12 +20,13 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import require_writer
 from app.api.auth import get_current_user
 from app.api.contract import Envelope
 from app.database import get_db
 from app.models.organization import OrgMembership
 from app.models.user import User, UserRole
-from app.services import briefing_delivery, outbox
+from app.services import briefing_delivery
 from app.services.monday_briefing import (
     BriefingChanged,
     BriefingNeedsAnalysis,
@@ -88,6 +89,7 @@ async def get_monday_briefing(
 
 @router.post(
     "/briefing/monday/respond",
+    dependencies=[Depends(require_writer)],
     response_model=Envelope[BriefingAnswer],
     summary="Pazartesi bülteni aksiyon yanıtı",
     responses={
@@ -142,6 +144,10 @@ async def respond_to_monday_briefing(
 
 class BriefingReleaseRequest(BaseModel):
     briefing_id: str = Field(..., min_length=1, max_length=100)
+    confirm_fingerprint: str | None = Field(
+        default=None, max_length=64,
+        description="Rakamlar değiştiyse: yanıttaki `fingerprint`; güncellenmiş metnin gönderilmesini onaylar.",
+    )
 
 
 @router.get(
@@ -165,6 +171,7 @@ async def get_briefing_deliveries(
     responses={
         400: {"description": "Kullanıcının organizasyonu yok."},
         403: {"description": "Bu şirketin mali müşaviri değilsiniz."},
+        409: {"description": "Bülten için artık veri yok; e-posta gönderilmedi."},
     },
 )
 async def release_briefing(
@@ -172,7 +179,11 @@ async def release_briefing(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    """Only the company's accountant releases what was held for them (owner decision K10)."""
+    """Only the company's accountant releases what was held for them (owner decision K10).
+
+    The held text is frozen; if the figures moved since, nothing is sent: the response lists
+    what changed (old -> new) and the accountant confirms the refreshed text by sending the
+    returned `fingerprint` back as `confirm_fingerprint`."""
     org_id = _org(user)
     membership = (
         await db.execute(
@@ -185,8 +196,13 @@ async def release_briefing(
     ).scalar_one_or_none()
     if membership is None:
         raise HTTPException(403, "Bu şirketin mali müşaviri değilsiniz.")
-    released = await outbox.release(
-        db, org_id=org_id, source=briefing_delivery.SOURCE, source_ref=body.briefing_id
-    )
+    try:
+        result = await briefing_delivery.release_briefing(
+            db, org_id=org_id, briefing_id=body.briefing_id, released_by=str(user.id),
+            confirm_fingerprint=body.confirm_fingerprint,
+        )
+    except briefing_delivery.BriefingReleaseBlocked as exc:
+        raise HTTPException(409, str(exc)) from exc
+    # The release and its decision record commit together.
     await db.commit()
-    return {"data": {"released": released}, "error": None}
+    return {"data": result, "error": None}

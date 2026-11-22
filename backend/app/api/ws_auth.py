@@ -17,7 +17,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import session_factory
 from app.models.user import User
-from app.services.auth import decode_token
+from app.services import email_verification
+from app.services.auth import decode_token, token_is_current
 
 # RFC 6455 "policy violation": the server will not talk to this client.
 REFUSED = 1008
@@ -37,12 +38,47 @@ async def user_for_token(db: AsyncSession, token: str | None) -> User | None:
     if not user_id:
         return None
     user = await db.get(User, str(user_id))
-    if user is None or not user.is_active:
+    if (
+        user is None or not user.is_active or not token_is_current(payload, user.token_version)
+        or not email_verification.is_verified(user)
+    ):
         return None
     return user
 
 
-async def websocket_caller(token: str | None) -> User | None:
+async def still_acting_in(user_id: str, org_id: str, ip: str | None = None) -> bool:
+    """Whether `user_id` is still active, still acting in `org_id` and still a member of it.
+
+    A socket authenticates once, at connect. Leaving the company (removal) or
+    switching to another must end the live feed, so long-lived sockets ask again. With `ip`, the
+    organisation's IP allow-list is asked again too (a list enabled after the connect ends the feed).
+    """
+    from sqlalchemy import select
+
+    from app.models.organization import OrgMembership
+
+    async with session_factory()() as db:
+        user = await db.get(User, str(user_id))
+        if user is None or not user.is_active or not user.org_id or str(user.org_id) != str(org_id):
+            return False
+        if ip is not None:
+            from app.services import ip_allowlist
+
+            if await ip_allowlist.org_refusal(db, str(org_id), ip):
+                return False
+        has_row = (
+            await db.execute(
+                select(OrgMembership.id).where(
+                    OrgMembership.user_id == str(user_id), OrgMembership.org_id == str(org_id)
+                )
+            )
+        ).first()
+        has_any = (await db.execute(select(OrgMembership.id).where(OrgMembership.user_id == str(user_id)))).first()
+        # A user with no membership rows at all is a pre-membership account: their column is all there is.
+        return has_row is not None or has_any is None
+
+
+async def websocket_caller(token: str | None, ip: str | None = None) -> User | None:
     """`user_for_token` on a short-lived session.
 
     Not a `Depends(get_db)`: a dependency's session would stay open for as long
@@ -52,6 +88,12 @@ async def websocket_caller(token: str | None) -> User | None:
         return None
     async with session_factory()() as db:
         user = await user_for_token(db, token)
+        if user is not None and ip is not None and user.org_id:
+            from app.services import ip_allowlist
+
+            # The organisation's IP allow-list applies to its live feeds too (connect and every message).
+            if await ip_allowlist.org_refusal(db, str(user.org_id), ip):
+                return None
         if user is not None:
             db.expunge(user)
         return user

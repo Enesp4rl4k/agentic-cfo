@@ -20,7 +20,31 @@ import { useDashboard } from "@/hooks/useCFO";
 import { useI18n } from "@/hooks/useI18n";
 import { useCurrencyFormat, useCurrencySymbol } from "@/hooks/useCurrencyFormat";
 import { cn } from "@/lib/utils";
-import type { Alert, ForecastScenario } from "@/types";
+import type { Alert, ForecastScenario, RunwayBlock } from "@/types";
+
+/** A scenario's runway is a figure only when a proven balance and a measured burn stand behind it. */
+const runwayKnown = (basis: RunwayBlock["status"] | undefined) =>
+  basis === undefined || basis === "computed" || basis === "not_burning";
+
+/** The runway as the backend states it: the balance and its date, the burn, or why there is none. */
+function RunwayNote({ runway }: { runway: RunwayBlock }) {
+  const { t } = useI18n();
+  const severe = runway.level === "critical";
+  return (
+    <section
+      aria-label={t.forecast.runway.heading}
+      className={cn(
+        "rounded-md border px-3.5 py-2.5 text-sm",
+        severe
+          ? "border-destructive/30 bg-destructive/8 text-destructive"
+          : "border-border bg-card text-foreground"
+      )}
+    >
+      <h2 className="text-xs font-medium text-muted-foreground">{t.forecast.runway.heading}</h2>
+      <p className="mt-0.5 leading-snug">{runway.message}</p>
+    </section>
+  );
+}
 
 // ── Chart style ───────────────────────────────────────────────────────────────
 
@@ -298,7 +322,9 @@ function ScenarioTable({
                   <td className="px-4 py-3 text-right tabular-nums text-sm text-muted-foreground">
                     {s.runway_months != null
                       ? table.monthsShort.replace("{count}", String(s.runway_months))
-                      : table.stable}
+                      : runwayKnown(s.runway_basis)
+                        ? table.stable
+                        : table.unknown}
                   </td>
                   <td className="hidden px-4 py-3 text-xs text-muted-foreground sm:table-cell max-w-[220px]">
                     {s.description}
@@ -470,6 +496,9 @@ export default function ForecastPage() {
         )}
       </div>
 
+      {/* The runway: balance, date and burn it rests on, or why it is not computed */}
+      {forecast.runway && <RunwayNote runway={forecast.runway} />}
+
       {/* Alerts */}
       {alerts.length > 0 && <AlertStrip alerts={alerts} />}
 
@@ -483,7 +512,9 @@ export default function ForecastPage() {
               sub={
                 base.runway_months
                   ? kpi.runway.replace("{count}", String(base.runway_months))
-                  : kpi.runwayStable
+                  : runwayKnown(forecast.runway?.status)
+                    ? kpi.runwayStable
+                    : kpi.runwayUnknown
               }
               positive={base.twelve_month_net >= 0}
             />

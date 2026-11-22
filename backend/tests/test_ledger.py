@@ -88,7 +88,9 @@ async def test_the_whole_file_lands_in_the_ledger(client):
     summary = await _summary(client, org_id)
     assert summary["revenue_cents"] == 9_799_500_00
     assert summary["expense_cents"] == 4_585_700_00
-    assert summary["period"] == {"start": "2024-01", "end": "2024-12", "months": 12}
+    assert (summary["period"]["start"], summary["period"]["end"], summary["period"]["months"]) == (
+        "2024-01", "2024-12", 12)
+    assert summary["period"]["is_default"] is True
 
 
 async def test_the_same_file_twice_changes_nothing(client):

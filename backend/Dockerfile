@@ -53,6 +53,12 @@ COPY --chown=appuser:appgroup alembic.ini ./
 # Directories the app writes at runtime (uploads; boardroom memory under data/)
 RUN mkdir -p /app/uploads /app/data && chown appuser:appgroup /app/uploads /app/data
 
+# Which build is this? Shown on /api/v1/version and used as the Sentry release.
+#   docker build --build-arg GIT_SHA=$(git rev-parse --short HEAD) --build-arg BUILD_TIME=$(date -u +%FT%TZ) ...
+ARG GIT_SHA=
+ARG BUILD_TIME=
+ENV GIT_SHA=$GIT_SHA BUILD_TIME=$BUILD_TIME
+
 USER appuser
 
 EXPOSE 8000

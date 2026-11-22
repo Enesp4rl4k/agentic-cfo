@@ -7,8 +7,14 @@ AnalysisJobs are scoped to an org so members share data.
 Roles within an org:
   owner   — full control, can invite/remove members, delete org
   admin   — can invite members, manage jobs
-  analyst — can upload, run analysis, view results
+  cfo     — changes working data (writer); does not decide or manage members
+  smmm    — the company's accountant: writer, and binds the official record
+  analyst — can upload, run analysis, view results; does not change or decide
+            a record (category corrections, matches, approvals, month close)
   viewer  — read-only access to completed jobs
+
+The classes the API enforces (contributor / writer / decider / smmm) are in
+`app/api/access.py`; the browser's copy is `frontend/src/lib/roles.ts`.
 """
 from __future__ import annotations
 
@@ -17,8 +23,9 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint, false
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
+from app.core.email_address import normalize_email
 from app.database import Base
 
 if TYPE_CHECKING:
@@ -38,6 +45,12 @@ class Organization(Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     slug: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
 
+    # Set by the server only, in POST /demo/guest: this is a throwaway demo workspace. Never inferred
+    # from the slug or description, which a user can choose (the demo seed/reset/purge act on this flag).
+    is_demo_guest: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False
+    )
+
     # Branding / settings
     logo_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -46,6 +59,13 @@ class Organization(Base):
     country_code: Mapped[str] = mapped_column(String(2), default="US", nullable=False)
     base_currency: Mapped[str] = mapped_column(String(3), default="USD", nullable=False)
     locale: Mapped[str] = mapped_column(String(16), default="en-US", nullable=False)
+    # `base_currency` above is NOT NULL with a default, so a stored value is not a
+    # choice. These say whether an owner/admin actually confirmed it. Only a
+    # confirmed base currency may stand in for a currency a document did not state.
+    base_currency_confirmed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    base_currency_confirmed_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
     # e.g. ["tr"] enables Turkey regional pack (SMMM, GIB, Paraşüt, THP)
     regional_packs: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     # A pilot company sees only the flow it is piloting (plan v10 §O0): the
@@ -54,10 +74,44 @@ class Organization(Base):
         Boolean, default=False, server_default=false(), nullable=False
     )
 
+    # True once a person has chosen focus mode themselves (PATCH /org/me). A size
+    # profile only sets the default while this is false, and never overwrites it.
+    focus_mode_explicit: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False
+    )
+
+    # Company size, as the company says it (services/size_profile.py). Null = not
+    # yet determined. The profile never decides an authorisation; it sets defaults and is the fallback
+    # basis of the materiality threshold below, which the owner acknowledges before it applies.
+    size_profile: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    monthly_outflow_band: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    headcount_band: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    has_inhouse_finance: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    size_profile_source: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    size_profile_set_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    size_profile_set_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+
+    # The amount above which a decision needs a senior person (services/materiality.py): what an owner or
+    # admin acknowledged or set, with its basis and who/when. Null = nobody did yet, and the fixed amount
+    # the authority policy always carried still applies. Never filled in silently.
+    materiality_applied: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # The owner's standing choice that the Monday briefing also goes to the company's accountant (smmm).
+    # It only names a recipient; sending is the outbox's release flow (services/briefing_delivery.py).
+    briefing_to_smmm: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False
+    )
+
     # Tax identity. Decides an invoice's direction (we sold / we bought) and
     # names the e-Defter's owner; see app/services/org_identity.py.
     vkn: Mapped[str | None] = mapped_column(String(11), nullable=True)
     legal_title: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
+    # SEC-5 IP allow-list (columns from migration 010; the model lacked them, so a PUT stored nothing).
+    # Comma-separated CIDRs. NOTHING enforces it at login or on requests yet: it is a stored setting.
+    ip_whitelist: Mapped[str | None] = mapped_column(Text, nullable=True, comment="Comma-separated allowed CIDRs")
+    ip_whitelist_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False
+    )
 
     # Plan / limits
     plan: Mapped[str] = mapped_column(String(20), default="free", nullable=False)
@@ -103,8 +157,13 @@ class OrgInvite(Base):
     email: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(20), default="analyst", nullable=False)
 
-    # Secure token sent by email
-    token: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    @validates("email")
+    def _normalise_email(self, _key: str, value: str) -> str:
+        return normalize_email(value)
+
+    # SHA-256 digest of the token e-mailed to the invitee (`app.services.secret_tokens`); the token
+    # itself is never stored. The column keeps its original name, `token` (migration 071).
+    token_hash: Mapped[str] = mapped_column("token", String(64), unique=True, nullable=False, index=True)
 
     accepted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

@@ -15,7 +15,11 @@ const respondToMondayBriefing = vi.fn();
 vi.mock("@/lib/api/briefing", () => ({
   getMondayBriefing: (...args: unknown[]) => getMondayBriefing(...args),
   respondToMondayBriefing: (...args: unknown[]) => respondToMondayBriefing(...args),
+  // The release card (BriefingRelease) has its own test; here the briefing has no e-mail.
+  getBriefingDeliveries: () => Promise.resolve([]),
+  releaseMondayBriefing: vi.fn(),
 }));
+vi.mock("@/lib/api/orgs", async () => (await import("./dashboard-mocks")).orgsModule);
 
 // The Monday screen also shows the route and the count of waiting decisions.
 const getCashRadar = vi.fn();
@@ -34,6 +38,7 @@ vi.mock("@/lib/api/planChanges", () => ({
 vi.mock("@/hooks/useOrgSettings", async () => (await import("./dashboard-mocks")).orgSettingsModule);
 vi.mock("next/link", async () => (await import("./dashboard-mocks")).nextLinkModule);
 
+import { membershipSpies, membershipsFor } from "./dashboard-mocks";
 import BultenPage from "@/app/(dashboard)/bulten/page";
 
 const briefing = (over: Record<string, unknown> = {}) => ({
@@ -59,6 +64,14 @@ const briefing = (over: Record<string, unknown> = {}) => ({
   fallback_used: false,
   balance_known: true,
   has_data: true,
+  balance_as_of: "2025-01-30",
+  balance_age_days: 2,
+  balance_stale: false,
+  runway_status: "computed",
+  runway_months: 4,
+  runway_level: "warning",
+  runway_basis: "known",
+  runway_line: "Uyarı: Nakit pisti yaklaşık 4,0 ay (31 Mart 2026 ekstresindeki kasa ₺120.000,00).",
   fingerprint: "fp-seen",
   ...over,
 });
@@ -73,6 +86,7 @@ function show() {
 }
 
 beforeEach(() => {
+  membershipSpies.getMemberships.mockResolvedValue(membershipsFor("owner"));
   getMondayBriefing.mockReset();
   respondToMondayBriefing.mockReset();
   getCashRadar.mockReset();
@@ -92,6 +106,20 @@ describe("Pazartesi bülteni", () => {
     expect(await screen.findByText(/20\.000,00 TL azalış/)).toBeTruthy();
     expect(screen.getByText(/Demir Çelik A\.Ş\., 40\.000,00 TL/)).toBeTruthy();
     expect(screen.getByText(/tahsilatı öne çekin/)).toBeTruthy();
+  });
+
+  it("labels the balance with its statement's day and warns when it is old", async () => {
+    getMondayBriefing.mockResolvedValue(briefing());
+    const fresh = show();
+    expect(await screen.findByText("30 Ocak ekstresine göre kasa")).toBeTruthy();
+    expect(screen.queryByText(/gün önceki ekstreye dayanıyor/)).toBeNull();
+    fresh.unmount();
+
+    getMondayBriefing.mockResolvedValue(briefing({ balance_as_of: "2024-12-23", balance_age_days: 40, balance_stale: true }));
+    show();
+    expect(await screen.findByText("23 Aralık ekstresine göre kasa")).toBeTruthy();
+    expect(screen.getByText("Bu bakiye 40 gün önceki ekstreye dayanıyor")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Yeni ekstre yükle" }).getAttribute("href")).toBe("/baglan");
   });
 
   it("names the week the briefing covers", async () => {
@@ -128,6 +156,18 @@ describe("Pazartesi bülteni", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Yaptım" }));
     await waitFor(() => expect(respondToMondayBriefing).toHaveBeenCalledTimes(1));
     expect(respondToMondayBriefing).toHaveBeenCalledWith("done", "2025-02-01", "fp-seen");
+    // "Yaptım" is the owner's statement: saved as that, not as a proven payment.
+    expect(await screen.findByText(/Yaptığını bildirdin/)).toBeTruthy();
+    expect(screen.getByText(/banka ekstresi satırı gösterene kadar/)).toBeTruthy();
+  });
+
+  it("confirms a deferred answer plainly", async () => {
+    getMondayBriefing.mockResolvedValue(briefing());
+    respondToMondayBriefing.mockResolvedValue({
+      decision_id: "d1", status: "open", chosen_option_label: "Ertele", briefing_id: "brief_org1_202505",
+    });
+    show();
+    fireEvent.click(await screen.findByRole("button", { name: "Ertele" }));
     expect(await screen.findByText(/Yanıtınız kaydedildi/)).toBeTruthy();
   });
 
@@ -181,7 +221,7 @@ describe("Pazartesi bülteni", () => {
     show();
     const h1 = await screen.findByRole("heading", { level: 1 });
     expect(h1.textContent).toMatch(/20\.000,00 TL azalış/);
-    expect(screen.getByText("Bugünkü kasa")).toBeTruthy();
+    expect(screen.getByText("30 Ocak ekstresine göre kasa")).toBeTruthy();
     expect(screen.getByText("Hafta sonu kasa")).toBeTruthy();
     expect(screen.getByText("En yakın ödeme")).toBeTruthy();
   });
@@ -190,7 +230,7 @@ describe("Pazartesi bülteni", () => {
     getMondayBriefing.mockResolvedValue(briefing({ balance_known: false, starting_cash_cents: null }));
     show();
     await screen.findByRole("heading", { level: 1 });
-    expect(screen.queryByText("Bugünkü kasa")).toBeNull();
+    expect(screen.queryByText("30 Ocak ekstresine göre kasa")).toBeNull();
     expect(screen.queryByText("Hafta sonu kasa")).toBeNull();
     expect(screen.getByText("Bu hafta net değişim")).toBeTruthy();
   });
@@ -220,5 +260,46 @@ describe("Pazartesi bülteni", () => {
     const loop = await screen.findByRole("contentinfo", { name: "Haftalık döngü" });
     expect(loop.querySelectorAll("a")).toHaveLength(4);
     expect(loop.querySelector("[aria-current='page']")).toBeNull();
+  });
+
+  it("says a measured runway with its months, beside the week's answer", async () => {
+    getMondayBriefing.mockResolvedValue(briefing());
+    show();
+    expect(await screen.findByTestId("runway-text")).toHaveProperty("textContent", expect.stringContaining("yaklaşık 4,0 ay"));
+    expect(screen.getByTestId("runway-value").textContent).toBe("4 ay");
+    expect(screen.queryByTestId("runway-assumed")).toBeNull();
+  });
+
+  it("puts a critical runway above everything else", async () => {
+    getMondayBriefing.mockResolvedValue(
+      briefing({ runway_level: "critical", runway_months: 1.7, runway_line: "KRİTİK: Nakit pisti yaklaşık 1,7 ay." }),
+    );
+    show();
+    const card = await screen.findByRole("alert");
+    expect(card.textContent).toContain("KRİTİK: Nakit pisti yaklaşık 1,7 ay.");
+    const heading = screen.getByRole("heading", { level: 1 });
+    // The runway card precedes the week's first sentence in the page.
+    expect(card.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("badges an assumed basis where the number is", async () => {
+    getMondayBriefing.mockResolvedValue(briefing({ runway_basis: "assumed" }));
+    show();
+    expect(await screen.findByTestId("runway-assumed")).toBeTruthy();
+  });
+
+  it("says unknown, with no figure, when the balance is not known", async () => {
+    getMondayBriefing.mockResolvedValue(
+      briefing({
+        runway_status: "no_balance",
+        runway_months: null,
+        runway_level: null,
+        runway_basis: null,
+        runway_line: "Kasa bakiyesi bilinmiyor — nakit pisti hesaplanamadı.",
+      }),
+    );
+    show();
+    expect(await screen.findByText("Kasa bakiyesi bilinmiyor — nakit pisti hesaplanamadı.")).toBeTruthy();
+    expect(screen.getByTestId("runway-value").textContent).toBe("Bilinmiyor");
   });
 });

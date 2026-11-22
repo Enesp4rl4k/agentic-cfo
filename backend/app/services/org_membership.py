@@ -24,7 +24,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.organization import Organization, OrgMembership
-from app.models.user import UserRole
+from app.models.user import User, UserRole
 
 VALID_ROLES = frozenset(r.value for r in UserRole)
 
@@ -91,3 +91,36 @@ async def create_client_org(
             db, user_id=accountant_user_id, org_id=home_org_id, role=home_role
         )
     return org
+
+
+async def drop_membership(db: AsyncSession, *, user_id: str, org_id: str) -> None:
+    """End a user's membership of an organisation. The caller commits.
+
+    The row *is* the right to be there: `/org/switch`, `require_smmm`,
+    `org_has_smmm` and the member list all read it, so deleting it removes the
+    person everywhere at once. If the organisation is the one they are acting in,
+    they fall back to another they still belong to (their home, for an
+    accountant), else to none.
+    """
+    row = (
+        await db.execute(
+            select(OrgMembership).where(
+                OrgMembership.user_id == str(user_id), OrgMembership.org_id == str(org_id)
+            )
+        )
+    ).scalar_one_or_none()
+    if row is not None:
+        await db.delete(row)
+        await db.flush()
+    user = await db.get(User, str(user_id))
+    if user is not None and user.org_id and str(user.org_id) == str(org_id):
+        other = (
+            await db.execute(
+                select(OrgMembership)
+                .where(OrgMembership.user_id == str(user_id), OrgMembership.org_id != str(org_id))
+                .order_by(OrgMembership.created_at)
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        user.org_id = other.org_id if other is not None else None
+        user.role = other.role if other is not None else UserRole.ANALYST.value

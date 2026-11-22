@@ -9,7 +9,7 @@ GET  /api/v1/alerts/digest/latest
      Latest digest across all recent jobs (last 24h).
 
 POST /api/v1/alerts/acknowledge/{job_id}/{alert_hash}
-     Mark an alert as acknowledged (stores in Redis or DB).
+     Mark an alert as acknowledged (stored in Redis; 503 if it was not stored).
 """
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.access import owned_job
+from app.api.access import owned_job, require_writer
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.analysis_job import AnalysisJob, JobStatus
@@ -72,10 +72,19 @@ def _extract_raw_alerts(job: AnalysisJob, dashboard_data: dict[str, Any]) -> lis
         ))
 
     # Monte Carlo runway risk alert
+    # Only a risk counted from a proven balance, with growth estimated from the company's own
+    # months, says anything (a figure counted from zero, or from stand-in defaults, does not):
+    # and a share of simulations is a model's statement, a warning at most.
     mc = forecast.get("monte_carlo") or {}
-    if mc.get("runway_risk_pct", 0) > 30:
+    risk = mc.get("runway_risk_pct")
+    if (
+        isinstance(risk, int | float)
+        and risk > 30
+        and mc.get("runway_risk_basis") == "opening_cash"
+        and mc.get("growth_basis") == "gecmis_aylar"
+    ):
         raw.append(RawAlert(
-            level="critical" if mc["runway_risk_pct"] > 60 else "warning",
+            level="warning",
             # The share of simulations that go negative, said as that. It read
             # "%X olasılıkla ... yaşanabilir", which states a probability the
             # simulation does not produce on its own.
@@ -342,7 +351,8 @@ def _suggest_action(alert: RawAlert) -> str:
     return "Detaylar için analiz sayfasını inceleyin."
 
 
-@router.post("/alerts/acknowledge/{job_id}/{alert_fingerprint}")
+@router.post("/alerts/acknowledge/{job_id}/{alert_fingerprint}",
+    dependencies=[Depends(require_writer)])
 async def acknowledge_alert(
     job_id: str,
     alert_fingerprint: str,
@@ -354,8 +364,9 @@ async def acknowledge_alert(
     Mark an alert as acknowledged.
     The fingerprint comes from RawAlert.fingerprint (12-char hex).
 
-    Currently stores acknowledgement in Redis with 24h TTL.
-    If Redis is unavailable, returns 200 with a warning.
+    Stores the acknowledgement in Redis with a 24h TTL. If it could not be stored the
+    answer is 503: a person must not be told it is done when
+    it is not.
     """
     try:
         import json
@@ -373,17 +384,19 @@ async def acknowledge_alert(
             }),
             ex=86400,  # 24h
         )
-        ack_stored = True
     except Exception as exc:
         logger.warning("Could not store acknowledgement in Redis: %s", exc)
-        ack_stored = False
+        raise HTTPException(
+            status_code=503,
+            detail="Onay kaydedilemedi; uyarı onaylanmış sayılmadı. Biraz sonra yeniden deneyin.",
+        ) from exc
 
     return {
         "data": {
             "job_id": job_id,
             "fingerprint": alert_fingerprint,
             "acknowledged": True,
-            "stored_in_redis": ack_stored,
+            "stored_in_redis": True,
         },
         "error": None,
     }

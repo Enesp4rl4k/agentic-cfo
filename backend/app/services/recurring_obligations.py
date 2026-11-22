@@ -24,7 +24,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.turkish import fold
-from app.models.canonical_transaction import CanonicalTransaction
+from app.models.canonical_transaction import CanonicalTransaction, money_rows
 from app.services.reconciliation import rows_settling_items
 
 RECURRING_MIN_MONTHS = 3
@@ -145,6 +145,7 @@ async def detect_recurring_obligations(db: AsyncSession, org_id: str) -> list[Re
                     CanonicalTransaction.ledger_status == "active",
                     CanonicalTransaction.direction == "expense",
                     CanonicalTransaction.amount_cents > 0,
+                    money_rows(),
                     CanonicalTransaction.currency == "TRY",
                 )
                 .order_by(CanonicalTransaction.transaction_date)

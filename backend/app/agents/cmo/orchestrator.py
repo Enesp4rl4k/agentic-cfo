@@ -139,7 +139,7 @@ async def node_cmo_summary(state: CMOState, config: dict) -> CMOState:
         waste = sum(c["spend_cents"] for c in underperforming)
         quick_wins.append({
             "action":           f"Pause {len(underperforming)} underperforming campaign(s)",
-            "estimated_impact": f"Boşa harcanan reklam bütçesinden {waste / 100:,.0f} ₺ tasarruf",
+            "estimated_impact": f"Boşa harcanan reklam bütçesinden {waste / 100:,.0f} tasarruf",
             "effort":           "düşük",
         })
 

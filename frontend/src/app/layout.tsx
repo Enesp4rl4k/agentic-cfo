@@ -23,8 +23,8 @@ export const metadata: Metadata = {
 
 /**
  * First-paint locale, resolved on the server: the locale cookie wins (it
- * mirrors the last org-resolved value), Accept-Language seeds the very first
- * visit. Flows into `Providers` so server HTML and hydration agree — role
+ * mirrors the last org-resolved value), the very first visit gets the Turkish
+ * default. Flows into `Providers` so server HTML and hydration agree — role
  * headers never paint English first for a Turkish org (DESIGN.md locale
  * principle). The org row remains authoritative and DocumentLang corrects
  * `<html lang>` once it resolves.

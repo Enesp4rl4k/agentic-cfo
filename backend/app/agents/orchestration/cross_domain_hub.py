@@ -30,6 +30,8 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
+from app.services.runway_display import runway_for_display
+
 logger = logging.getLogger(__name__)
 
 ALANLAR = ("cto", "cmo", "coo", "chro", "risk", "audit", "compliance")
@@ -134,8 +136,8 @@ class CrossDomainHub:
     ) -> None:
         self.results = {k: v for k, v in (domain_results or {}).items() if k in ALANLAR and v}
         self.pnl = pnl or {}
-        runway = _get(forecast or {}, "scenarios", "base", "runway_months")
-        self.runway_months = _num(runway)   # unknown stays unknown
+        self.runway_view = runway_for_display(forecast)
+        self.runway_months = self.runway_view.months   # unknown stays unknown
 
     def metrics(self) -> dict[str, float]:
         out: dict[str, float] = {}
@@ -161,10 +163,10 @@ class CrossDomainHub:
                 and self.runway_months < 4 and m["ayrilma_orani"] > 0.20:
             out.append(CrossDomainInsight(
                 id="talent_cash_cascade", title="Nakit sıkışıyor, çalışanlar ayrılıyor",
-                domains=["cfo", "chro"], severity="critical", insight_type="risk",
-                description=(f"Nakit ömrü {self.runway_months:.1f} ay ve personelin "
+                domains=["cfo", "chro"], severity=self.runway_view.cap("critical"), insight_type="risk",
+                description=(f"Nakit ömrü {self.runway_view.text()} ve personelin "
                              f"%{m['ayrilma_orani']*100:.0f}'i ayrılmış."),
-                evidence=[f"CFO tahmini: nakit ömrü {self.runway_months:.1f} ay",
+                evidence=[f"CFO tahmini: nakit ömrü {self.runway_view.text()}",
                           f"İK dosyası: ayrılma oranı %{m['ayrilma_orani']*100:.0f}"],
                 actions=["Kritik ekip üyeleri için tutma planı", "Nakit durumunu ekiple açıkça paylaşın"],
             ))

@@ -7,10 +7,12 @@ export function cn(...inputs: ClassValue[]) {
 
 /**
  * Format a number as currency in the given currency and locale.
- * Org screens pass the organisation's base currency (see useCurrencyFormat);
- * the USD default keeps legacy call sites stable until they migrate.
+ * Money screens pass the currency the data is in (see useCurrencyFormat). `null` (no currency is known)
+ * formats the bare number: a symbol is a claim, and there is no default currency to fall back on.
  */
-export function formatCurrency(value: number, currency = "USD", locale = "en-US"): string {
+export function formatCurrency(value: number, currency: string | null, locale = "tr-TR"): string {
+  const bare = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
+  if (currency === null) return bare.format(value);
   try {
     return new Intl.NumberFormat(locale, {
       style: "currency",
@@ -19,12 +21,8 @@ export function formatCurrency(value: number, currency = "USD", locale = "en-US"
       maximumFractionDigits: 0,
     }).format(value);
   } catch {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(value);
+    // Not an ISO 4217 code Intl knows: say the code as written rather than a symbol we invented.
+    return `${bare.format(value)} ${currency}`;
   }
 }
 

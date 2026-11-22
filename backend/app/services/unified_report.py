@@ -24,30 +24,22 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.core.branding import get_brand
+from app.core.currency_totals import fmt_compact
+from app.services.runway_display import runway_for_display
 
 logger = logging.getLogger(__name__)
 
 
 # ── Formatter helpers ─────────────────────────────────────────────────────────
 
-def _fmt_tl(cents: int | float) -> str:
-    """True-cents input (fields named *_cents from CTO/CMO raw agents)."""
-    val = (cents or 0) / 100
-    if abs(val) >= 1_000_000:
-        return f"₺{val/1_000_000:.1f}M"
-    elif abs(val) >= 1_000:
-        return f"₺{val/1_000:.0f}K"
-    return f"₺{val:,.0f}"
+def _fmt_tl(cents: int | float, currency: str | None = None) -> str:
+    """True-cents input (fields named *_cents from CTO/CMO raw agents), labelled only when a currency is known."""
+    return fmt_compact((cents or 0) / 100, currency)
 
 
-def _fmt_lira(lira: int | float) -> str:
-    """Already-lira input (CFO scalars from Report.data / report_agent._fmt boundary)."""
-    val = (lira or 0)
-    if abs(val) >= 1_000_000:
-        return f"₺{val/1_000_000:.1f}M"
-    elif abs(val) >= 1_000:
-        return f"₺{val/1_000:.0f}K"
-    return f"₺{val:,.0f}"
+def _fmt_lira(lira: int | float, currency: str | None = None) -> str:
+    """Already-major-unit input (CFO scalars from Report.data / report_agent._fmt boundary)."""
+    return fmt_compact(lira or 0, currency)
 
 
 def _pct(v: float | None) -> str:
@@ -72,19 +64,20 @@ def _build_cfo_section(cfo: dict[str, Any]) -> dict[str, Any]:
     alerts    = cfo.get("alerts")   or []
 
     base = (forecast.get("scenarios") or {}).get("base") or {}
+    cur = pnl.get("currency")  # the currency the P&L states; bare when it states none
 
     return {
         "section": "CFO — Finansal Durum",
         "metrics": {
-            "revenue":         _fmt_lira(pnl.get("revenue", 0)),
-            "gross_profit":    _fmt_lira(pnl.get("gross_profit", 0)),
+            "revenue":         _fmt_lira(pnl.get("revenue", 0), cur),
+            "gross_profit":    _fmt_lira(pnl.get("gross_profit", 0), cur),
             "gross_margin":    _pct(pnl.get("gross_margin")),
-            "ebitda":          _fmt_lira(pnl.get("ebitda", 0)),
+            "ebitda":          _fmt_lira(pnl.get("ebitda", 0), cur),
             "ebitda_margin":   _pct(pnl.get("ebitda_margin")),
-            "net_income":      _fmt_lira(pnl.get("net_income", 0)),
+            "net_income":      _fmt_lira(pnl.get("net_income", 0), cur),
             "net_margin":      _pct(pnl.get("net_margin")),
-            "cash_runway":     f"{base.get('runway_months', '?')} ay" if base.get("runway_months") else "—",
-            "forecast_12m":    _fmt_lira(base.get("twelve_month_net", 0)),
+            "cash_runway":     runway_for_display(forecast).text(),
+            "forecast_12m":    _fmt_lira(base.get("twelve_month_net", 0), cur),
         },
         "critical_alerts": [a for a in alerts if a.get("level") == "critical"],
         "anomaly_count":   len(anomalies),
@@ -259,7 +252,7 @@ def build_unified_report(
     # CFO headline
     if cfo:
         pnl = cfo.get("pnl") or {}
-        exec_summary["headline_revenue"]    = _fmt_lira(pnl.get("revenue", 0))
+        exec_summary["headline_revenue"]    = _fmt_lira(pnl.get("revenue", 0), pnl.get("currency"))
         exec_summary["headline_net_margin"] = _pct(pnl.get("net_margin"))
 
     # Cross-risks from CEO

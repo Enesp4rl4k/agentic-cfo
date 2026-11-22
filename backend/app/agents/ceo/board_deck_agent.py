@@ -32,9 +32,12 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
+from functools import partial
 from typing import Any
 
 from app.agents.ceo.state import CEORunConfig, CEOSkillResult, CEOState
+from app.core.currency_totals import fmt_compact
+from app.services.runway_display import view_from_fin
 
 logger = logging.getLogger(__name__)
 
@@ -43,16 +46,11 @@ logger = logging.getLogger(__name__)
 # Formatting & Impact Quantification
 # ---------------------------------------------------------------------------
 
-def _fmt_currency(cents: int | None, currency: str = "₺") -> str:
-    """Format currency with proper notation."""
+def _fmt_currency(cents: int | None, currency: str | None = None) -> str:
+    """Format money for a slide: labelled with the currency the figure is in, bare when none is stated."""
     if cents is None or cents == 0:
         return "—"
-    value = cents / 100
-    if abs(value) >= 1_000_000:
-        return f"{currency}{value/1_000_000:.1f}M"
-    elif abs(value) >= 1_000:
-        return f"{currency}{value/1_000:.0f}K"
-    return f"{currency}{value:.0f}"
+    return fmt_compact(cents / 100, currency)
 
 
 def _fmt_pct(value: float | None, show_sign: bool = False) -> str:
@@ -116,13 +114,14 @@ def _quantify_impact(
     metric_name: str,
     current: float | None,
     target: float | None,
-    unit: str = "₺",
+    unit: str = "",
     is_cost: bool = False,
 ) -> dict[str, Any]:
     """
     Quantify impact: the gap between current and target.
     Returns: {"gap": float, "opportunity": str, "confidence": float}
     """
+    unit_s = f" {unit}" if unit else ""
     if current is None or target is None:
         return {"gap": 0.0, "opportunity": "Veri yetersiz", "confidence": 0.0}
 
@@ -131,16 +130,16 @@ def _quantify_impact(
     noun = "Tasarruf" if is_cost else "Fırsat"
 
     if gap >= 1_000_000:
-        opp = f"{noun}: {gap/1_000_000:.1f}M {unit} {direction}"
+        opp = f"{noun}: {gap/1_000_000:.1f}M{unit_s} {direction}"
         conf = 0.85
     elif gap >= 100_000:
-        opp = f"{noun}: {gap/1_000:.0f}K {unit} {direction}"
+        opp = f"{noun}: {gap/1_000:.0f}K{unit_s} {direction}"
         conf = 0.80
     elif gap >= 10_000:
-        opp = f"{noun}: {gap:.0f} {unit} {direction}"
+        opp = f"{noun}: {gap:.0f}{unit_s} {direction}"
         conf = 0.75
     else:
-        opp = f"Marjinal iyileştirme (<{gap:.0f} {unit})"
+        opp = f"Marjinal iyileştirme (<{gap:.0f}{unit_s})"
         conf = 0.60
 
     return {"gap": gap, "opportunity": opp, "confidence": conf}
@@ -205,6 +204,7 @@ def _build_slides(
 ) -> list[dict[str, Any]]:
     """Build board-ready slide deck with quantified impact."""
     slides = []
+    fin_money = partial(_fmt_currency, currency=fin.get("currency"))  # the CFO summary states its currency
 
     # `.get(k, default)` yields None when the key is present but null — which
     # is what the CFO condenser emits for an unknown runway. Each of these
@@ -246,13 +246,13 @@ def _build_slides(
         "key_metrics": [
             {
                 "label": "Gelir",
-                "value": _fmt_currency(revenue),
+                "value": fin_money(revenue),
                 "momentum": momentum_revenue,
                 "confidence": 0.95,
             },
             {
                 "label": "Net Gelir",
-                "value": _fmt_currency(net_income),
+                "value": fin_money(net_income),
                 "momentum": momentum_revenue,
                 "sub": _fmt_pct(net_margin),
                 "confidence": 0.92,
@@ -305,7 +305,7 @@ def _build_slides(
         "key_metrics": [
             {
                 "label": "Gelir",
-                "value": _fmt_currency(revenue),
+                "value": fin_money(revenue),
                 "momentum": momentum_revenue,
             },
             {
@@ -323,11 +323,11 @@ def _build_slides(
             },
             {
                 "label": "İşletme CF",
-                "value": _fmt_currency(fin.get("cash_flow_net_cents")),
+                "value": fin_money(fin.get("cash_flow_net_cents")),
             },
             {
                 "label": "12 Aylık Tahmin",
-                "value": _fmt_currency(forecast_12m),
+                "value": fin_money(forecast_12m),
                 "sub": f"vs. Cari: {_fmt_pct((forecast_12m / revenue - 1) if revenue else 0, show_sign=True)}",
             },
         ],
@@ -339,7 +339,7 @@ def _build_slides(
     infra_waste = tech.get("infra_waste_cents") or 0
     infra_cost = tech.get("infra_cost_cents", 0)
     waste_opp = _quantify_impact(
-        "Cloud Tasarrufu", infra_waste, infra_cost * 0.05, "₺", is_cost=True
+        "Cloud Tasarrufu", infra_waste, infra_cost * 0.05, "", is_cost=True
     )
 
     slides.append({
@@ -361,11 +361,13 @@ def _build_slides(
                 "label": "Cloud Israfı",
                 "value": _fmt_currency(infra_waste),
                 "sub": waste_opp.get("opportunity", ""),
-                "confidence": waste_opp.get("confidence", 0.82),
+                "confidence": waste_opp.get("confidence"),
             },
             {
                 "label": "Teknik Borç",
-                "value": f"{tech.get('debt_score', 5.0):.1f}/10",
+                "value": (
+                    f"{tech['debt_score']:.1f}/10" if tech.get("debt_score") is not None else "bilinmiyor"
+                ),
             },
             {
                 "label": "MTTR",
@@ -443,16 +445,16 @@ def _build_slides(
         "key_metrics": [
             {
                 "label": "Temel Durum Net",
-                "value": _fmt_currency(forecast_12m),
+                "value": fin_money(forecast_12m),
             },
             {
                 "label": "Iyimser Senaryo",
-                "value": _fmt_currency(int(forecast_12m * 1.20)),
+                "value": fin_money(int(forecast_12m * 1.20)),
                 "sub": "(+20% if all priorities succeed)",
             },
             {
                 "label": "Kötümser Senaryo",
-                "value": _fmt_currency(int(forecast_12m * 0.80)),
+                "value": fin_money(int(forecast_12m * 0.80)),
                 "sub": "(-20% if risks materialize)",
             },
             {
@@ -462,7 +464,7 @@ def _build_slides(
             },
             {
                 "label": "Aylık Kullanım",
-                "value": _fmt_currency(fin.get("monthly_burn_cents")),
+                "value": fin_money(fin.get("monthly_burn_cents")),
             },
             {
                 "label": "Cloud Tasarrufu Potansiyeli",
@@ -471,7 +473,7 @@ def _build_slides(
             },
         ],
         "narrative": (
-            f"12 aylık temel tahmin: {_fmt_currency(forecast_12m)}. "
+            f"12 aylık temel tahmin: {fin_money(forecast_12m)}. "
             f"{'Pisti kısıtı birinci dereceden risk.' if runway and runway <= 6 else 'Finansal trajektori stabil.'} "
             f"{f'Cloud optimizasyonu pistiye {runway_gain_months} ay ekleyebilir.' if runway_gain_months else ''}"
         ).strip(),
@@ -489,6 +491,7 @@ def _build_one_page_summary(
     company_name: str,
 ) -> str:
     """Board/Audit Committee-ready one-page executive summary in Turkish."""
+    fin_money = partial(_fmt_currency, currency=fin.get("currency"))
     lines = [
         "┌" + "─" * 78 + "┐",
         f"│ YÖNETİM ÖZETİ — {company_name.upper():^70}│",
@@ -496,12 +499,12 @@ def _build_one_page_summary(
         "└" + "─" * 78 + "┘",
         "",
         "FİNANSAL DURUM TABLOSU",
-        f"  • Gelir:           {_fmt_currency(fin.get('revenue_cents'))}",
-        f"  • Net Gelir:       {_fmt_currency(fin.get('net_income_cents'))} ({_fmt_pct(fin.get('net_margin'))} marj)",
+        f"  • Gelir:           {fin_money(fin.get('revenue_cents'))}",
+        f"  • Net Gelir:       {fin_money(fin.get('net_income_cents'))} ({_fmt_pct(fin.get('net_margin'))} marj)",
         f"  • Brüt Marj:       {_fmt_pct(fin.get('gross_margin'))}",
-        f"  • Nakit Pisti:     {fin.get('cash_runway_months') or 0:.1f} ay",
-        f"  • 12 Aylık Tahmin: {_fmt_currency(fin.get('forecast_base_12m_cents'))} (temel senaryo)",
-        f"  • Aylık Kullanım:  {_fmt_currency(fin.get('monthly_burn_cents'))}",
+        f"  • Nakit Pisti:     {view_from_fin(fin).text()}",
+        f"  • 12 Aylık Tahmin: {fin_money(fin.get('forecast_base_12m_cents'))} (temel senaryo)",
+        f"  • Aylık Kullanım:  {fin_money(fin.get('monthly_burn_cents'))}",
         "",
         "TEKNOLOJİ VE OPERASYONALLİK",
         "  • Sağlık Skoru:    " + _score_line(tech.get("overall_health_score")),

@@ -135,12 +135,24 @@ export interface EDefterFile {
   sha256: string;
   /** Entries booked gross because the source stated no KDV amount. */
   kdvUnverified: number;
+  /** Entries left out because they are in another currency than the journal's primary one (`X-Para-Birimi-Disi`). */
+  leftOutCurrency: Record<string, number>;
 }
 
 const EDEFTER_ROUTE: Record<EDefterKind, string> = {
   yevmiye: "e-defter.xml",
   kebir: "e-defter-kebir.xml",
 };
+
+/** "USD=3, EUR=1" -> { USD: 3, EUR: 1 }. */
+export function parseLeftOut(header: string | undefined): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const part of (header ?? "").split(",")) {
+    const [code, n] = part.split("=").map((x) => x.trim());
+    if (code && Number(n) > 0) out[code] = Number(n);
+  }
+  return out;
+}
 
 export async function downloadEDefter(
   jobId: string,
@@ -165,6 +177,7 @@ export async function downloadEDefter(
     unfilableCode: h["x-edefter-unfilable-code"] ?? "",
     sha256: h["x-edefter-sha256"] ?? "",
     kdvUnverified: Number(h["x-edefter-kdv-unverified"] ?? 0),
+    leftOutCurrency: parseLeftOut(h["x-para-birimi-disi"]),
   };
 }
 

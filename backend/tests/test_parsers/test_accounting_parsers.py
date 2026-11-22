@@ -297,10 +297,11 @@ class TestLogoTigerDemoFixture:
         assert first_date.year == 2024
         assert first_date.month == 1
 
-    def test_currency_is_try(self):
-        """All transactions from a Turkish ERP export should be TRY."""
+    def test_currency_is_not_assumed(self):
+        """The export states no currency, so the parser does not make one up: the document header or the
+        confirmed company currency decides downstream (app.services.ingest.hold)."""
         for tx in self.result.transactions:
-            assert tx.currency == "TRY", f"Expected TRY, got {tx.currency} for {tx.description}"
+            assert tx.currency == "", f"Expected unstated, got {tx.currency} for {tx.description}"
 
     def test_no_fatal_parse_warnings(self):
         """Parser should run without fatal errors."""

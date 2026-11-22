@@ -4,12 +4,13 @@ from app.services.data_plane.quality_gate_service import score_sync_quality
 
 def test_normalize_csv_transactions_maps_basic_fields() -> None:
     csv_bytes = (
-        b"date,amount,description,category,reference\n"
-        b"2026-08-01,1250.50,Office rent,operations,INV-1\n"
+        b"date,amount,description,category,reference,type,currency\n"
+        b"2026-08-01,1250.50,Office rent,operations,INV-1,expense,TRY\n"
     )
-    rows = normalize_csv_transactions(csv_bytes=csv_bytes, column_mapping={})
+    rows = normalize_csv_transactions(csv_bytes=csv_bytes, column_mapping={}).rows
 
     assert len(rows) == 1
+    assert rows[0].direction == "expense" and rows[0].currency == "TRY"
     assert rows[0].amount_cents == 125050
     assert rows[0].description == "Office rent"
     assert rows[0].source_record_id == "INV-1"

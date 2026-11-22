@@ -3,8 +3,9 @@ Corrections API — PATCH /transactions/{id}/category
 
 User corrects a transaction's category. We:
 1. Update the transaction record
-2. Persist a CategoryRule (learn from correction)
-3. Return the updated transaction
+2. Carry it into the company ledger (same DB transaction; services/ledger_correction.py)
+3. Persist a CategoryRule (learn from correction)
+4. Return the updated transaction
 """
 from typing import Any
 
@@ -12,12 +13,15 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.access import load_owned_job
+from app.api.access import load_owned_job, require_writer
 from app.api.auth import get_current_user
 from app.database import get_db
+from app.models.decision import DecidedVia, DecisionKind
 from app.models.transaction import Transaction
 from app.models.user import User
 from app.services.classifier import learn
+from app.services.decisions import record_decision
+from app.services.ledger_correction import CorrectionConflict, apply_category_correction
 
 router = APIRouter()
 
@@ -33,7 +37,8 @@ class CategoryCorrectionRequest(BaseModel):
     apply_always: bool = False   # "Apply this rule for all future transactions from this vendor"
 
 
-@router.patch("/transactions/{transaction_id}/category")
+@router.patch("/transactions/{transaction_id}/category",
+    dependencies=[Depends(require_writer)])
 async def correct_category(
     transaction_id: str,
     body: CategoryCorrectionRequest,
@@ -58,9 +63,38 @@ async def correct_category(
     old_category = tx.category
     tx.category = body.category
     tx.category_source = "user_edit"
-    await db.commit()
-
     org_id = str(job.org_id) if job.org_id else None
+    # The ledger row with the same source_record_id follows, in the same database
+    # transaction (plan v10 G3): P&L, company_rows and the cash radar read the ledger.
+    try:
+        ledger = await apply_category_correction(db, tx, org_id, body.category, current_user)
+    except CorrectionConflict as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=409, detail="Aynı kayıt şu anda başka bir düzeltmeyle güncelleniyor; tekrar deneyin."
+        ) from exc
+    correction_id: str | None = None
+    if org_id:
+        # In the same transaction as the correction (and the ledger row that follows it): the owner's
+        # answer and the change it made commit together or not at all.
+        evidence = [{"type": "transaction", "id": str(tx.id)}, {"type": "analysis_job", "id": str(tx.job_id)}]
+        if ledger.get("source_record_id"):
+            evidence.append({"type": "ledger_source_record", "id": str(ledger["source_record_id"])})
+        correction = await record_decision(
+            db, org_id=org_id, kind=DecisionKind.CATEGORY_CORRECTION, target_type="transaction",
+            target_id=str(tx.id), outcome="corrected", decided_via=DecidedVia.HUMAN, decided_by=str(current_user.id),
+            evidence_refs=evidence, before={"category": old_category}, after={"category": body.category},
+        )
+        correction_id = str(correction.id)
+    await db.commit()
+    if org_id and ledger["ledger"] in ("updated", "booked_in_open_month"):
+        # The ledger moved, so the company's persisted view (P&L, Command Center) follows,
+        # as after every decision on the ledger (api/ledger.py `_refresh_view`).
+        from app.core.background import spawn
+        from app.post_completion import refresh_company_view_detached
+
+        spawn(refresh_company_view_detached(org_id), name=f"ledger-view-{org_id[:8]}")
+
     # Persist learning rule
     rule = await learn(
         description=tx.description or "",
@@ -71,6 +105,17 @@ async def correct_category(
         # The rule belongs to the company whose transaction was corrected.
         org_id=org_id,
     )
+
+    if body.apply_always and org_id:
+        # "Apply always" hands the next uploads to a rule: a standing automation, so its own record,
+        # pointing at the correction that taught it.
+        await record_decision(
+            db, org_id=org_id, kind=DecisionKind.AUTOMATION_RULE_CHANGE, target_type="category_rule",
+            target_id=str(rule.id), outcome="enabled", decided_via=DecidedVia.HUMAN, decided_by=str(current_user.id),
+            evidence_refs=[{"type": "decision", "id": correction_id}] if correction_id else None,
+            after={"category": body.category, "vendor": rule.vendor_match, "keyword": rule.keyword_match},
+        )
+        await db.commit()
 
     # A standing rule changes every analysis it matches, but their dashboards
     # were derived from the old categories. Say which ones, so the UI can offer
@@ -90,6 +135,7 @@ async def correct_category(
             "transaction_id": transaction_id,
             "old_category": old_category,
             "new_category": body.category,
+            "ledger": ledger["ledger"],
             "rule_saved": body.apply_always,
             "affected_job_ids": affected,
         },
@@ -148,7 +194,7 @@ async def get_transaction(
             "description": tx.description,
             "vendor": tx.vendor,
             "transaction_date": tx.transaction_date.isoformat() if tx.transaction_date else None,
-            "confidence": float(tx.confidence) if tx.confidence else None,
+            "confidence": float(tx.confidence) if tx.confidence is not None else None,
         },
         "error": None,
     }

@@ -37,7 +37,7 @@ export function ForecastScorecard() {
   const labels = t.pilot.radarBacktest;
   const fmt = useCurrencyFormat();
   const { org } = useOrgSettings();
-  const locale = org?.locale || "en-US";
+  const locale = org?.locale || "tr-TR";
   const { data, isLoading, isError } = useQuery({ queryKey: ["radar-backtest"], queryFn: () => getRadarBacktest() });
 
   const pct = (value: number) =>

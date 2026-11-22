@@ -12,6 +12,7 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { noBasis } from "./dashboard-mocks";
 import { buildCurve, CURVE_HEIGHT, niceStep, polyline } from "@/components/radar/curve";
 
 const getCashRadar = vi.fn();
@@ -64,6 +65,8 @@ const week = (n: number, close: number, over: Record<string, unknown> = {}) => (
   end_balance_cents: close * 100,
   receivables: [],
   payables: [],
+  inflow_basis: noBasis,
+  outflow_basis: noBasis,
   ...over,
 });
 

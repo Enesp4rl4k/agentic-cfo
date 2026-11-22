@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.analysis_job import AnalysisJob, JobStatus
 from app.models.anomaly import Anomaly
 from app.models.canonical_transaction import CanonicalTransaction
+from app.models.category_override import CategoryOverride
 from app.models.company_context import CompanyContextSnapshot
 from app.models.company_semantic_snapshot import CompanySemanticSnapshotRow
 from app.models.decision_log import DecisionLog
@@ -52,8 +53,15 @@ GUEST_DESCRIPTION = "Otomatik oluşturulmuş misafir demo çalışma alanı."
 
 
 def is_guest_org(org: Organization) -> bool:
-    """True only for orgs minted by POST /demo/guest (slug + description pair)."""
-    return bool(GUEST_SLUG_RE.match(org.slug or "")) and org.description == GUEST_DESCRIPTION
+    """True only for orgs minted by POST /demo/guest: the server-set flag, plus the slug/description it wrote.
+
+    The flag alone decides; the slug and description are kept as a consistency check. A user-chosen slug
+    or description never makes an organisation a guest workspace."""
+    return (
+        bool(org.is_demo_guest)
+        and bool(GUEST_SLUG_RE.match(org.slug or ""))
+        and org.description == GUEST_DESCRIPTION
+    )
 
 
 @dataclass
@@ -291,6 +299,8 @@ async def purge_demo_workspace(db: AsyncSession, org_id: str) -> dict[str, int]:
 
     ledger = await db.execute(delete(CanonicalTransaction).where(CanonicalTransaction.org_id == org_id))
     counts["ledger"] = int(ledger.rowcount or 0)
+    # A person's single-row corrections belong to the data they corrected.
+    await db.execute(delete(CategoryOverride).where(CategoryOverride.org_id == org_id))
     await db.execute(delete(OpenItem).where(OpenItem.org_id == org_id))
     await db.execute(delete(OpenItemMatch).where(OpenItemMatch.org_id == org_id))
 

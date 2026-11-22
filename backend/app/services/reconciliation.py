@@ -22,6 +22,7 @@ nothing stays what it was: its own money.
 from __future__ import annotations
 
 import re
+import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
@@ -31,9 +32,10 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.turkish import fold
-from app.models.canonical_transaction import CanonicalTransaction
+from app.models.canonical_transaction import CanonicalTransaction, money_rows
 from app.models.open_item import OpenItem
 from app.models.open_item_match import OpenItemMatch
+from app.services.settlement_decisions import record_rule_settlement
 
 CASH = "cash"
 CONFIRMED = "confirmed"
@@ -70,8 +72,21 @@ def _name_in(counterparty: str | None, description: str | None) -> bool:
 
 
 def _number_in(item: OpenItem, description: str | None) -> bool:
+    """The item's invoice number stands as a whole token in the bank description.
+
+    "12" is not in "A1234" or "2024-12": a number is not a number inside a longer one, so
+    neither a letter or digit nor a `-` `/` `_` `.` joining one on either side counts as a
+    boundary. Leading zeros are significant ("001" is not "1"): a miss only costs a
+    proposal, a wrong match settles the wrong invoice.
+    """
     found = _INVOICE_NUMBER.search(item.description or "")
-    return bool(found) and fold(found.group(1)).strip() in fold(description)
+    number = fold(found.group(1)).strip() if found else ""
+    if not number:
+        return False
+    return re.search(
+        rf"(?<![a-z0-9])(?<![a-z0-9][-/_.]){re.escape(number)}(?![a-z0-9])(?![-/_.][a-z0-9])",
+        fold(description),
+    ) is not None
 
 
 def _day(when: datetime) -> date:
@@ -102,6 +117,11 @@ def _decide(row: CanonicalTransaction, items: list[OpenItem], refused: set[str])
     exact = [i for i in fits if _remaining(i) == row.amount_cents]
 
     quoted = [i for i in fits if _number_in(i, row.description)]
+    if len(quoted) > 1:
+        # Two counterparties may use the same number (G23): the name decides, and with no
+        # single name the movement is left to the amount rules below (a proposal at most).
+        named_quoted = [i for i in quoted if _name_in(i.counterparty, row.description)]
+        quoted = named_quoted if len(named_quoted) == 1 else []
     if quoted:
         item = quoted[0]
         if _remaining(item) == row.amount_cents:
@@ -237,6 +257,7 @@ async def reconcile_org(db: AsyncSession, org_id: str) -> dict[str, int]:
         .where(
             CanonicalTransaction.org_id == org_id,
             CanonicalTransaction.basis == CASH,
+            money_rows(),
             CanonicalTransaction.ledger_status == "active",
             CanonicalTransaction.amount_cents > 0,
         )
@@ -260,12 +281,15 @@ async def reconcile_org(db: AsyncSession, org_id: str) -> dict[str, int]:
             if lump:
                 counts["proposed"] += 1
             continue
-        db.add(OpenItemMatch(
-            org_id=org_id, open_item_id=match.item.id, ledger_row_id=row.id,
+        made = OpenItemMatch(
+            id=str(uuid.uuid4()), org_id=org_id, open_item_id=match.item.id, ledger_row_id=row.id,
             amount_cents=match.amount, method=match.method, status=match.status,
             matched_on=_day(row.transaction_date),
-        ))
+        )
+        db.add(made)
         if match.status == CONFIRMED:
+            # A built-in rule just decided: it leaves its record in this transaction (a failed record blocks it).
+            await record_rule_settlement(db, org_id=org_id, match=made, counterparty=match.item.counterparty)
             _note_payment(match.item, match.amount)
             settled_ids.add(match.item.id)
             counts["settled"] += 1

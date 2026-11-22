@@ -19,7 +19,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.turkish import fold
 from app.models.canonical_transaction import CanonicalTransaction as CT
+from app.models.canonical_transaction import money_rows
 from app.platform.contracts import EvidenceBundle, EvidenceCitation
+from app.services.ledger import effective_categories
 
 SOURCE_TYPE = "ledger_row"
 VERSION = "ledger_v1"
@@ -79,13 +81,17 @@ async def retrieve_ledger_evidence(
 
     scanned = (await db.execute(
         select(CT.id, CT.counterparty, CT.description, CT.category)
-        .where(CT.org_id == str(org_id), CT.ledger_status == "active")
+        .where(CT.org_id == str(org_id), CT.ledger_status == "active", money_rows())
         .order_by(CT.transaction_date.desc(), CT.id)
         .limit(_SCAN_LIMIT)
     )).all()
 
+    # A closed month's original row keeps its old category; the question is matched
+    # against the one a person gave it since. The correction pair is not money (above).
+    effective = await effective_categories(db, str(org_id))
     ranked: list[tuple[float, str]] = []
     for row_id, counterparty, description, category in scanned:
+        category = effective.get(row_id, category)
         s = _score(words, set(_tokens(f"{counterparty or ''} {description or ''} {category or ''}")))
         if s >= _MIN_SCORE:
             ranked.append((s, row_id))

@@ -46,6 +46,7 @@ SCOPED_IN_HANDLER: dict[tuple[str, str], str] = {
     ("GET", "/api/v1/auth/sso/{provider}/callback"): "provider name; the callback verifies OAuth state",
     ("POST", "/api/v1/open-banking/connect/{bank_id}"): "bank id is a key into a static table",
     ("POST", "/api/v1/open-banking/connections/{connection_id}/sync"): "id unused; the new job is created in the caller's org",
+    ("DELETE", "/api/v1/platform/orgs/{org_id}/ip-whitelist"): "platform operator only (require_platform_operator); the org is the target, not the caller's",
     ("GET", "/api/v1/efatura/invoices/{direction}"): "inbound|outbound, not an object",
     ("GET", "/api/v1/efatura/tax-calendar/{period}"): "a YYYY-MM period, not an object",
     ("GET", "/api/v1/billing/check-limit/{resource}"): "resource name; usage read for the caller's org",
@@ -70,7 +71,7 @@ SCOPED_IN_HANDLER: dict[tuple[str, str], str] = {
     ("DELETE", "/api/v1/smmm/clients/{client_id}"): "selected WHERE id AND muhasebeci == caller's SMMM record",
     ("DELETE", "/api/v1/chat/sessions/{session_id}"): "session store is keyed by the caller's user id",
     ("GET", "/api/v1/chat/sessions/{session_id}/history"): "session store is keyed by the caller's user id",
-    ("DELETE", "/api/v1/pilot/invite/{invite_id}"): "admin-only; pilot invites are platform-wide, not tenant data",
+    ("DELETE", "/api/v1/pilot/invite/{invite_id}"): "platform operator only (require_platform_operator); pilot invites are platform-wide, not tenant data",
     ("POST", "/api/v1/alerts/acknowledge/{job_id}/{alert_fingerprint}"): "job resolved by owned_job; fingerprint is a hash",
     ("GET", "/api/v1/benchmark/{job_id}/metric/{metric}"): "job resolved by owned_job; metric is a name",
     ("POST", "/api/v1/datasource/{job_id}/{domain}/{source_type}"): "job resolved by owned_job; domain/type are names",
@@ -89,6 +90,7 @@ SCOPED_IN_HANDLER: dict[tuple[str, str], str] = {
     ("GET", "/api/v1/tetikler/{trigger_id}"): "404 unless row.org_id == caller's org (ensure_tenant inside _owned_row)",
     ("PATCH", "/api/v1/tetikler/{trigger_id}"): "404 unless row.org_id == caller's org (ensure_tenant inside _owned_row)",
     ("DELETE", "/api/v1/tetikler/{trigger_id}"): "404 unless row.org_id == caller's org (ensure_tenant inside _owned_row)",
+    ("DELETE", "/api/v1/held-rows/direction-mappings/{mapping_id}"): "writer; services.held_direction.revoke_mapping answers 404 unless mapping.org_id == caller's org",
 }
 
 

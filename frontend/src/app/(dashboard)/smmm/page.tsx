@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useI18n } from "@/hooks/useI18n";
 import { SmmmTakvim } from "@/components/smmm/SmmmTakvim";
+import { SmmmWorkload } from "@/components/smmm/SmmmWorkload";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -616,6 +617,7 @@ export default function SMMMMuhasebecPage() {
         )}
       </Card>
 
+      <SmmmWorkload />
       <SmmmTakvim />
 
       {/* Modals */}

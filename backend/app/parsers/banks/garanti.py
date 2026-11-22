@@ -9,8 +9,10 @@ Garanti PDF ekstrelerinde tipik format:
 from __future__ import annotations
 
 import re
+from datetime import UTC, datetime
 
 from app.parsers.base import BankParser, ParsedStatement, ParsedTransaction
+from app.parsers.direction import signed_money
 
 
 class GarantiParser(BankParser):
@@ -47,29 +49,32 @@ class GarantiParser(BankParser):
         transactions: list[ParsedTransaction] = []
         # Pattern: date, optional valor date, description, signed amount, balance
         row_pattern = re.compile(
-            r"(\d{2}\.\d{2}\.\d{4})\s+"
-            r"(?:\d{2}\.\d{2}\.\d{4}\s+)?"   # optional valor date
-            r"(.+?)\s+"
-            r"([+-]?[\d.,]+)\s+"
-            r"([\d.,]+)\s*$",
+            r"(\d{2}\.\d{2}\.\d{4})[ \t]+"
+            r"(?:\d{2}\.\d{2}\.\d{4}[ \t]+)?"   # optional valor date
+            r"(.+?)[ \t]+"
+            r"([+\-−]?(?:\d{1,3}(?: \d{3})+[.,]\d{2}|(?=[\d.,]*[.,])[\d.,]+))(?:[ \t]*(?:TL|TRY|₺))?(?:[ \t]+([+\-−]?(?:\d{1,3}(?: \d{3})+[.,]\d{2}|(?=[\d.,]*[.,])[\d.,]+))(?:[ \t]*(?:TL|TRY|₺))?)?[ \t]*$",
             re.MULTILINE,
         )
-        for m in row_pattern.finditer(text):
+        found = list(row_pattern.finditer(text))
+        # The sign is a reading marked `direction_basis="sign"`, not evidence (direction.settle_rows).
+        signed = bool(found)
+        for m in found:
             date = self.parse_turkish_date(m.group(1))
-            if not date:
-                continue
+            estimated = date is None
+            date = date or datetime.now(UTC)
             description = m.group(2).strip()
             amount_raw = m.group(3).lstrip("+")
             negative = amount_raw.startswith("-")
             amount = self.parse_turkish_amount(amount_raw.lstrip("-"))
-            if not amount:
-                continue
+            amount = amount or 0
 
             transactions.append(ParsedTransaction(
                 date=date,
                 description=description,
                 amount_cents=amount,
-                tx_type="expense" if negative else "income",
-                raw_row=m.group(0),
+                tx_type=("expense" if negative else "income") if signed else "",
+                direction_basis="sign" if signed else "",
+                balance_cents=signed_money(m.group(4)),
+                raw_row=m.group(0), date_estimated=estimated,
             ))
         return transactions

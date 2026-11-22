@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.models.alert_rule import AlertHistory
 from app.models.analysis_job import AnalysisJob
+from app.models.outbox_message import OutboxMessage
 from app.models.report import Report, ReportFormat, ReportType
 from app.models.trigger import TriggerDefinitionRow, TriggerRunRow
 from app.services.triggers import (
@@ -270,7 +271,7 @@ async def test_unregistered_action_kind_reports_error(db, monkeypatch):
 # ── P4-2 actions ──────────────────────────────────────────────────────────────
 
 
-async def test_webhook_call_posts_to_url(db):
+async def test_webhook_call_is_queued_in_the_outbox_not_sent(db):
     await _mk_trigger(
         db, action_kind="webhook.call",
         action_params={"url": "https://dummy-webhook"},
@@ -280,9 +281,11 @@ async def test_webhook_call_posts_to_url(db):
         values={"finance.runway_months": 1.0}, payload={"message": "hi"},
     )
     assert outcomes[0].status == FIRED
-    # https://dummy… is treated as delivered without a real network call.
-    assert outcomes[0].action_result["delivered"] is True
-    assert outcomes[0].action_result["status_code"] == 200
+    result = outcomes[0].action_result
+    # The run says what it knows: queued. It does not claim a delivery it did not see.
+    assert result["queued"] is True and "delivered" not in result
+    row = (await db.execute(select(OutboxMessage))).scalar_one()
+    assert (row.channel, row.status, row.id) == ("webhook", "pending", result["outbox_id"])
 
 
 async def test_webhook_call_requires_url(db):
@@ -329,7 +332,7 @@ async def test_cascade_simulate_runs_and_returns_scenario(db, monkeypatch):
     class _FakeCtx:
         last_cfo_result = {
             "dashboard": {
-                "pnl": {"net_profit": -100_000.0},
+                "pnl": {"net_profit": -100_000.0, "revenue": 1_200_000.0, "total_opex": 1_300_000.0},
                 "cashflow": {"runway_months": 2.0},
                 "forecast": {},
             }
@@ -356,6 +359,27 @@ async def test_cascade_simulate_runs_and_returns_scenario(db, monkeypatch):
     result = outcomes[0].action_result
     assert result["trigger"] == "cash_crisis"
     assert isinstance(result["result"], dict) and result["result"]
+
+
+async def test_cascade_simulate_without_the_inputs_returns_unavailable_not_a_made_up_run(db, monkeypatch):
+    class _EmptyCtx:
+        last_cfo_result: dict[str, Any] = {}
+        last_chro_result = last_cto_result = last_cmo_result = last_coo_result = None
+
+    async def _fake_ctx(org_id: str, db=None):
+        return _EmptyCtx()
+
+    monkeypatch.setattr("app.services.company_context.get_company_context", _fake_ctx)
+    await _mk_trigger(
+        db, action_kind="cascade.simulate",
+        action_params={"trigger": "cash_crisis", "runway_months": 2.0},
+    )
+    outcomes = await handle_event(
+        db, org_id=ORG, event_kind="job.completed", event_ref="job-1",
+        values={"finance.runway_months": 1.0},
+    )
+    result = outcomes[0].action_result
+    assert result["result"] is None and result["unavailable"]
 
 
 async def test_cascade_simulate_rejects_unknown_trigger(db):

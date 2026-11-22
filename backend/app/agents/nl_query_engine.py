@@ -29,6 +29,10 @@ import logging
 import re
 from typing import Any
 
+from app.agents.chat_money import figure_currency
+from app.core.currency_totals import fmt_amount
+from app.services.runway_display import PROMPT_RULE, runway_for_display
+
 logger = logging.getLogger(__name__)
 
 
@@ -158,7 +162,10 @@ def execute_nl_query(
         forecast = dashboard.get("forecast") or {}
         scenarios = forecast.get("scenarios") or {}
         base = scenarios.get("base") or {}
-        value = base.get("runway_months")
+        view = runway_for_display(forecast)
+        value = view.months
+        context["runway_basis"] = view.text()
+        context["note"] = PROMPT_RULE
         context["scenario"] = "Baz"
         context["twelve_month_net"] = base.get("twelve_month_net")
         mc = forecast.get("monte_carlo") or {}
@@ -190,7 +197,7 @@ def execute_nl_query(
         value = {k: {
             "label": v.get("label"),
             "twelve_month_net": v.get("twelve_month_net"),
-            "runway_months": v.get("runway_months"),
+            "runway": runway_for_display(forecast, k).text(),
         } for k, v in scenarios.items()}
         mc = forecast.get("monte_carlo") or {}
         if mc:
@@ -239,10 +246,11 @@ async def generate_nl_insight(
     pnl = dashboard.get("pnl") or {}
     cf  = dashboard.get("cashflow") or {}
     dashboard.get("forecast") or {}
+    cur = figure_currency(pnl, cf, dashboard.get("currency_scope"))  # the stored analysis's currency; bare when none
 
     def fmt(v: Any) -> str:
         if isinstance(v, (int, float)):
-            return f"{v:,.0f} TL" if abs(v) > 100 else f"{v:.2f}"
+            return fmt_amount(v, cur.code) if abs(v) > 100 else f"{v:.2f}"
         return str(v)
 
     compact_context = (
@@ -295,7 +303,7 @@ async def generate_nl_insight(
         # Fallback: return raw value as text
         val = query_result.get("value")
         if isinstance(val, (int, float)) and val > 1000:
-            answer = f"{query_result.get('metric_display', 'Değer')}: {val:,.0f} TL"
+            answer = f"{query_result.get('metric_display', 'Değer')}: {fmt_amount(val, cur.code)}"
         elif val is not None:
             answer = f"Sonuç: {val}"
         else:
@@ -333,10 +341,11 @@ async def generate_nl_insight_stream(
 
     pnl = dashboard.get("pnl") or {}
     cf  = dashboard.get("cashflow") or {}
+    cur = figure_currency(pnl, cf, dashboard.get("currency_scope"))
 
     def fmt(v: Any) -> str:
         if isinstance(v, (int, float)):
-            return f"{v:,.0f} TL" if abs(v) > 100 else f"{v:.2f}"
+            return fmt_amount(v, cur.code) if abs(v) > 100 else f"{v:.2f}"
         return str(v)
 
     compact_context = (
@@ -397,7 +406,7 @@ async def generate_nl_insight_stream(
         logger.warning("Streaming NL insight failed: %s", exc)
         val = query_result.get("value")
         fallback = (
-            f"{query_result.get('metric_display', 'Değer')}: {val:,.0f} TL"
+            f"{query_result.get('metric_display', 'Değer')}: {fmt_amount(val, cur.code)}"
             if isinstance(val, (int, float)) and val > 1000
             else f"Sonuç: {val}" if val is not None
             else "Bu soruyu yanıtlamak için yeterli veri bulunamadı."

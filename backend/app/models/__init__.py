@@ -10,21 +10,29 @@ from app.models.authority_policy import AuthorityPolicy
 from app.models.canonical_eng_signal import CanonicalEngSignal
 from app.models.canonical_transaction import CanonicalTransaction
 from app.models.cash_radar_snapshot import CashRadarSnapshot
+from app.models.category_override import CategoryOverride
 from app.models.category_rule import CategoryRule
 from app.models.company_context import CompanyContextSnapshot
 from app.models.company_semantic_snapshot import CompanySemanticSnapshotRow
 from app.models.compliance_extended import BreachNotification, ComplianceCertification
 from app.models.connector_connection import ConnectorConnection
+from app.models.counterparty_alias import CounterpartyAlias
 from app.models.data_source import (
     DOMAIN_SOURCE_KWARGS,
     DataSource,
     DataSourceDomain,
     DataSourceType,
 )
+from app.models.decision import Decision
 from app.models.decision_log import DecisionLog
 from app.models.defensibility_packet import DefensibilityPacket
+from app.models.direction_mapping import DirectionMapping
+from app.models.donem_kilidi import DonemKilidi
 from app.models.email_ingest import EmailIngestAddress, EmailIngestMessage
+from app.models.email_verification import EmailVerificationToken
+from app.models.erasure_record import OrgErasureRecord, OrgErasureRequest
 from app.models.erp_integration import ERPIntegration, ERPSyncLog
+from app.models.held_transaction import HeldTransaction
 from app.models.in_app_notification import InAppNotification
 from app.models.institutionalization_snapshot import InstitutionalizationSnapshot
 from app.models.journal import JournalEntry, JournalLine
@@ -33,6 +41,7 @@ from app.models.open_item import OpenItem
 from app.models.open_item_match import OpenItemMatch
 from app.models.organization import Organization
 from app.models.outbox_message import OutboxMessage
+from app.models.password_reset import PasswordResetToken
 from app.models.payment_plan_change import PaymentPlanChange
 from app.models.pilot import PilotInvite, UserFeedback
 from app.models.proactive_alert import ProactiveAlert
@@ -65,20 +74,27 @@ __all__ = [
     "CanonicalEngSignal",
     "CanonicalTransaction",
     "CashRadarSnapshot",
+    "CategoryOverride",
     "CategoryRule",
     "CompanyContextSnapshot",
     "CompanySemanticSnapshotRow",
     "ComplianceCertification",
     "ConnectorConnection",
+    "CounterpartyAlias",
     "DataSource",
     "DataSourceDomain",
     "DataSourceType",
+    "Decision",
     "DecisionLog",
     "DefensibilityPacket",
+    "DirectionMapping",
+    "DonemKilidi",
     "ERPIntegration",
     "ERPSyncLog",
     "EmailIngestAddress",
     "EmailIngestMessage",
+    "EmailVerificationToken",
+    "HeldTransaction",
     "InAppNotification",
     "InstitutionalizationSnapshot",
     "JobStatus",
@@ -88,8 +104,11 @@ __all__ = [
     "OnayDurumu",
     "OpenItem",
     "OpenItemMatch",
+    "OrgErasureRecord",
+    "OrgErasureRequest",
     "Organization",
     "OutboxMessage",
+    "PasswordResetToken",
     "PaymentPlanChange",
     "PilotInvite",
     "ProactiveAlert",

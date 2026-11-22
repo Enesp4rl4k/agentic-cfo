@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import warnings
 from functools import lru_cache
 from typing import Literal
@@ -58,6 +59,18 @@ class Settings(BaseSettings):
 
     # OpenAI — optional for dev/test without LLM
     openai_api_key: str = "llm-placeholder-dev"
+
+    # Cash radar: a bank-statement balance older than this many days is shown as
+    # "last known", not as today's cash. Plan v10/v11 name no value; 7 days (one
+    # week of the radar) is the working default.
+    radar_balance_stale_after_days: int = 7
+
+    # Documents held as possible duplicates are not in the radar (a held row opens no open item). The
+    # Monday briefing says so in its headline when what they would add to the week's payments, or to
+    # payments with no date, is at least this share of the week's outflow (or the outflow is nil), or
+    # when a held payable's size cannot be added up (foreign currency). 10% is a working default: no
+    # plan names one, and a smaller share is rounding for a company's weekly cash.
+    radar_held_material_ratio: float = 0.10
 
     # PostgreSQL — optional, falls back to SQLite when not set
     postgres_host: str = "localhost"
@@ -155,8 +168,10 @@ class Settings(BaseSettings):
     twilio_auth_token: str = ""
     twilio_whatsapp_from: str = ""  # e.g. "whatsapp:+14155238886"
 
-    # WhatsApp webhook verification token (self-chosen, set same in Meta console)
-    whatsapp_verify_token: str = "agentic-cfo-verify"
+    # WhatsApp webhook verification token (self-chosen, set same in Meta console). No default: a public
+    # default let anyone pass the verification handshake. Unset (or no app secret) = the WhatsApp webhook is
+    # disabled (404) and startup says so.
+    whatsapp_verify_token: str = ""
 
     # Slack Bot (for Events API and chat.postMessage)
     slack_bot_token: str = ""  # xoxb-...
@@ -184,6 +199,39 @@ class Settings(BaseSettings):
     smtp_user: str = ""
     smtp_password: str = ""
     notification_from: str = "noreply@aicfo.app"
+
+    # The outbox sender (app/services/outbox_transport.py), the only code that talks to a
+    # mail, WhatsApp, Slack or webhook endpoint. "auto": a recorded no-op in development
+    # (SQLite) and under pytest, live otherwise. "live" / "noop" force it.
+    outbox_transport: str = "auto"
+    # Deliver an immediate-class message (invite, password reset) as soon as it is written,
+    # instead of at the scheduler's next five-minute pass.
+    outbox_kick_on_enqueue: bool = True
+
+    # A new account cannot sign in or act until its address is verified (owner decision). Turned off
+    # by tests that are not about it; a deployment with no mail sender configured must also turn it off
+    # or nobody can verify (startup says so, see validate_production_security).
+    email_verification_required: bool = True
+    email_verification_expire_hours: int = 48
+
+    # Client address (app/core/client_ip.py). Default: trust no proxy, use the socket peer and ignore
+    # X-Forwarded-For. Behind a reverse proxy set TRUSTED_PROXY_CIDRS (its network) or
+    # TRUSTED_PROXY_COUNT (how many proxies sit in front of the app).
+    trusted_proxy_count: int = 0
+    trusted_proxy_cidrs: str = ""
+
+    # Password reset (POST /auth/forgot-password, /auth/reset-password)
+    password_reset_expire_minutes: int = 30
+    # Per (address, client IP) per hour. The address alone is not a key: one IP could use up the
+    # allowance a real owner needs. Mail flooding is stopped by the cool-down below instead.
+    password_reset_per_email_per_hour: int = 3
+    # At most one reset / verification / "you already have an account" mail per address and kind
+    # in this many minutes, however many requests arrive from however many IPs. The answer is the
+    # same; the earlier mail's link is still valid (reset 30 min, verification 48 h), so the owner
+    # is never locked out by someone else's requests. Keep it below the reset lifetime.
+    auth_mail_cooldown_minutes: int = 15
+    # A request takes at least this long whether or not the account exists.
+    password_reset_response_floor_seconds: float = 0.5
 
     # TCMB EVDS API (optional — benchmark data falls back to static if not set)
     # Get free key: https://evds2.tcmb.gov.tr/index.php?lang=tr
@@ -214,13 +262,33 @@ class Settings(BaseSettings):
     storage_backend: str = "local"
     storage_local_path: str = "./uploads"
 
+    # KVKK org erasure: `hard_delete` stays unreachable through the API until the
+    # retention question (plan G19) is decided by the owner/lawyer.
+    org_erasure_hard_delete_enabled: bool = False
+
     # LLM — set llm_base_url to use DeepSeek or any OpenAI-compatible API
     llm_model: str = "deepseek-chat"
+    # Optional per-tier model ids (see app.platform.model_catalog). Unset = use
+    # llm_model, so the single LLM_MODEL variable keeps working.
+    llm_model_cheap: str | None = None
+    llm_model_strong: str | None = None
+    # Optional USD price per 1K tokens, keyed by model id:
+    #   LLM_MODEL_PRICES='{"deepseek-chat": [0.00027, 0.0011]}'  ([in, out])
+    # A model that is not listed has an unknown price; its cost is recorded as null.
+    llm_model_prices: dict[str, tuple[float, float]] = {}
     llm_temperature: float = 0.0
     llm_max_tokens: int = 16384
     # DeepSeek: https://api.deepseek.com
     # OpenAI:   https://api.openai.com/v1  (or leave empty)
     llm_base_url: str = "https://api.deepseek.com"
+
+    # Platform operators: comma-separated user e-mails allowed to mint pilot
+    # invites and read every company's pilot feedback (platform-wide data, not
+    # a company owner's). Empty = nobody.
+    platform_operator_emails: str = ""
+    # Shown to someone locked out by their company's IP allow-list: where to ask for its removal
+    # (an e-mail address or a URL). Unset: "platform yöneticinize başvurun".
+    support_contact: str = ""
 
     # File upload
     max_upload_size_mb: int = 10
@@ -387,6 +455,22 @@ class Settings(BaseSettings):
                 "inside the API process when Redis is unreachable, with no retry and "
                 "lost on restart. Leave it unset; the worker owns analyses."
             )
+
+        if (
+            self.email_verification_required
+            and not self.use_sqlite
+            and self.outbox_transport != "noop"
+            and not (self.smtp_user and self.smtp_password)
+        ):
+            # Not a hard failure (a demo or staging may run without mail), but never silent: with
+            # verification required and no sender, a new account can never be verified.
+            message = (
+                "EMAIL_VERIFICATION_REQUIRED is on but no mail sender is configured (SMTP_USER / "
+                "SMTP_PASSWORD): new accounts will wait for a verification e-mail that cannot be sent. "
+                "Configure SMTP, or set EMAIL_VERIFICATION_REQUIRED=false for a deployment without mail."
+            )
+            logging.getLogger(__name__).error(message)
+            warnings.warn(f"Registration warning: {message}", stacklevel=3)
 
         if not self.use_sqlite and issues:
             # Production mode — hard fail

@@ -20,21 +20,13 @@ import {
   measureOutcome,
   type DecisionRecord,
 } from "@/lib/api/decisions";
+import { useCan } from "@/hooks/useCan";
+import { useCentsFormat } from "@/hooks/useCurrencyFormat";
+import { useI18n } from "@/hooks/useI18n";
+import { failureMessage } from "@/lib/forbidden";
 import { cn } from "@/lib/utils";
 
 // ── Formatting ────────────────────────────────────────────────────────────────
-
-const tl = new Intl.NumberFormat("tr-TR", {
-  style: "currency",
-  currency: "TRY",
-  maximumFractionDigits: 0,
-});
-
-/** Ledger money is kuruş — the UI shows lira. */
-function fmtTL(value: number | null | undefined): string {
-  if (value === null || value === undefined) return "—";
-  return tl.format(value / 100);
-}
 
 const STATUS_CHIP = {
   open: "border-amber-500/30 bg-amber-500/10 text-amber-500",
@@ -46,6 +38,9 @@ const STATUS_LABEL = { open: "açık", closed: "ölçüldü" } as const;
 // ── Panel ─────────────────────────────────────────────────────────────────────
 
 export function DecisionLogPanel({ className }: { className?: string }) {
+  const fmtTL = useCentsFormat();
+  const { t } = useI18n();
+  const can = useCan("edit");
   const [rows, setRows] = useState<DecisionRecord[] | null>(null);
   const [measuringId, setMeasuringId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -61,14 +56,19 @@ export function DecisionLogPanel({ className }: { className?: string }) {
   }, [load]);
 
   const measure = async (id: string) => {
+    if (!can.allowed) return;
     setMeasuringId(id);
     setError(null);
     try {
       const updated = await measureOutcome(id);
       setRows((prev) => (prev ?? []).map((r) => (r.id === id ? updated : r)));
-    } catch {
+    } catch (e) {
       setError(
-        "Sonuç ölçülemedi — ölçüm için tamamlanmış bir analiz gerekiyor olabilir."
+        failureMessage(
+          e,
+          "Sonuç ölçülemedi — ölçüm için tamamlanmış bir analiz gerekiyor olabilir.",
+          t.roleGate.forbidden,
+        ),
       );
     } finally {
       setMeasuringId(null);
@@ -164,7 +164,9 @@ export function DecisionLogPanel({ className }: { className?: string }) {
                     type="button"
                     onClick={() => measure(r.id)}
                     disabled={measuringId === r.id}
-                    className="mt-1.5 rounded-md border px-2 py-0.5 text-[11px] hover:bg-muted/40 disabled:opacity-50"
+                    aria-disabled={can.allowed ? undefined : true}
+                    title={can.reason ?? undefined}
+                    className="mt-1.5 rounded-md border px-2 py-0.5 text-[11px] hover:bg-muted/40 disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
                   >
                     {measuringId === r.id ? "Ölçülüyor…" : "Sonucu ölç"}
                   </button>

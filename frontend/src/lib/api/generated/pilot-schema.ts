@@ -147,18 +147,192 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ledger/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Summary
+         * @description Figures for one period of whole months (`start`, `end` as YYYY-MM).
+         *
+         *     With neither, the last 12 months of data; the period used is in `data.period`.
+         */
+        get: operations["get_summary_api_v1_ledger_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AccountQuestionOut
+         * @description Two proven statements nothing links or separates: are they one bank account? (answered in /onay)
+         */
+        AccountQuestionOut: {
+            a: components["schemas"]["AccountSideOut"];
+            b: components["schemas"]["AccountSideOut"];
+            /** Job Ids A */
+            job_ids_a: string[];
+            /** Job Ids B */
+            job_ids_b: string[];
+            /** Question */
+            question: string;
+        };
+        /** AccountSideOut */
+        AccountSideOut: {
+            /** As Of */
+            as_of: string;
+            /** Balance Cents */
+            balance_cents: number;
+            /** Currency */
+            currency: string;
+            /** Identity Hint */
+            identity_hint?: string | null;
+            /** Name */
+            name?: string | null;
+        };
+        /**
+         * Analizler
+         * @description Every analysis of the company by what became of it, not only the latest one.
+         */
+        Analizler: {
+            /** Basarisiz */
+            basarisiz: number;
+            /** Calisan */
+            calisan: number;
+            /** Onay Bekleyen */
+            onay_bekleyen: number;
+            /** Tamamlanan */
+            tamamlanan: number;
+        };
+        /**
+         * AwaitingDecisionOut
+         * @description Decisions waiting on a person, in the two queues, which stay separate: extracted rows and possible duplicates.
+         */
+        AwaitingDecisionOut: {
+            documents?: components["schemas"]["AwaitingLineOut"] | null;
+            rows?: components["schemas"]["AwaitingLineOut"] | null;
+        };
+        /** AwaitingLineOut */
+        AwaitingLineOut: {
+            /** Count */
+            count: number;
+            /** Path */
+            path: string;
+            /** Text */
+            text: string;
+        };
+        /**
+         * BalanceAccountOut
+         * @description One account's latest proven balance, with its own date: the starting cash is their sum.
+         */
+        BalanceAccountOut: {
+            /** As Of */
+            as_of: string;
+            /** Balance Cents */
+            balance_cents: number;
+            /**
+             * Basis
+             * @default known
+             * @enum {string}
+             */
+            basis: "known" | "assumed";
+            /** Basis Note */
+            basis_note?: string | null;
+            /**
+             * Behind Days
+             * @default 0
+             */
+            behind_days: number;
+            /** Currency */
+            currency: string;
+            /**
+             * Currency Assumed
+             * @default false
+             */
+            currency_assumed: boolean;
+            /**
+             * Gaps
+             * @default []
+             */
+            gaps: string[];
+            /** Identity Hint */
+            identity_hint?: string | null;
+            /**
+             * Identity Uncertain
+             * @default false
+             */
+            identity_uncertain: boolean;
+            /** Job Id */
+            job_id?: string | null;
+            /**
+             * Lagging
+             * @default false
+             */
+            lagging: boolean;
+            /** Name */
+            name?: string | null;
+            /**
+             * Statements
+             * @default 1
+             */
+            statements: number;
+        };
+        /** BasisSplitOut */
+        BasisSplitOut: {
+            /**
+             * Assumed Cents
+             * @default 0
+             */
+            assumed_cents: number;
+            /**
+             * Estimated Cents
+             * @default 0
+             */
+            estimated_cents: number;
+            /**
+             * Known Cents
+             * @default 0
+             */
+            known_cents: number;
+        };
         /** Baslangic */
         Baslangic: {
+            analizler: components["schemas"]["Analizler"];
             firma: components["schemas"]["Firma"];
+            /** Onay Bekleyen */
+            onay_bekleyen: components["schemas"]["BekleyenAnaliz"][];
             otomatik: components["schemas"]["Otomatik"];
             son_analiz: components["schemas"]["SonAnaliz"] | null;
             /** Tamamlanan Analiz */
             tamamlanan_analiz: number;
             veri: components["schemas"]["Veri"];
+        };
+        /** BekleyenAnaliz */
+        BekleyenAnaliz: {
+            /** Bakiye Kanitli */
+            bakiye_kanitli: boolean;
+            /** Dosya */
+            dosya: string;
+            /** Guven */
+            guven: number | null;
+            /** Id */
+            id: string;
+            /** Nedenler */
+            nedenler: {
+                [key: string]: unknown;
+            }[];
+            /** Olusturma */
+            olusturma: string | null;
         };
         /** BriefingAnswer */
         BriefingAnswer: {
@@ -196,14 +370,42 @@ export interface components {
         };
         /** CashRadarOut */
         CashRadarOut: {
+            /**
+             * Account Questions
+             * @default []
+             */
+            account_questions: components["schemas"]["AccountQuestionOut"][];
             /** Anchor Date */
             anchor_date: string;
+            awaiting_decision?: components["schemas"]["AwaitingDecisionOut"] | null;
+            /**
+             * Base State
+             * @default confirmed
+             */
+            base_state: string;
             /** Beyond Horizon Cents */
             beyond_horizon_cents: number;
+            /**
+             * Currency
+             * @default TRY
+             */
+            currency: string;
+            held_documents?: components["schemas"]["HeldDocumentsOut"] | null;
             /** Not Included */
             not_included: string[];
+            opening_cash?: components["schemas"]["OpeningCashOut"] | null;
+            /**
+             * Other Currency Balances
+             * @default []
+             */
+            other_currency_balances: components["schemas"]["OtherCurrencyBalanceOut"][];
             /** Other Currency Items */
             other_currency_items: number;
+            /**
+             * Other Currency Totals
+             * @default []
+             */
+            other_currency_totals: components["schemas"]["OtherCurrencyTotalOut"][];
             /** Overdue Payables Cents */
             overdue_payables_cents: number;
             /** Overdue Receivables */
@@ -213,6 +415,7 @@ export interface components {
              * @default 0
              */
             recurring_payables_cents: number;
+            runway?: components["schemas"]["RunwayOut"] | null;
             shortfall: components["schemas"]["ShortfallOut"] | null;
             /** Starting Cash As Of */
             starting_cash_as_of: string | null;
@@ -227,13 +430,43 @@ export interface components {
             undated_payables_cents: number;
             /** Undated Receivables Cents */
             undated_receivables_cents: number;
+            /**
+             * Unproven Statements
+             * @default []
+             */
+            unproven_statements: components["schemas"]["UnprovenStatementOut"][];
             /** Weeks */
             weeks: components["schemas"]["RadarWeekOut"][];
+        };
+        /**
+         * CurrencySubtotalOut
+         * @description One non-base currency, summed on its own. Never added to the base figures.
+         */
+        CurrencySubtotalOut: {
+            /**
+             * Assumed Rows
+             * @default 0
+             */
+            assumed_rows: number;
+            /** Cash In Cents */
+            cash_in_cents: number;
+            /** Cash Out Cents */
+            cash_out_cents: number;
+            /** Currency */
+            currency: string;
+            /** Expense Cents */
+            expense_cents: number;
+            /** Revenue Cents */
+            revenue_cents: number;
+            /** Rows */
+            rows: number;
         };
         /** DecisionRequest */
         DecisionRequest: {
             /** Note */
             note?: string | null;
+            /** Self Decision Ack */
+            self_decision_ack?: string | null;
         };
         /** Envelope[Baslangic] */
         Envelope_Baslangic_: {
@@ -258,6 +491,16 @@ export interface components {
         /** Envelope[CashRadarOut] */
         Envelope_CashRadarOut_: {
             data: components["schemas"]["CashRadarOut"];
+            /** Error */
+            error?: string | null;
+            /** Meta */
+            meta?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /** Envelope[LedgerSummaryOut] */
+        Envelope_LedgerSummaryOut_: {
+            data: components["schemas"]["LedgerSummaryOut"];
             /** Error */
             error?: string | null;
             /** Meta */
@@ -297,6 +540,153 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /**
+         * HeldDocumentsOut
+         * @description Possible duplicates waiting for a person: not in the radar, so they are listed here.
+         */
+        HeldDocumentsOut: {
+            /** Beyond Horizon Payable Cents */
+            beyond_horizon_payable_cents: number;
+            /** By Reason */
+            by_reason: {
+                [key: string]: number;
+            };
+            /** Count */
+            count: number;
+            /** Other Currency Count */
+            other_currency_count: number;
+            /** Other Currency Payable Count */
+            other_currency_payable_count: number;
+            payable_basis: components["schemas"]["BasisSplitOut"];
+            /** Payable Cents */
+            payable_cents: number;
+            /** Receivable Cents */
+            receivable_cents: number;
+            /** Review Path */
+            review_path: string;
+            /** Undated Payable Cents */
+            undated_payable_cents: number;
+            /** Undated Receivable Cents */
+            undated_receivable_cents: number;
+            /** Week1 Payable Cents */
+            week1_payable_cents: number;
+            /** Weeks */
+            weeks: components["schemas"]["HeldWeekOut"][];
+        };
+        /** HeldWeekOut */
+        HeldWeekOut: {
+            /** Payable Cents */
+            payable_cents: number;
+            /** Receivable Cents */
+            receivable_cents: number;
+            /** Week */
+            week: number;
+        };
+        /** LastUploadOut */
+        LastUploadOut: {
+            /**
+             * Already
+             * @default 0
+             */
+            already: number;
+            /** Filename */
+            filename?: string | null;
+            /**
+             * Many Versions
+             * @default 0
+             */
+            many_versions: number;
+            /**
+             * New
+             * @default 0
+             */
+            new: number;
+            /**
+             * No Counterparty
+             * @default 0
+             */
+            no_counterparty: number;
+            /**
+             * No Date
+             * @default 0
+             */
+            no_date: number;
+            /**
+             * Possible Duplicate
+             * @default 0
+             */
+            possible_duplicate: number;
+            /**
+             * Proposed
+             * @default 0
+             */
+            proposed: number;
+            /**
+             * Settled
+             * @default 0
+             */
+            settled: number;
+        };
+        /** LedgerMonthOut */
+        LedgerMonthOut: {
+            /** Cash In Cents */
+            cash_in_cents: number;
+            /** Cash Out Cents */
+            cash_out_cents: number;
+            /** Month */
+            month: string;
+        };
+        /** LedgerPeriodOut */
+        LedgerPeriodOut: {
+            /** Available End */
+            available_end: string | null;
+            /** Available Months */
+            available_months: number;
+            /** Available Start */
+            available_start: string | null;
+            /** End */
+            end: string | null;
+            /** Future Latest */
+            future_latest: string | null;
+            /** Future Rows */
+            future_rows: number;
+            /** Is Default */
+            is_default: boolean;
+            /** Label */
+            label: string | null;
+            /** Months */
+            months: number;
+            /** Start */
+            start: string | null;
+        };
+        /** LedgerSummaryOut */
+        LedgerSummaryOut: {
+            /** Base Confirmed */
+            base_confirmed: boolean;
+            /** Base State */
+            base_state: string;
+            /** Confirm Path */
+            confirm_path: string;
+            /** Currency */
+            currency: string | null;
+            /** Currency Totals */
+            currency_totals: components["schemas"]["CurrencySubtotalOut"][];
+            /** Expense Cents */
+            expense_cents: number;
+            last_upload: components["schemas"]["LastUploadOut"] | null;
+            /** Months */
+            months: components["schemas"]["LedgerMonthOut"][];
+            open_items: components["schemas"]["OpenItemsOut"];
+            /** Other Currencies */
+            other_currencies: components["schemas"]["CurrencySubtotalOut"][];
+            period: components["schemas"]["LedgerPeriodOut"];
+            /** Possible Duplicates */
+            possible_duplicates: number;
+            /** Revenue Cents */
+            revenue_cents: number;
+            /** Rows */
+            rows: number;
+        };
         /** MondayBriefing */
         MondayBriefing: {
             /** Action Amount Cents */
@@ -314,10 +704,22 @@ export interface components {
             /** Approaching Title */
             approaching_title: string;
             /**
+             * Balance Age Days
+             * @default 0
+             */
+            balance_age_days: number;
+            /** Balance As Of */
+            balance_as_of?: string | null;
+            /**
              * Balance Known
              * @default true
              */
             balance_known: boolean;
+            /**
+             * Balance Stale
+             * @default false
+             */
+            balance_stale: boolean;
             /** Briefing Id */
             briefing_id: string;
             /** End Balance Cents */
@@ -343,6 +745,22 @@ export interface components {
             net_change_cents: number;
             /** Org Id */
             org_id: string;
+            /** Runway Basis */
+            runway_basis?: string | null;
+            /** Runway Level */
+            runway_level?: string | null;
+            /**
+             * Runway Line
+             * @default
+             */
+            runway_line: string;
+            /** Runway Months */
+            runway_months?: number | null;
+            /**
+             * Runway Status
+             * @default no_balance
+             */
+            runway_status: string;
             /** Sentence Action */
             sentence_action: string;
             /** Sentence Obligation */
@@ -360,6 +778,82 @@ export interface components {
             week_end: string;
             /** Week Start */
             week_start: string;
+        };
+        /** OpenItemsOut */
+        OpenItemsOut: {
+            /** No Due Date */
+            no_due_date: number;
+            /** Other Currency */
+            other_currency: number;
+            /** Payable Cents */
+            payable_cents: number;
+            /** Receivable Cents */
+            receivable_cents: number;
+        };
+        /** OpeningCashOut */
+        OpeningCashOut: {
+            /**
+             * Accounts
+             * @default []
+             */
+            accounts: components["schemas"]["BalanceAccountOut"][];
+            /** Age Days */
+            age_days: number;
+            /** As Of */
+            as_of: string;
+            /** Balance Cents */
+            balance_cents: number;
+            /**
+             * Basis
+             * @default known
+             * @enum {string}
+             */
+            basis: "known" | "assumed";
+            /** Basis Note */
+            basis_note?: string | null;
+            /** Identity Note */
+            identity_note?: string | null;
+            /**
+             * Identity Uncertain
+             * @default false
+             */
+            identity_uncertain: boolean;
+            /** Source Filename */
+            source_filename: string | null;
+            /** Source Job Id */
+            source_job_id: string | null;
+            /** Stale */
+            stale: boolean;
+            /** Stale After Days */
+            stale_after_days: number;
+        };
+        /**
+         * OtherCurrencyBalanceOut
+         * @description A bank balance in a currency other than the radar's: shown with its own total, never converted.
+         */
+        OtherCurrencyBalanceOut: {
+            /** Accounts */
+            accounts: number;
+            /** As Of */
+            as_of: string;
+            /** Balance Cents */
+            balance_cents: number;
+            /** Currency */
+            currency: string;
+        };
+        /**
+         * OtherCurrencyTotalOut
+         * @description Open items in a currency other than the radar's: counted with their own totals, never converted.
+         */
+        OtherCurrencyTotalOut: {
+            /** Count */
+            count: number;
+            /** Currency */
+            currency: string;
+            /** Payable Cents */
+            payable_cents: number;
+            /** Receivable Cents */
+            receivable_cents: number;
         };
         /** Otomatik */
         Otomatik: {
@@ -380,6 +874,11 @@ export interface components {
         PlanChangeListMeta: {
             /** Can Decide */
             can_decide: boolean;
+            /**
+             * Self Decision Ack
+             * @default Öneren ve onaylayan aynı kişi: bu öneriyi ben veriyorum ve ben onaylıyorum. Karar bu notla kaydedilir.
+             */
+            self_decision_ack: string;
         };
         /** PlanChangeView */
         PlanChangeView: {
@@ -407,8 +906,17 @@ export interface components {
             requested_at: string;
             /** Requested By */
             requested_by: string;
+            /** Self Decision */
+            self_decision?: string | null;
+            /** Self Decision Message */
+            self_decision_message?: string | null;
             /** Status */
             status: string;
+            /**
+             * Threshold Changed By Proposer
+             * @default false
+             */
+            threshold_changed_by_proposer: boolean;
             /** To Date */
             to_date: string;
         };
@@ -439,6 +947,24 @@ export interface components {
         RadarItemOut: {
             /** Amount Cents */
             amount_cents: number;
+            /**
+             * Basis
+             * @default known
+             * @enum {string}
+             */
+            basis: "known" | "estimated" | "assumed";
+            /**
+             * Basis Inputs
+             * @default {}
+             */
+            basis_inputs: {
+                [key: string]: unknown;
+            };
+            /**
+             * Basis Reason
+             * @default document_due_date
+             */
+            basis_reason: string;
             /** Counterparty */
             counterparty: string | null;
             /** Delay Days */
@@ -463,6 +989,8 @@ export interface components {
              * @default false
              */
             rescheduled: boolean;
+            /** Rules Verified */
+            rules_verified?: boolean | null;
         };
         /** RadarWeekOut */
         RadarWeekOut: {
@@ -470,10 +998,12 @@ export interface components {
             end_balance_cents: number;
             /** End Date */
             end_date: string;
+            inflow_basis: components["schemas"]["BasisSplitOut"];
             /** Inflow Cents */
             inflow_cents: number;
             /** Net Cents */
             net_cents: number;
+            outflow_basis: components["schemas"]["BasisSplitOut"];
             /** Outflow Cents */
             outflow_cents: number;
             /** Payables */
@@ -484,6 +1014,83 @@ export interface components {
             start_date: string;
             /** Week */
             week: number;
+        };
+        /** RunwayMonthOut */
+        RunwayMonthOut: {
+            /** Month */
+            month: string;
+            /** Net Cents */
+            net_cents: number;
+        };
+        /**
+         * RunwayOut
+         * @description The measured runway (`services.runway`), or the reason there is none. No number without a basis.
+         */
+        RunwayOut: {
+            /**
+             * Accounts
+             * @default []
+             */
+            accounts: components["schemas"]["BalanceAccountOut"][];
+            /** Age Days */
+            age_days?: number | null;
+            /** As Of */
+            as_of?: string | null;
+            /**
+             * Assumptions
+             * @default []
+             */
+            assumptions: {
+                [key: string]: unknown;
+            }[];
+            /** Avg Monthly Net Cents */
+            avg_monthly_net_cents?: number | null;
+            /** Balance Basis */
+            balance_basis?: ("known" | "assumed") | null;
+            /** Basis */
+            basis?: ("known" | "assumed") | null;
+            /**
+             * Beyond Horizon
+             * @default false
+             */
+            beyond_horizon: boolean;
+            /** Currency */
+            currency?: string | null;
+            /** Identity Note */
+            identity_note?: string | null;
+            /**
+             * Identity Uncertain
+             * @default false
+             */
+            identity_uncertain: boolean;
+            /** Level */
+            level?: ("critical" | "warning") | null;
+            /** Message */
+            message: string;
+            /**
+             * Months
+             * @default []
+             */
+            months: components["schemas"]["RunwayMonthOut"][];
+            /** Months Needed */
+            months_needed: number;
+            /** Months Used */
+            months_used: number;
+            /** Opening Cash Cents */
+            opening_cash_cents?: number | null;
+            /**
+             * Other Currencies
+             * @default []
+             */
+            other_currencies: components["schemas"]["OtherCurrencyBalanceOut"][];
+            /** Runway Months */
+            runway_months?: number | null;
+            /** Source Filename */
+            source_filename?: string | null;
+            /** Stale */
+            stale?: boolean | null;
+            /** Status */
+            status: string;
         };
         /** ShortfallOut */
         ShortfallOut: {
@@ -512,10 +1119,26 @@ export interface components {
             hata: string | null;
             /** Id */
             id: string;
+            /** Ingest */
+            ingest?: {
+                [key: string]: unknown;
+            } | null;
             /** Olusturma */
             olusturma: string | null;
             /** Onay Bekliyor */
             onay_bekliyor: boolean;
+        };
+        /**
+         * UnprovenStatementOut
+         * @description A statement with balances that could not be proven: left out of the starting cash, named with why.
+         */
+        UnprovenStatementOut: {
+            /** Filename */
+            filename?: string | null;
+            /** Job Id */
+            job_id?: string | null;
+            /** Reason */
+            reason: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -867,6 +1490,47 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Envelope_PlanChangeView_"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_summary_api_v1_ledger_summary_get: {
+        parameters: {
+            query?: {
+                start?: string | null;
+                end?: string | null;
+            };
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_LedgerSummaryOut_"];
+                };
+            };
+            /** @description The user has no organisation, or the period is not valid. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

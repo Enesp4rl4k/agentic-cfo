@@ -20,7 +20,7 @@ import asyncio
 import functools
 import logging
 from collections.abc import Awaitable, Callable
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from arq import create_pool
@@ -28,7 +28,6 @@ from arq.connections import ArqRedis, RedisSettings
 from redis import exceptions as redis_exc
 
 from app.config import get_settings
-from app.core.dates import parse_transaction_date
 
 logger = logging.getLogger(__name__)
 
@@ -266,7 +265,7 @@ async def run_cfo_analysis(
     from app.models.analysis_job import AnalysisJob, JobStatus
     from app.models.anomaly import Anomaly
     from app.models.report import Report, ReportFormat, ReportType
-    from app.models.transaction import Transaction
+    from app.services.ingest.persist import build_transaction
     from app.services.job_state import (
         claim_for_analysis,
         fail_job,
@@ -353,6 +352,13 @@ async def run_cfo_analysis(
             await db.refresh(job)
             await db.commit()
 
+            # The balance the cash radar starts from, loaded here (the nodes hold no session):
+            # the forecast's runway counts down from it, never from zero.
+            from app.services.bank_accounts import proven_balance
+
+            opening_cash = await proven_balance(db, org_id_str) if org_id_str else None
+            await db.commit()
+
             result = await run_cfo_pipeline(
                 job_id=job_id,
                 file_path=job.file_path,
@@ -364,6 +370,7 @@ async def run_cfo_analysis(
                 # the rules above) ran as if the job belonged to nobody.
                 org_id=org_id_str,
                 category_rules=category_rules,
+                opening_cash=opening_cash,
             )
 
             # Publish each completed step to SSE clients
@@ -381,39 +388,37 @@ async def run_cfo_analysis(
             # union of two.
             await purge_job_outputs(db, job_id)
 
-            # Persist transactions
-            for tx_data in result.get("transactions") or []:
-                # An unreadable date used to become today's, silently. It still
-                # becomes today's — the column is not nullable and the row has
-                # to exist to be reviewed — but the row now says so, because
-                # this date decides the accounting period and the period ends
-                # up on the e-Defter.
-                tx_date, tx_date_estimated = parse_transaction_date(
-                    tx_data.get("transaction_date")
-                )
-                tx = Transaction(
-                    job_id=job_id,
-                    amount_kurus=tx_data.get("amount_cents", 0),
-                    currency=tx_data.get("currency", "USD"),
-                    type=tx_data.get("type", "expense"),
-                    category=tx_data.get("category", "other_expense"),
-                    description=tx_data.get("description", ""),
-                    vendor=tx_data.get("vendor"),
-                    transaction_date=tx_date,
-                    date_is_estimated=tx_date_estimated,
-                    # As the document stated them; None when it did not.
-                    kdv_kurus=tx_data.get("kdv_cents"),
-                    stopaj_kurus=tx_data.get("stopaj_cents"),
-                    raw_text=tx_data.get("raw_text"),
-                    confidence=tx_data.get("confidence"),
-                    category_source=tx_data.get("category_source"),
-                    account_code=tx_data.get("account_code"),
-                    document_id=tx_data.get("document_id"),
-                    due_date=date.fromisoformat(tx_data["due_date"]) if tx_data.get("due_date") else None,
-                    payment_note=tx_data.get("payment_note"),
-                    counterparty=tx_data.get("counterparty"),
-                )
-                db.add(tx)
+            # Persist transactions. A row that reaches here with no currency or
+            # direction is not given one: it waits with the rows the extraction held.
+            from app.services.held_rows import register_held
+
+            held_rows: list[dict[str, Any]] = list(result.get("held_transactions") or [])
+            persisted_rows: list[dict[str, Any]] = []
+            # Every row is stored, each in its own currency: the pipeline's figures read the rows of one
+            # currency (`agents/currency_split`), the transaction list and the journal lose nothing.
+            for tx_data in [*(result.get("transactions") or []), *(result.get("foreign_transactions") or [])]:
+                lacking = [
+                    code for code, missing in (
+                        ("currency_unknown", not str(tx_data.get("currency") or "").strip()),
+                        ("direction_unknown", tx_data.get("type") not in ("income", "expense")),
+                    ) if missing
+                ]
+                if lacking:
+                    held_rows.append({**tx_data, "hold_reasons": lacking})
+                    continue
+                persisted_rows.append(tx_data)
+            # One question, asked once: a row a person already released comes back
+            # into this job as they answered it; a rejected or already waiting one
+            # is not asked again.
+            registered = await register_held(db, job_id, org_id_str, held_rows)
+            persisted_rows.extend(registered["released_again"])
+            for tx_data in persisted_rows:
+                db.add(build_transaction(job_id, tx_data))
+
+            # A person's single-row corrections survive a rerun (the rows above are new).
+            from app.services.ledger_correction import apply_overrides
+
+            await apply_overrides(db, org_id_str, job_id)
 
             # Counted in the same transaction as the rows they categorised.
             from app.services.classifier import record_hits
@@ -461,6 +466,15 @@ async def run_cfo_analysis(
             )
             completed_at = datetime.now(UTC)
             meta = dict(job.result_metadata or {})
+            from app.services.ingest.summary import ingest_summary
+
+            meta["ingest"] = ingest_summary(persisted_rows, registered, result.get("ingest_counts"))
+            if terminal == JobStatus.AWAITING_REVIEW:
+                from app.services.held_analysis import held_by
+
+                why = held_by(result)
+                if why is not None:
+                    meta["held_by"] = why
             if terminal == JobStatus.COMPLETED and job.org_id:
                 # What follows a completed analysis (ledger, company view,
                 # chain) is owed from the moment the job reads completed, so the
@@ -473,9 +487,36 @@ async def run_cfo_analysis(
                 meta["review"] = {"devam": BEKLIYOR, "devam_istendi": completed_at.isoformat()}
             from app.services.bank_balance import closing_balance
 
-            closing = closing_balance(list(result.get("transactions") or []))
+            # A statement with rows held for a person proves its balance over the whole file
+            # (data_ingestion); the rows booked so far are only part of it.
+            closing = result.get("statement_closing_balance") or closing_balance(
+                list(result.get("transactions") or [])
+            )
             if closing is not None:
                 meta["closing_balance"] = closing
+            # How far those balances are believed, and why not when they are not (what the radar and
+            # the runway read); for a statement with held rows, the chain a person's answer re-reads.
+            from app.services.bank_balance import assess, statement_extent
+            from app.services.statement_account import account_identity
+
+            meta["balance_proof"] = result.get("balance_proof") or assess(
+                list(result.get("transactions") or []), result.get("ingest_counts"),
+                identity=account_identity(str(result.get("raw_text") or "")) or None,
+            )
+            if result.get("statement_chain"):
+                meta["statement_chain"] = {**result["statement_chain"], "period": result.get("statement_period")}
+
+            # The days the statement covers (and the balances it opens and closes on): which
+            # months of the company's cash are complete is read from these later.
+            from app.services.coverage import apply_period
+
+            extent = apply_period(
+                result.get("statement_extent") or statement_extent(list(result.get("transactions") or [])),
+                result.get("statement_period"),
+                job.filename,
+            )
+            if extent is not None:
+                meta["statement_extent"] = extent
             try:
                 if meta.get("analysis_started_at"):
                     t0 = datetime.fromisoformat(meta["analysis_started_at"])
@@ -528,6 +569,17 @@ async def run_cfo_analysis(
                 return {"ok": False, "job_id": job_id, "finish_lost": True}
             await db.commit()
 
+            # A re-run asks nothing twice: rows a person already released or rejected come back as they
+            # answered. The proof written above was read before those answers; read it again with them.
+            if org_id_str and meta.get("statement_chain") and (
+                registered["released_again"] or registered["already_rejected"]
+            ):
+                from app.services.balance_reverify import reverify
+
+                await db.refresh(job)
+                await reverify(db, org_id_str, {job_id: []})
+                await db.commit()
+
             # Notify SSE subscribers that the job is done — before the slow
             # follow-ups below: a watcher's completion must not wait on RAG.
             await publish_job_done(job_id, status=str(terminal))
@@ -552,7 +604,7 @@ async def run_cfo_analysis(
                     if not doc_text:
                         tx_raw_texts = [
                             (txd.get("raw_text") or "")
-                            for txd in (result.get("transactions") or [])
+                            for txd in [*(result.get("transactions") or []), *(result.get("foreign_transactions") or [])]
                         ]
                         doc_text = "\n".join(tx_raw_texts).strip()
                     doc_text = doc_text[:80_000]  # chunking truncates further

@@ -22,6 +22,7 @@ from app.models.analysis_job import AnalysisJob, JobStatus
 from app.models.open_item_match import OpenItemMatch
 from app.models.transaction import Transaction
 from app.services.company_context import get_company_context
+from app.services.company_view import ledger_view
 from app.services.ledger import ledger_summary
 from tests.api_helpers import arka_plan_bitsin, bellek_istemcisi, kullanici
 from tests.test_bank_reconciliation import _bank, _sale
@@ -49,6 +50,11 @@ async def ortam(monkeypatch):
 
 def _march_invoice() -> dict[str, Any]:
     return _sale("MARCH-2025", amount=INVOICE, no="GIB2025000000001", issued="2025-03-01", due=None)
+
+
+def _december_invoice() -> dict[str, Any]:
+    """Inside the same twelve months as January 2024 (the default period is 12 months of data)."""
+    return _sale("DEC-2024", amount=INVOICE, no="GIB2024000000099", issued="2024-12-01", due=None)
 
 
 async def _analysed(client, org_id: str, rows: list[dict[str, Any]]) -> str:
@@ -128,15 +134,20 @@ async def test_one_invoice_does_not_replace_the_year(ortam):
     await _upload(client, org_id, [_march_invoice()])
 
     view = await _view(client, org_id)
-    assert view["dashboard"]["pnl"]["revenue"] == (year_revenue + INVOICE) / 100
+    # The view is the 12 months ending in the latest data (plan v10 S1.4): April 2024 to
+    # March 2025. January to March 2024 are the 13th-15th months back and sit outside it.
+    window = _file_revenue(ALL_MONTHS - {"01", "02", "03"})
+    assert view["dashboard"]["pnl"]["revenue"] == (window + INVOICE) / 100
     assert view["dashboard"]["source"] == "ledger"
-    assert view["dashboard"]["period"] == {"start": "2024-01", "end": "2025-03", "months": 13}
+    period = view["dashboard"]["period"]
+    assert (period["start"], period["end"], period["months"]) == ("2024-04", "2025-03", 10)
+    assert period["label"] == "2024-04 – 2025-03" and period["available_months"] == 13
 
 
 async def test_the_view_and_the_ledger_card_say_the_same_number(ortam):
     client, org_id, _ = ortam
     await _upload(client, org_id, _demo_rows("01", "02"))
-    await _upload(client, org_id, [_march_invoice()])
+    await _upload(client, org_id, [_december_invoice()])
 
     view = await _view(client, org_id)
     async with client._maker() as db:
@@ -160,8 +171,10 @@ async def test_an_invoice_is_not_cash_and_its_receipt_is_not_revenue_again(ortam
     await _upload(client, org_id, [_bank("EFT GIB2024000000001 ODEME", 285_000_00, "2024-04-16")])
     view = await _view(client, org_id)
     assert view["dashboard"]["pnl"]["revenue"] == 285_000.0
-    assert view["dashboard"]["cashflow"]["monthly_series"] == [
-        {"month": "2024-04", "in": 285_000_00, "out": 0, "net": 285_000_00}]
+    (april,) = view["dashboard"]["cashflow"]["monthly_series"]
+    assert {k: april[k] for k in ("month", "in", "out", "net")} == {
+        "month": "2024-04", "in": 285_000_00, "out": 0, "net": 285_000_00}
+    assert april["complete"] is None  # these uploads carry no statement extent: coverage is unknown, not assumed
 
 
 async def test_the_same_file_again_changes_nothing_and_runs_nothing(ortam):
@@ -219,9 +232,9 @@ async def test_a_held_view_waits_for_the_owner_and_the_old_one_stands(ortam, mon
     standing = await _revenue(client, org_id)
     _hold_every_view(monkeypatch)
 
-    job = await _upload(client, org_id, [_march_invoice()])
+    job = await _upload(client, org_id, [_december_invoice()])
     # The same ledger prompts it again: one question, not two.
-    again = await _upload(client, org_id, [_march_invoice()])
+    again = await _upload(client, org_id, [_december_invoice()])
 
     assert await _revenue(client, org_id) == standing
     assert (await _note(client, job))["reason"] == "ledger_view_held"
@@ -246,11 +259,11 @@ async def test_a_newer_ledger_retires_the_question_about_the_older_one(ortam, mo
     client, org_id, _ = ortam
     await _upload(client, org_id, _demo_rows("01"))
     real = _hold_every_view(monkeypatch)
-    await _upload(client, org_id, [_march_invoice()])
+    await _upload(client, org_id, [_december_invoice()])
     assert len(await _waiting(client, org_id)) == 1
 
     monkeypatch.setattr(orchestrator, "run_cfo_pipeline", real)
-    later = _sale("LATER", amount=2_000_00, no="GIB2025000000002", issued="2025-04-01", due=None)
+    later = _sale("LATER", amount=2_000_00, no="GIB2024000000098", issued="2024-12-15", due=None)
     await _upload(client, org_id, [later])
 
     assert await _waiting(client, org_id) == []
@@ -272,7 +285,7 @@ async def test_a_ledger_that_moved_during_the_run_leaves_the_write_to_the_later_
 
     client, org_id, _ = ortam
     real = orchestrator.run_cfo_pipeline
-    other = await _analysed(client, org_id, [_march_invoice()])
+    other = await _analysed(client, org_id, [_december_invoice()])
 
     async def overtaken(*args: Any, **kwargs: Any) -> Any:
         monkeypatch.setattr(orchestrator, "run_cfo_pipeline", real)
@@ -293,3 +306,29 @@ async def test_with_nothing_dated_the_files_own_result_still_gives_a_first_view(
     job = await _upload(client, org_id, [])
     assert (await _note(client, job))["reason"] == "no_current_view"
     assert (await _view(client, org_id))["job_id"] == job
+
+
+async def test_a_category_correction_refreshes_the_persisted_view(ortam):
+    """The stored P&L / Command Center view follows a correction: same ledger and window as the card."""
+    client, org_id, _ = ortam
+    await _upload(client, org_id, _demo_rows("01"))
+    before = (await _view(client, org_id))["ledger_signature"]
+    async with client._maker() as db:
+        row = (await db.execute(
+            select(Transaction).where(Transaction.type == "expense", Transaction.category != "marketing")
+            .order_by(Transaction.amount_kurus.desc())
+        )).scalars().first()
+        tx_id = row.id
+    res = await client.patch(f"/api/v1/transactions/{tx_id}/category", json={"category": "marketing"},
+                             headers=client.headers_of_owner)
+    assert res.status_code == 200, res.text
+    await arka_plan_bitsin()
+
+    view = await _view(client, org_id)
+    async with client._maker() as db:
+        summary = await ledger_summary(db, org_id)
+        now = await ledger_view(db, org_id)
+    assert now is not None
+    assert view["ledger_signature"] == now.signature != before               # the correction is in it
+    assert view["dashboard"]["pnl"]["revenue"] == summary["revenue_cents"] / 100
+    assert view["dashboard"]["period"] == summary["period"]                  # the window it labels

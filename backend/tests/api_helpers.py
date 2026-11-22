@@ -41,7 +41,7 @@ async def bellek_istemcisi() -> AsyncIterator[AsyncClient]:
 
 
 async def kullanici(
-    client: AsyncClient, email: str, *, attach_org: bool = True, role: str = "analyst",
+    client: AsyncClient, email: str, *, attach_org: bool = True, role: str = "owner",
 ) -> tuple[dict[str, str], str | None, str]:
     """Register, optionally attach a fresh organisation, sign in.
 
@@ -82,6 +82,7 @@ def ornek_rapor(*, runway: float = 9.5) -> dict[str, Any]:
     """
     return {
         "pnl": {
+            "currency": "TRY",
             "revenue": 12_000_000,
             "total_opex": 8_000_000,
             "net_margin": 0.2,
@@ -109,3 +110,35 @@ async def arka_plan_bitsin(zaman_asimi: float = 5.0) -> None:
     bekleyen = [t for t in list(_RUNNING) if not t.done()]
     if bekleyen:
         await asyncio.wait(bekleyen, timeout=zaman_asimi)
+
+
+def by_number(column: Any, number: str) -> Any:
+    """`column` holds this invoice number, bare or inside an `inv:<side>:<party>:<number>` key (G23)."""
+    from sqlalchemy import or_
+
+    return or_(column == number, column.like(f"inv:_:%:{number}"))
+
+
+async def emailed_token(client: AsyncClient, kind: str, email: str) -> str:
+    """The one-time token in the newest `kind` e-mail the outbox holds for `email`.
+
+    A token is never stored in the clear, so the outbox row that carries the link is the only
+    place a test can read it from (until the row is delivered and its body removed)."""
+    import re
+
+    from sqlalchemy import select
+
+    from app.models.outbox_message import OutboxMessage
+
+    async with client._maker() as db:  # type: ignore[attr-defined]
+        rows = (
+            await db.execute(
+                select(OutboxMessage)
+                .where(OutboxMessage.kind == kind, OutboxMessage.recipient == email)
+                .order_by(OutboxMessage.created_at.desc())
+            )
+        ).scalars().all()
+    assert rows, f"no {kind} e-mail queued for {email}"
+    found = re.search(r"token=([0-9a-f]{64})", rows[0].body)
+    assert found, "the e-mail carries no token"
+    return found.group(1)

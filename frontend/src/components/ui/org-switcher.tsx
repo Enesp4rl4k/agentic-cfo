@@ -26,7 +26,7 @@ export const MEMBERSHIPS_KEY = ["org-memberships"] as const;
 export function OrgSwitcher() {
   const { t } = useI18n();
   const s = t.orgSwitcher;
-  const { status } = useSession();
+  const { status, update } = useSession();
   const { clearWorkspace } = useCompanyContextStore();
   const [open, setOpen] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -65,6 +65,8 @@ export function OrgSwitcher() {
     setError(null);
     try {
       await switchOrg(orgId);
+      // The session still carries the role of the organisation just left.
+      await update();
       clearWorkspace();
       window.location.assign("/command-center");
     } catch (e) {

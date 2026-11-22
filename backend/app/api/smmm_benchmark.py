@@ -319,6 +319,13 @@ async def smmm_deactivate_client(
         raise HTTPException(status_code=404, detail="Müşteri bulunamadı")
 
     client.is_active = False
+    # Dropping the client ends the accountant's access to its organisation: the
+    # membership is what `/org/switch` and `require_smmm` read. The client's
+    # records stay; a new accountant can be invited.
+    if client.client_org_id:
+        from app.services.org_membership import drop_membership
+
+        await drop_membership(db, user_id=str(current_user.id), org_id=str(client.client_org_id))
     await db.commit()
     return {"data": {"id": client.id, "is_active": False}, "error": None}
 

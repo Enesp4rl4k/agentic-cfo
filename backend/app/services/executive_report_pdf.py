@@ -9,34 +9,30 @@ No external font or image dependencies.
 
 Usage:
     from app.services.executive_report_pdf import generate_executive_report
-    pdf_bytes = generate_executive_report(dashboard_data, company_name="Acme A.Ş.")
+    pdf_bytes = generate_executive_report(dashboard_data, company_name="<şirket adı>")
 """
 from __future__ import annotations
 
+import html
 import logging
 from datetime import UTC, datetime
+from functools import partial
 from typing import Any
+
+from app.core.currency_totals import fmt_compact
+from app.services.runway_display import runway_for_display
 
 logger = logging.getLogger(__name__)
 
 
-def _fmt(cents: int | float) -> str:
-    """Format kuruş (raw pipeline series, e.g. monthly_series) to Turkish TL string."""
-    val = cents / 100
-    if abs(val) >= 1_000_000:
-        return f"₺{val/1_000_000:.1f}M"
-    elif abs(val) >= 1_000:
-        return f"₺{val/1_000:.0f}K"
-    return f"₺{val:,.0f}"
+def _fmt(cents: int | float, currency: str | None = None) -> str:
+    """Format kuruş (raw pipeline series, e.g. monthly_series), labelled with the report's currency (or bare)."""
+    return fmt_compact(cents / 100, currency)
 
 
-def _fmt_lira(lira: int | float) -> str:
-    """Format an already-lira value (Report.data scalars — report_agent._fmt boundary)."""
-    if abs(lira) >= 1_000_000:
-        return f"₺{lira/1_000_000:.1f}M"
-    elif abs(lira) >= 1_000:
-        return f"₺{lira/1_000:.0f}K"
-    return f"₺{lira:,.0f}"
+def _fmt_lira(lira: int | float, currency: str | None = None) -> str:
+    """Format an already-major-unit value (Report.data scalars — report_agent._fmt boundary)."""
+    return fmt_compact(lira, currency)
 
 
 def _pct(v: float) -> str:
@@ -54,12 +50,17 @@ def _build_html(
     generated_at: str,
 ) -> str:
     pnl      = dashboard.get("pnl") or {}
+    # Every amount on the page is in the currency the P&L states, or bare when it states none.
+    cur = pnl.get("currency")
+    fmt_k = partial(_fmt, currency=cur)
+    fmt_lira = partial(_fmt_lira, currency=cur)
     cashflow = dashboard.get("cashflow") or {}
     forecast = dashboard.get("forecast") or {}
     anomalies = dashboard.get("anomalies") or []
 
     base_scenario = (forecast.get("scenarios") or {}).get("base") or {}
-    runway = base_scenario.get("runway_months")
+    runway_view = runway_for_display(forecast)
+    runway = runway_view.months
     base_scenario.get("twelve_month_net", 0)
 
     cf_alerts = cashflow.get("alerts") or []
@@ -79,9 +80,9 @@ def _build_html(
         monthly_rows += f"""
         <tr>
           <td class="month-cell">{entry.get('month', '')}</td>
-          <td class="amount-cell income">{_fmt(entry.get('in', 0))}</td>
-          <td class="amount-cell expense">{_fmt(entry.get('out', 0))}</td>
-          <td class="amount-cell {_sign_class(net)}">{_fmt(net)}</td>
+          <td class="amount-cell income">{fmt_k(entry.get('in', 0))}</td>
+          <td class="amount-cell expense">{fmt_k(entry.get('out', 0))}</td>
+          <td class="amount-cell {_sign_class(net)}">{fmt_k(net)}</td>
         </tr>"""
 
     # OpEx top 3
@@ -92,7 +93,7 @@ def _build_html(
     )[:3]
     opex_rows = "".join(
         f'<tr><td class="opex-name">{k.replace("_"," ").title()}</td>'
-        f'<td class="opex-amt">{_fmt_lira(v)}</td></tr>'
+        f'<td class="opex-amt">{fmt_lira(v)}</td></tr>'
         for k, v in top_opex
     )
 
@@ -102,18 +103,20 @@ def _build_html(
     for key in ["pessimistic", "base", "optimistic"]:
         sc = scenarios.get(key) or {}
         net12 = sc.get("twelve_month_net", 0)
-        rw    = sc.get("runway_months")
+        rw    = runway_for_display(forecast, key).months
         label = sc.get("label", key)
         row_class = "base-row" if key == "base" else ""
         scenario_rows += f"""
         <tr class="{row_class}">
           <td>{label}</td>
-          <td class="{_sign_class(net12)}">{_fmt_lira(net12)}</td>
-          <td>{f"{rw} ay" if rw else "Stabil"}</td>
+          <td class="{_sign_class(net12)}">{fmt_lira(net12)}</td>
+          <td>{f"{rw} ay" if rw else "bilinmiyor"}</td>
         </tr>"""
 
     # Narrative
     narrative = pnl.get("narrative") or ""
+    # What the figures leave out: other currencies (not converted), or a company currency not yet confirmed.
+    currency_note = html.escape(str(pnl.get("currency_note") or ""))
     forecast_narrative = forecast.get("narrative") or ""
 
     return f"""<!DOCTYPE html>
@@ -331,39 +334,40 @@ tr.base-row td {{ font-weight: 700; background: #eff6ff; }}
   {'<div class="alert-badge alert-critical">⚠ ' + str(critical_count) + ' Kritik Uyarı</div>' if critical_count > 0 else '<div class="alert-badge alert-ok">✓ Kritik Uyarı Yok</div>'}
   {'<div class="alert-badge alert-warning">▲ ' + str(warning_count) + ' Uyarı</div>' if warning_count > 0 else ''}
   {'<div class="alert-badge alert-anomaly">◆ ' + str(anom_critical + anom_high) + ' Yüksek Anomali</div>' if (anom_critical + anom_high) > 0 else ''}
-  {'<div class="alert-badge alert-warning">⏳ Nakit Ömrü: ' + str(runway) + ' Ay</div>' if runway and runway < 12 else ''}
+  {'<div class="alert-badge alert-warning">⏳ Nakit Ömrü: ' + runway_view.text() + '</div>' if runway and runway < 12 else ''}
 </div>
 
 <!-- KPI Strip -->
 <div class="kpi-strip">
   <div class="kpi-card">
     <div class="kpi-label">Ciro</div>
-    <div class="kpi-value">{_fmt_lira(pnl.get('revenue', 0))}</div>
+    <div class="kpi-value">{fmt_lira(pnl.get('revenue', 0))}</div>
   </div>
   <div class="kpi-card">
     <div class="kpi-label">Brüt Kâr</div>
-    <div class="kpi-value">{_fmt_lira(pnl.get('gross_profit', 0))}</div>
+    <div class="kpi-value">{fmt_lira(pnl.get('gross_profit', 0))}</div>
     <div class="kpi-sub">{_pct(pnl.get('gross_margin', 0))} marj</div>
   </div>
   <div class="kpi-card">
     <div class="kpi-label">FAVÖK</div>
-    <div class="kpi-value {_sign_class(pnl.get('ebitda', 0))}">{_fmt_lira(pnl.get('ebitda', 0))}</div>
+    <div class="kpi-value {_sign_class(pnl.get('ebitda', 0))}">{fmt_lira(pnl.get('ebitda', 0))}</div>
     <div class="kpi-sub">{_pct(pnl.get('ebitda_margin', 0))} marj</div>
   </div>
   <div class="kpi-card">
     <div class="kpi-label">Net Kâr</div>
-    <div class="kpi-value {_sign_class(pnl.get('net_income', 0))}">{_fmt_lira(pnl.get('net_income', 0))}</div>
+    <div class="kpi-value {_sign_class(pnl.get('net_income', 0))}">{fmt_lira(pnl.get('net_income', 0))}</div>
     <div class="kpi-sub">{_pct(pnl.get('net_margin', 0))} marj</div>
   </div>
   <div class="kpi-card">
     <div class="kpi-label">Net Nakit</div>
-    <div class="kpi-value {_sign_class(cashflow.get('net_change', 0))}">{_fmt_lira(cashflow.get('net_change', 0))}</div>
-    <div class="kpi-sub">Nakit ömrü: {str(runway) + " ay" if runway else "Stabil"}</div>
+    <div class="kpi-value {_sign_class(cashflow.get('net_change', 0))}">{fmt_lira(cashflow.get('net_change', 0))}</div>
+    <div class="kpi-sub">Nakit ömrü: {runway_view.text()}</div>
   </div>
 </div>
 
 <!-- CFO Narrative -->
 {f'<div class="narrative-box">{narrative[:400]}</div>' if narrative else ""}
+{f'<div class="narrative-box" style="border-left-color:#d97706">{currency_note}</div>' if currency_note else ""}
 
 <!-- Main grid: Cash Flow + OpEx -->
 <div class="section-grid">
@@ -388,7 +392,7 @@ tr.base-row td {{ font-weight: 700; background: #eff6ff; }}
           {opex_rows or "<tr><td colspan='2' style='color:#94a3b8'>Gider verisi yok</td></tr>"}
           <tr style="font-weight:700;border-top:2px solid #e2e8f0">
             <td>Toplam Faaliyet Gideri</td>
-            <td class="opex-amt">{_fmt_lira(pnl.get('total_opex', 0))}</td>
+            <td class="opex-amt">{fmt_lira(pnl.get('total_opex', 0))}</td>
           </tr>
         </tbody>
       </table>

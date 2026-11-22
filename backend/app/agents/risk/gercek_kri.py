@@ -51,6 +51,7 @@ def cfo_kri(pnl: dict[str, Any] | None, forecast: dict[str, Any] | None) -> list
     pnl = pnl or {}
     out: list[dict[str, Any]] = []
     runway = _num((((forecast or {}).get("scenarios") or {}).get("base") or {}).get("runway_months"))
+    rw = (forecast or {}).get("runway")
     if runway is not None:
         st = _status(runway, 6.0, 3.0, higher_is_worse=False)
         out.append({
@@ -58,6 +59,11 @@ def cfo_kri(pnl: dict[str, Any] | None, forecast: dict[str, Any] | None) -> list
             "threshold_amber": 6.0, "threshold_red": 3.0, "higher_is_worse": False,
             "status": st, "source": "CFO tahmini (baz senaryo)",
             "evidence": f"Baz senaryoda nakit ömrü {runway:.1f} ay",
+            # The runway block's basis is not dropped here: an alert built on this KRI states it.
+            "basis": (rw or {}).get("basis"),
+            "identity_uncertain": bool((rw or {}).get("identity_uncertain")),
+            "basis_note": (rw or {}).get("message") if (rw or {}).get("basis") != "known"
+            or (rw or {}).get("identity_uncertain") else None,
             "cascade_trigger": "cash_crisis" if st != "green" else None,
             "cascade_params": {"runway_months": runway},
         })

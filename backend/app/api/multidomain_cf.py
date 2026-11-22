@@ -22,6 +22,8 @@ from app.database import get_db
 from app.models.user import User
 
 router = APIRouter()
+from app.services.counterfactual_engine import CounterfactualInputsMissing
+
 logger = logging.getLogger(__name__)
 
 
@@ -30,7 +32,7 @@ logger = logging.getLogger(__name__)
 class HeadcountMDRequest(BaseModel):
     delta: int = Field(..., description="Pozitif = ise al, negatif = cikar")
     avg_monthly_salary_try: float | None = Field(None, gt=0)
-    productivity_gain_pct: float = Field(0.10, ge=0, le=1.0)
+    productivity_gain_pct: float | None = Field(None, ge=0, le=1.0)
     onboarding_months: int = Field(2, ge=0, le=6)
     horizon_months: int = Field(12, ge=1, le=36)
     role_type: Literal["engineer", "sales", "ops", "general"] = "general"
@@ -40,7 +42,7 @@ class HeadcountMDRequest(BaseModel):
 
 class MarketingMDRequest(BaseModel):
     monthly_increase_try: float = Field(..., gt=0)
-    expected_roas: float = Field(2.5, gt=0, le=20)
+    expected_roas: float = Field(..., gt=0, le=20, description="Beklenen ROAS (sizin varsayımınız)")
     horizon_months: int = Field(12, ge=1, le=36)
     job_id: str | None = None
     org_id: str | None = None
@@ -49,7 +51,7 @@ class MarketingMDRequest(BaseModel):
 class TechInvestMDRequest(BaseModel):
     one_time_invest_try: float = Field(..., gt=0)
     monthly_ops_increase_try: float = Field(0.0, ge=0)
-    velocity_gain_pct: float = Field(0.15, gt=0, le=1.0)
+    velocity_gain_pct: float = Field(..., gt=0, le=1.0, description="Hız kazancı (sizin varsayımınız)")
     horizon_months: int = Field(12, ge=1, le=36)
     job_id: str | None = None
     org_id: str | None = None
@@ -209,6 +211,8 @@ async def multidomain_headcount(
             horizon_months=req.horizon_months,
             role_type=req.role_type,
         )
+    except CounterfactualInputsMissing as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
         logger.exception("Headcount MD CF hatasi: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
@@ -244,6 +248,8 @@ async def multidomain_marketing(
             expected_roas=req.expected_roas,
             horizon_months=req.horizon_months,
         )
+    except CounterfactualInputsMissing as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
         logger.exception("Marketing MD CF hatasi: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
@@ -280,6 +286,8 @@ async def multidomain_tech(
             velocity_gain_pct=req.velocity_gain_pct,
             horizon_months=req.horizon_months,
         )
+    except CounterfactualInputsMissing as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
         logger.exception("Tech MD CF hatasi: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))

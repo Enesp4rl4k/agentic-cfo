@@ -20,6 +20,8 @@ _ROUTERS = [
     ("app.api.stream",              "router", "stream"),
     ("app.api.analysis",            "router", "analysis"),
     ("app.api.auth",                "router", "auth"),
+    ("app.api.password_reset",      "router", "auth"),            # forgot / reset password (public)
+    ("app.api.email_verification",  "router", "auth"),            # verify e-mail / resend (public)
     ("app.api.benchmark",           "router", "benchmark"),
     ("app.api.open_banking",        "router", "open-banking"),
     ("app.api.causal",              "router", "causal"),
@@ -46,6 +48,10 @@ _ROUTERS = [
     ("app.api.audit",               "router", "audit"),
     ("app.api.demo",                "router", "demo"),
     ("app.api.org",                 "router", "org"),
+    ("app.api.size_profile",        "router", "org"),                         # company size answers + confirmed profile
+    ("app.api.materiality",         "router", "org"),                         # materiality threshold: proposal, acknowledgement, override
+    ("app.api.briefing_recipients", "router", "org"),                         # the briefing also to the accountant (a recorded preference)
+    ("app.api.smmm_workload",       "router", "smmm"),                        # the accountant's workload across companies
     ("app.api.pilot",               "router", "pilot"),
     ("app.api.monday_briefing",     "router", "briefing"),  # Pazartesi Bülteni
     ("app.api.context",             "router", "context"),
@@ -75,6 +81,7 @@ _ROUTERS = [
     ("app.api.email_ingest",            "router", "email"),                      # Email Parser + Ingest
     ("app.api.sso",                     "router", "sso"),                        # SSO / OAuth2 (SEC-1)
     ("app.api.compliance_gdpr",         "router", "compliance-gdpr"),            # KVKK / GDPR (SEC-3)
+    ("app.api.org_erasure",             "router", "org-erasure"),                # KVKK Md.7: whole-organisation erasure (two-step)
     ("app.api.security",                "router", "security"),                   # SOC2 + IP whitelist (SEC-4/5)
     ("app.api.analytics",               "router", "analytics"),                  # AN-1..6: TCMB, Monte Carlo, WC, Cohort
     ("app.api.integrations_extended",   "router", "integrations-ext"),           # INT-2,4,5,6: OB, Ecom, Sheets, Webhook
@@ -88,11 +95,15 @@ _ROUTERS = [
     ("app.api.ws_alerts",               "router", "ws-alerts"),                   # M1: WebSocket org-channel + alert history
     ("app.api.reports_pdf",             "router", "reports-pdf"),                  # M2: PDF report generation (WeasyPrint)
     ("app.api.system",                  "router", "system"),                       # Global management/ops health
+    ("app.api.ops",                     "router", "ops"),                          # /ready (readiness) and /version, no user
     ("app.api.actions",                 "router", "actions"),                      # Human-in-the-Loop Action Execution
     ("app.api.bot_webhooks",            "router", "bot-webhooks"),                  # WhatsApp & Slack Bot Inbound Webhooks
     ("app.api.data_freshness",          "router", "data-freshness"),                # Org-level "as of" — shared with packet + OKR
     ("app.api.ledger",                  "router", "ledger"),                        # Plan v9 K1: company ledger
+    ("app.api.held_rows",               "router", "held-rows"),                     # Rows held for a person; confirm the company currency
+    ("app.api.ledger_aliases",          "router", "ledger-aliases"),                # G23: counterparty aliases, undo of a confirmed match
     ("app.api.plan_changes",            "router", "plan-changes"),                  # Payment plan changes: propose, a senior executive decides
+    ("app.api.decision_records",        "router", "decision-records"),              # Decision record: who decided what, when, on which evidence (read-only)
     ("app.api.decisions",               "router", "decisions"),                     # Karar Defteri: record → expected → outcome
     ("app.api.macro",                   "router", "macro"),                         # TCMB EVDS & Macro Stress Testing
     ("app.api.triggers",                "router", "triggers"),                      # Tetikleyici Motoru CRUD + audit (P4-4)

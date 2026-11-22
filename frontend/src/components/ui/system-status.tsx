@@ -14,6 +14,7 @@
 
 import { useEffect, useState } from "react";
 import { Activity, CheckCircle2, XCircle, Loader2, ExternalLink } from "lucide-react";
+import { useI18n } from "@/hooks/useI18n";
 import { cn } from "@/lib/utils";
 import { apiClient } from "@/lib/api/client";
 import { useJobs } from "@/hooks/useCFO";
@@ -84,6 +85,7 @@ export function SystemStatusWidget({
   className,
 }: SystemStatusWidgetProps) {
   const { status: apiStatus, latencyMs } = useApiHealth();
+  const { t } = useI18n();
   const { data: jobs } = useJobs();
 
   const activeJobs = jobs?.filter((j) =>
@@ -102,15 +104,15 @@ export function SystemStatusWidget({
       <div className={cn("flex items-center gap-1.5 text-xs text-muted-foreground", className)}>
         <StatusDot status={apiStatus} />
         <span>
-          {apiStatus === "online"  ? "Online" :
-           apiStatus === "offline" ? "Offline" :
-           "Checking…"}
+          {apiStatus === "online"  ? t.systemStatus.online :
+           apiStatus === "offline" ? t.systemStatus.offline :
+           t.systemStatus.checking}
         </span>
         {activeJobs > 0 && (
           <>
             <span className="text-border">·</span>
             <Activity className="h-3 w-3 text-primary animate-pulse" aria-hidden="true" />
-            <span className="text-primary">{activeJobs} aktif</span>
+            <span className="text-primary">{t.systemStatus.active.replace("{n}", String(activeJobs))}</span>
           </>
         )}
       </div>
@@ -123,16 +125,16 @@ export function SystemStatusWidget({
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Activity className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-          <h3 className="text-sm font-semibold">Sistem Durumu</h3>
+          <h3 className="text-sm font-semibold">{t.systemStatus.title}</h3>
         </div>
         <a
           href={`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"}/docs`}
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-          aria-label="Open API documentation"
+          aria-label={t.systemStatus.apiDocsAria}
         >
-          API Docs
+          {t.systemStatus.apiDocs}
           <ExternalLink className="h-3 w-3" aria-hidden="true" />
         </a>
       </div>
@@ -148,14 +150,14 @@ export function SystemStatusWidget({
             ) : (
               <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-500" aria-hidden="true" />
             )}
-            <span className="text-xs font-medium">Backend API</span>
+            <span className="text-xs font-medium">{t.systemStatus.backend}</span>
           </div>
           <div className="flex items-center gap-2">
             <StatusDot status={apiStatus} />
             <span className="text-xs text-muted-foreground">
-              {apiStatus === "online"  ? (latencyMs ? `${latencyMs}ms` : "Online") :
-               apiStatus === "offline" ? "Offline" :
-               "Kontrol ediliyor…"}
+              {apiStatus === "online"  ? (latencyMs ? `${latencyMs} ms` : t.systemStatus.online) :
+               apiStatus === "offline" ? t.systemStatus.offline :
+               t.systemStatus.checking}
             </span>
           </div>
         </div>
@@ -167,7 +169,7 @@ export function SystemStatusWidget({
               className={cn("h-3.5 w-3.5", activeJobs > 0 ? "text-primary animate-pulse" : "text-muted-foreground")}
               aria-hidden="true"
             />
-            <span className="text-xs font-medium">Aktif Analizler</span>
+            <span className="text-xs font-medium">{t.systemStatus.activeAnalyses}</span>
           </div>
           <span className={cn(
             "text-xs font-semibold tabular-nums",
@@ -181,7 +183,7 @@ export function SystemStatusWidget({
         <div className="flex items-center justify-between rounded-md bg-muted/30 px-3 py-2">
           <div className="flex items-center gap-2">
             <CheckCircle2 className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
-            <span className="text-xs font-medium">Bugün Tamamlanan</span>
+            <span className="text-xs font-medium">{t.systemStatus.completedToday}</span>
           </div>
           <span className="text-xs tabular-nums text-muted-foreground">
             {completedToday}
@@ -191,7 +193,7 @@ export function SystemStatusWidget({
 
       {/* Footer */}
       <p className="mt-3 text-[10px] text-muted-foreground">
-        Her 30 saniyede bir güncellenir
+        {t.systemStatus.refreshNote}
       </p>
     </div>
   );

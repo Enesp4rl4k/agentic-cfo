@@ -3,7 +3,6 @@ Risk Agent API Endpoints
 
 POST /risk/analyze   — Run full Risk pipeline (register, losses, KRIs)
 POST /risk/cascade   — Cascade Risk Simulator: "what if X happens?" → all domains
-GET  /risk/health-check — Service health
 """
 
 from __future__ import annotations
@@ -18,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.risk.orchestrator import run_risk_pipeline
 from app.agents.run_ledger import recorded_run
+from app.api.access import require_writer
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.user import User
@@ -103,8 +103,13 @@ def _simulate_cascade(req: CascadeRequest) -> CascadeResult:
     # ── Domain impact templates per trigger type ──────────────────────────────
 
     if req.trigger_type == "cash_crisis":
-        runway = req.cash_runway_months or 3.0
-        burn = req.monthly_burn_rate or 1_000_000
+        if req.cash_runway_months is None or req.monthly_burn_rate is None:
+            raise HTTPException(
+                status_code=422,
+                detail="Nakit krizi simülasyonu için nakit ömrü ve aylık burn girilmelidir (varsayım yapılmaz).",
+            )
+        runway = req.cash_runway_months
+        burn = req.monthly_burn_rate
         tension = max(0, 1 - (runway / 12))  # More tension as runway shrinks
 
         domains = [
@@ -357,7 +362,7 @@ async def run_cascade_simulation(body: CascadeRequest, current_user: User = Depe
         raise HTTPException(status_code=500, detail=f"Cascade simulation failed: {exc}")
 
 
-@router.post("/risk/analyze")
+@router.post("/risk/analyze", dependencies=[Depends(require_writer)])
 async def run_risk_analysis(
     body: RiskAnalyzeRequest,
     current_user: User = Depends(get_current_user),
@@ -420,16 +425,3 @@ async def run_risk_analysis(
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Risk analysis failed: {exc}")
 
-
-@router.get("/risk/health-check")
-async def risk_health(current_user: User = Depends(get_current_user)) -> dict[str, Any]:
-    return {
-        "status": "healthy",
-        "service": "risk",
-        "capabilities": [
-            "risk_register_scoring",
-            "loss_event_tracking",
-            "kri_threshold_monitoring",
-            "enterprise_risk_posture",
-        ],
-    }

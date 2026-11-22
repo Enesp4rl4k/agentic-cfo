@@ -338,6 +338,8 @@ def test_cross_risk_infra_cash_runway():
 def test_cross_risk_severity_critical_when_runway_under_3():
     fin = {
         "cash_runway_months": 2,
+        "runway_basis": "known",   # a critical risk stands only on a proven runway
+        "runway_proven": True,
         "monthly_burn_cents": 500_000,
         "net_income_cents": -50_000,
         "net_margin": -0.05,

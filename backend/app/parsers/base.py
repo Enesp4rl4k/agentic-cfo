@@ -2,8 +2,9 @@
 Bank statement parser — base types and parsed data models.
 
 Each bank parser produces a list of ParsedTransaction objects.
-The LLM is only used as a fallback (GenericParser) when no bank-specific
-parser matches. Structured parsers are faster and more reliable.
+The LLM is only used as a fallback (app.agents.data_ingestion) when no bank-specific
+parser matches. Structured parsers are faster and more reliable. Direction is never defaulted:
+see app.parsers.direction.
 """
 from __future__ import annotations
 
@@ -20,7 +21,8 @@ class ParsedTransaction:
     description: str
     amount_cents: int          # Positive, sign by tx_type; negative only for a correction posted to an income-statement account
     tx_type: str               # "income" | "expense"
-    currency: str = "TRY"
+    # "" = the document did not state it. Never defaulted to TRY: see app.services.ingest.hold.
+    currency: str = ""
     vendor: str | None = None
     balance_cents: int | None = None   # Running balance if available
     reference: str | None = None       # Bank reference / cheque number
@@ -29,12 +31,23 @@ class ParsedTransaction:
     # computed a confidence and had nowhere to put it, so a row whose direction
     # was guessed off the page reached the ledger indistinguishable from one
     # settled by VKN. 1.0 keeps every existing parser's behaviour unchanged.
-    confidence: float = 1.0
+    # None = the extraction did not score this row (an LLM read): unknown, held for review.
+    confidence: float | None = 1.0
     # Why it is not 1.0, in the reviewer's language.
     confidence_note: str = ""
     # The Tekdüzen Hesap Planı main account, when the source names one
     # (accounting exports). It decides direction and P&L membership.
     account_code: str | None = None
+    # True when `date` is a placeholder because the document had no readable one:
+    # the row leaves the parser undated and flagged, never dated "today".
+    date_estimated: bool = False
+    # True when the line looked like money but no row pattern took it: held as a raw line (app.parsers.lines).
+    unread: bool = False
+    # "sign" when `tx_type` is only the sign of one amount column (a reading, not evidence: `direction.settle_rows`
+    # lets it book only with a verifying balance chain or a remembered answer).
+    direction_basis: str = ""
+    # True when the matched line has a money-like token that is neither the amount nor the balance: held, not booked.
+    amount_uncertain: bool = False
 
 
 @dataclass

@@ -53,7 +53,8 @@ async def _check_redis() -> dict[str, Any]:
         await client.aclose()
         return {"ok": True, "detail": "redis ping ok"}
     except Exception as exc:
-        return {"ok": False, "detail": str(exc)}
+        # The class, not the text: this route takes no user, and a driver's message can carry a host name.
+        return {"ok": False, "detail": type(exc).__name__}
 
 
 async def _queue_depths() -> dict[str, int]:
@@ -220,7 +221,7 @@ async def system_health(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
         await db.execute(text("SELECT 1"))
     except Exception as exc:
         db_ok = False
-        db_detail = str(exc)
+        db_detail = type(exc).__name__
 
     redis_check = await _check_redis()
     agent_check = _check_agent_imports()

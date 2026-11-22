@@ -145,7 +145,7 @@ class UBLTRInvoiceParser:
         inv_type = _find_text(root, "cbc:InvoiceTypeCode", "SATIS").upper()
         profile_id = _find_text(root, "cbc:ProfileID", "TICARIFATURA")
         date_str = _find_text(root, "cbc:IssueDate", "")
-        currency = _find_text(root, "cbc:DocumentCurrencyCode", "TRY")
+        currency = _find_text(root, "cbc:DocumentCurrencyCode", "")
 
         # A missing or garbled date used to become 2024-01-01 or today and the
         # invoice was posted into a period it does not belong to. It is held.

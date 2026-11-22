@@ -39,11 +39,13 @@ async def ortam(monkeypatch, tmp_path):
         await arka_plan_bitsin()
 
 
-async def _job(client, tmp_path: Path, org_id: str, source: str) -> str:
+async def _job(client, tmp_path: Path, org_id: str, source: str, extra_row: str | None = None) -> str:
     from app.models.analysis_job import AnalysisJob, JobStatus
 
     dst = tmp_path / source
     shutil.copy(CORPUS / source, dst)
+    if extra_row:
+        dst.write_text(dst.read_text(encoding="utf-8").rstrip(chr(10)) + chr(10) + extra_row + chr(10), encoding="utf-8")
     async with client._maker() as db:
         job = AnalysisJob(filename=source, file_path=str(dst), file_type="csv",
                           org_id=org_id, status=JobStatus.PENDING)
@@ -52,12 +54,12 @@ async def _job(client, tmp_path: Path, org_id: str, source: str) -> str:
         return job.id
 
 
-async def _held_then_approved(client, tmp_path, email: str, source: str) -> None:
+async def _held_then_approved(client, tmp_path, email: str, source: str, extra_row: str | None = None) -> None:
     from app.models.analysis_job import AnalysisJob
     from app.worker import run_cfo_analysis
 
     headers, org_id, _ = await kullanici(client, email)
-    job_id = await _job(client, tmp_path, org_id, source)
+    job_id = await _job(client, tmp_path, org_id, source, extra_row)
 
     out = await run_cfo_analysis({}, job_id)
     assert out.get("ok") is True, out
@@ -80,10 +82,45 @@ async def _held_then_approved(client, tmp_path, email: str, source: str) -> None
 
 
 async def test_a_run_held_at_the_verifier_has_a_dashboard_before_and_after_approval(ortam):
+    """The loss month used to be held by its own forecast ("critical" alert); that is shown now, not held
+    (see test_forecast_runway). The hold here is a real integrity one: a row whose date cannot be read
+    lowers the file's parse confidence under the gate, so the run is held, analysed, and approvable."""
     client, tmp_path = ortam
-    await _held_then_approved(client, tmp_path, "subat@example.com", "technova_subat_2024_zarar.csv")
+    await _held_then_approved(
+        client, tmp_path, "subat@example.com", "technova_subat_2024_zarar.csv",
+        extra_row='bilinmiyor,Okunamayan satır,"1.000,00",expense,other',
+    )
 
 
-async def test_a_run_held_at_ingestion_is_still_analysed_for_the_reviewer(ortam):
+async def test_the_loss_month_alone_is_not_held(ortam):
+    """Same file without the unreadable row: negative months and critical alerts do not hold it."""
+    from app.models.analysis_job import AnalysisJob
+    from app.worker import run_cfo_analysis
+
     client, tmp_path = ortam
-    await _held_then_approved(client, tmp_path, "bozuk@example.com", "bozuk_veri.csv")
+    _, org_id, _ = await kullanici(client, "subat2@example.com")
+    job_id = await _job(client, tmp_path, org_id, "technova_subat_2024_zarar.csv")
+    assert (await run_cfo_analysis({}, job_id)).get("ok") is True
+    async with client._maker() as db:
+        assert (await db.get(AnalysisJob, job_id)).status == "completed"
+
+
+async def test_a_file_whose_every_row_is_unreadable_is_held_row_by_row_for_the_reviewer(ortam):
+    """Every date of bozuk_veri.csv is unreadable: nothing is analysed (no figure can honestly
+    be drawn), the run is held, and each row waits in the held-rows list with its reason."""
+    from sqlalchemy import select
+
+    from app.models.analysis_job import AnalysisJob
+    from app.models.transaction import Transaction
+    from app.worker import run_cfo_analysis
+
+    client, tmp_path = ortam
+    headers, org_id, _ = await kullanici(client, "bozuk@example.com")
+    job_id = await _job(client, tmp_path, org_id, "bozuk_veri.csv")
+    out = await run_cfo_analysis({}, job_id)
+    assert out.get("ok") is True, out
+    async with client._maker() as db:
+        assert (await db.get(AnalysisJob, job_id)).status == "awaiting_review"
+        assert (await db.execute(select(Transaction).where(Transaction.job_id == job_id))).first() is None
+    rows = (await client.get(f"/api/v1/held-rows?job_id={job_id}", headers=headers)).json()["data"]["rows"]
+    assert len(rows) == 4 and all("tarih okunamadı" in r["reason_labels"] for r in rows)

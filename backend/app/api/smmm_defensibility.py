@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.access import load_owned_job
+from app.api.access import load_owned_job, require_smmm, require_writer
 from app.api.deps_regional import require_tr_pack
 from app.core.http_headers import content_disposition
 from app.database import get_db
@@ -55,7 +55,8 @@ class FinalizeRequest(BaseModel):
     statement: str = Field(..., min_length=1, description="Mali müşavir beyanı / imza metni")
 
 
-@router.post("/smmm/defensibility/{job_id}/build", status_code=status.HTTP_201_CREATED)
+@router.post("/smmm/defensibility/{job_id}/build",
+    dependencies=[Depends(require_writer)], status_code=status.HTTP_201_CREATED)
 async def build_defensibility_packet(
     job_id: str,
     current_user: User = Depends(require_tr_pack),
@@ -114,7 +115,8 @@ async def get_defensibility_packet(
     }
 
 
-@router.post("/smmm/defensibility/{packet_id}/finalize")
+@router.post("/smmm/defensibility/{packet_id}/finalize",
+    dependencies=[Depends(require_smmm)])
 async def finalize_defensibility_packet(
     packet_id: str,
     body: FinalizeRequest,

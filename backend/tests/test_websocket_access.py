@@ -108,7 +108,7 @@ async def test_only_an_active_users_access_token_identifies_a_caller() -> None:
 # ── the routes ───────────────────────────────────────────────────────────────
 
 def _as(monkeypatch, user: Any) -> None:
-    async def _caller(token: str | None) -> Any:
+    async def _caller(token: str | None, ip: str | None = None) -> Any:
         return user if token else None
     monkeypatch.setattr(ws_auth, "websocket_caller", _caller)
 

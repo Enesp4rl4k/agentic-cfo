@@ -9,17 +9,30 @@ from pydantic import BaseModel
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.access import ensure_tenant
+from app.api.access import ensure_tenant, require_writer
 from app.api.auth import get_current_user
 from app.api.contract import Envelope
+from app.api.ledger_schema import LedgerSummaryOut
 from app.api.radar_schema import CashRadarOut
 from app.database import get_db
 from app.models.canonical_transaction import CanonicalTransaction
 from app.models.open_item import OpenItem
 from app.models.open_item_match import OpenItemMatch
+from app.models.transaction import Transaction
 from app.models.user import User
+from app.services.acting_role import acting_role
 from app.services.cash_radar import compute_cash_radar
-from app.services.ledger import ACTIVE, EXCLUDED, POSSIBLE_DUPLICATE, ledger_summary
+from app.services.duplicate_resolution import settle_resolution
+from app.services.ledger import (
+    ACTIVE,
+    EXCLUDED,
+    POSSIBLE_DUPLICATE,
+    Period,
+    ledger_summary,
+    load_aliases,
+    source_transaction,
+)
+from app.services.ledger_documents import HOLD_REASONS_TR, MatchedMoney, hold_reason
 from app.services.reconciliation import (
     BY_SUM,
     CONFIRMED,
@@ -28,6 +41,7 @@ from app.services.reconciliation import (
     payment_behaviour,
     settle_from_matches,
 )
+from app.services.settlement_decisions import record_person_answer
 
 router = APIRouter()
 
@@ -51,6 +65,7 @@ def _row(r: CanonicalTransaction) -> dict[str, Any]:
         "id": r.id,
         "transaction_date": r.transaction_date.isoformat()[:10],
         "amount_cents": r.amount_cents,
+        "currency": r.currency,
         "direction": r.direction,
         "description": r.description,
         "category": r.category,
@@ -58,12 +73,26 @@ def _row(r: CanonicalTransaction) -> dict[str, Any]:
     }
 
 
-@router.get("/ledger/summary", responses={400: {"description": "The user has no organisation."}})
+@router.get(
+    "/ledger/summary",
+    response_model=Envelope[LedgerSummaryOut],
+    responses={400: {"description": "The user has no organisation, or the period is not valid."}},
+)
 async def get_summary(
+    start: str | None = None,
+    end: str | None = None,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    return {"data": await ledger_summary(db, _org(user)), "error": None}
+    """Figures for one period of whole months (`start`, `end` as YYYY-MM).
+
+    With neither, the last 12 months of data; the period used is in `data.period`.
+    """
+    try:
+        period = Period(start or None, end or None)
+    except ValueError:
+        raise HTTPException(400, "Geçersiz dönem (YYYY-AA biçiminde, başlangıç bitişten sonra olamaz).") from None
+    return {"data": await ledger_summary(db, _org(user), period), "error": None}
 
 
 @router.get("/ledger/possible-duplicates", responses={400: {"description": "The user has no organisation."}})
@@ -78,11 +107,25 @@ async def get_possible_duplicates(
         .where(CanonicalTransaction.org_id == org_id, CanonicalTransaction.ledger_status == POSSIBLE_DUPLICATE)
         .order_by(CanonicalTransaction.transaction_date)
     )).scalars().all()
+    aliases = await load_aliases(db, org_id)
+    cache: dict[str, list[Transaction]] = {}
     data = []
     for row in rows:
         match = await db.get(CanonicalTransaction, row.duplicate_of) if row.duplicate_of else None
-        data.append({**_row(row), "matches": [_row(match)] if match and match.org_id == org_id else []})
+        match = match if match and match.org_id == org_id else None
+        data.append({
+            **await _with_counterparty(db, row, aliases),
+            "reason": (reason := await hold_reason(db, row, aliases, cache)),
+            "reason_text": HOLD_REASONS_TR[reason],
+            "matches": [await _with_counterparty(db, match, aliases)] if match else [],
+        })
     return {"data": data, "error": None}
+
+
+async def _with_counterparty(db: AsyncSession, row: CanonicalTransaction, aliases: dict[str, str]) -> dict[str, Any]:
+    """The row, and the counterparty its upload wrote (the ledger row keeps only the vendor)."""
+    tx = await source_transaction(db, row, aliases)
+    return {**_row(row), "counterparty": tx.counterparty if tx else None}
 
 
 @router.get("/ledger/open-items", responses={400: {"description": "The user has no organisation."}})
@@ -170,6 +213,7 @@ def _refresh_view(org_id: str) -> None:
 
 @router.post(
     "/ledger/settlements/{match_id}/resolve",
+    dependencies=[Depends(require_writer)],
     responses={
         400: {"description": "The user has no organisation."},
         404: {"description": "No such proposal in this organisation."},
@@ -200,7 +244,10 @@ async def resolve_settlement(
                 OpenItemMatch.status == PROPOSED,
             )
         )).scalars())
+    if not group:   # the lump was answered meanwhile: nothing is left to decide (it used to answer 200 with no effect)
+        raise HTTPException(409, "Bu öneri karar beklemiyor.")
     members = [(m.id, m.open_item_id, m.amount_cents) for m in group]
+    role = await acting_role(db, user)
     won = await db.execute(
         update(OpenItemMatch)
         .where(OpenItemMatch.id.in_([m[0] for m in members]), OpenItemMatch.status == PROPOSED)
@@ -212,9 +259,13 @@ async def resolve_settlement(
         raise HTTPException(409, "Bu öneri karar beklemiyor.")
     if body.action == "confirm":
         await settle_from_matches(db, [item_id for _, item_id, _ in members])
+    decision_ids = await record_person_answer(
+        db, org_id=org_id, user_id=str(user.id), role=role, matches=group,
+        outcome="confirmed" if body.action == "confirm" else "rejected",
+    )
     await db.commit()
     _refresh_view(org_id)
-    return {"data": {"id": match_id, "action": body.action}, "error": None}
+    return {"data": {"id": match_id, "action": body.action, "decision_ids": decision_ids}, "error": None}
 
 
 @router.get("/ledger/payment-behaviour", responses={400: {"description": "The user has no organisation."}})
@@ -257,6 +308,7 @@ async def get_cash_radar(
 
 @router.post(
     "/ledger/rows/{row_id}/resolve",
+    dependencies=[Depends(require_writer)],
     responses={
         400: {"description": "The user has no organisation."},
         404: {"description": "No such row in this organisation."},
@@ -271,7 +323,13 @@ async def resolve_possible_duplicate(
 ) -> dict[str, Any]:
     """A person's call: it is separate money (keep), or the same money (exclude).
 
-    An excluded row stays on record; it just is not counted.
+    An excluded row stays on record; it just is not counted. The call is recorded as a decision,
+    opens (keep) or removes (exclude) the row's open item in the same transaction
+    (`services/duplicate_resolution.py`). Excluding says nothing about suppliers: when the two rows
+    have different counterparties the response carries a `proposed_alias` (both names and what it
+    would mean), which a decider or the accountant may confirm separately
+    (`POST /ledger/counterparty-aliases`). Money already confirmed against the document refuses the
+    answer (409 with the match ids) until `POST /ledger/settlements/{id}/undo`.
     """
     _org(user)
     row = await db.get(CanonicalTransaction, row_id)
@@ -285,8 +343,19 @@ async def resolve_possible_duplicate(
         .values(ledger_status=ACTIVE if body.action == "keep" else EXCLUDED)
         .execution_options(synchronize_session=False)
     )
-    await db.commit()
     if won.rowcount != 1:
+        await db.rollback()
         raise HTTPException(409, "Bu kayıt karar beklemiyor.")
+    await db.refresh(row)
+    try:
+        effects = await settle_resolution(db, user=user, row=row, action=body.action)
+    except MatchedMoney as exc:
+        await db.rollback()
+        raise HTTPException(409, {
+            "reason": "matched_money",
+            "message": "Bu belgeye onaylı bir banka eşleşmesi bağlı; önce eşleşmeyi geri alın.",
+            "match_ids": exc.match_ids,
+        }) from exc
+    await db.commit()
     _refresh_view(org_id)
-    return {"data": {"id": row_id, "action": body.action}, "error": None}
+    return {"data": {"id": row_id, "action": body.action, **effects}, "error": None}

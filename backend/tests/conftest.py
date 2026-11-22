@@ -113,6 +113,56 @@ def _isolate_service_singletons():
     _reset_singletons()
 
 
+# ── 2b. No test reaches a real webhook ───────────────────────────────────────
+# AlertDispatcher reports "delivered" only when an HTTP endpoint answered. Tests
+# inject a transport that answers 200 for every URL (the test-only seam); a test
+# that wants a failure or a recording transport overrides it with monkeypatch.
+@pytest.fixture(autouse=True)
+def _alert_dispatcher_answers_200(monkeypatch):
+    import httpx
+
+    from app.services.alert_dispatcher import AlertDispatcher
+
+    monkeypatch.setattr(
+        AlertDispatcher, "transport", httpx.MockTransport(lambda request: httpx.Response(200))
+    )
+
+# ── 2b-i. No test reaches DNS or a user-supplied URL ─────────────────────────
+# app/core/outbound resolves a destination before it connects. Names resolve to a fixed public
+# address here (an IP literal is itself); a test of the guard installs its own resolver.
+@pytest.fixture(autouse=True)
+def _outbound_resolves_without_dns():
+    from app.core import outbound
+
+    async def resolve(host: str, port: int) -> list[str]:
+        return ["93.184.216.34"]
+
+    outbound.set_test_seams(resolve, None)
+    yield
+    outbound.set_test_seams(None, None)
+
+# ── 2c. A request does not start a background delivery ───────────────────────
+# `outbox.kick()` spawns a delivery on its own session after an invitation or a reset is
+# written. A test drives the outbox itself (`deliver_pending`), on its own database.
+@pytest.fixture(autouse=True)
+def _outbox_does_not_kick(monkeypatch):
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "outbox_kick_on_enqueue", False)
+
+
+# ── 2d. Verification is off unless a test is about it ─────────────────────────
+# A new account must verify its address before it can sign in. Most tests register and sign in at
+# once, so they run with it off; tests of verification turn it on (`email_verification_required`).
+@pytest.fixture(autouse=True)
+def _email_verification_off_by_default(monkeypatch, request):
+    from app.config import get_settings
+
+    if request.node.get_closest_marker("email_verification"):
+        return
+    monkeypatch.setattr(get_settings(), "email_verification_required", False)
+
+
 # ── 3. Shared HTTP client fixture ────────────────────────────────────────────
 # An in-memory FastAPI app with its own throwaway database, yielded per test.
 # Lives here (not in test_ingest) so every API test file can request `client`
@@ -131,6 +181,26 @@ async def client(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "auto_enqueue_analysis_on_upload", False)
     async with bellek_istemcisi() as c:
         yield c
+
+
+# ── 3b. Runs without an organisation ──────────────────────────────────────────
+# Most pipeline tests run with no organisation, so there is no base currency to
+# assume for a file that states none (and the rule is: unknown currency is held).
+# They are about other things; they get TRY. A run WITH an org_id reads the real
+# lookup, so the currency rule itself is tested against it.
+@pytest.fixture(autouse=True)
+def _base_currency_for_orgless_runs(monkeypatch, request):
+    # The currency-rule tests opt out (`pytestmark = pytest.mark.real_currency`).
+    if request.node.get_closest_marker("real_currency"):
+        return
+    import app.services.org_identity as org_identity
+
+    real = org_identity.own_base_currency
+
+    async def lookup(org_id):
+        return (await real(org_id) or "TRY") if org_id else "TRY"
+
+    monkeypatch.setattr(org_identity, "own_base_currency", lookup)
 
 
 # ── 4. The order a failing run used ──────────────────────────────────────────

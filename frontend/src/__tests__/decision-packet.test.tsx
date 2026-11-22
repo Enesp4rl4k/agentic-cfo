@@ -7,7 +7,8 @@
  */
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
+import { renderWithQuery } from "./dashboard-mocks";
 
 const { packet, dec } = vi.hoisted(() => ({
   packet: { getDecisionPacket: vi.fn() },
@@ -15,6 +16,13 @@ const { packet, dec } = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/api/decisionPacket", () => packet);
 vi.mock("@/lib/api/decisions", () => dec);
+// Money is written in the organisation's effective currency (formerly lira hard-coded): a lira company here.
+vi.mock("@/hooks/useOrgSettings", () => ({
+  useOrgSettings: () => ({
+    org: { org_id: "o", name: "T", locale: "tr-TR", base_currency: "TRY", base_currency_confirmed: true, effective_currency: "TRY" },
+    loading: false, error: null, refresh: () => {}, locale: "tr-TR",
+  }),
+}));
 
 import { DecisionPacketPanel } from "@/components/ui/decision-packet-panel";
 
@@ -128,9 +136,39 @@ describe("Karar Paketi paneli", () => {
     dec.measureOutcome.mockReset();
   });
 
+  it("shows an option the data cannot answer as unavailable, with its reason and no figure", async () => {
+    packet.getDecisionPacket.mockResolvedValue({
+      ...full,
+      options: [
+        ...full.options,
+        {
+          id: "preset_9",
+          label: "Fiyat Artışı Örneği",
+          description: "x",
+          baseline: false,
+          available: false,
+          unavailable_reason: "Beklenen müşteri kaybı varsayımı sizden gelmeli",
+          base_net_impact: null,
+          breakeven_months: null,
+          cashflow_risk: null,
+          runway_after: null,
+          assumptions: [],
+          recommendation: null,
+          engine: "counterfactual",
+          scenarios: [],
+        },
+      ],
+    });
+    renderWithQuery(<DecisionPacketPanel jobId="job-1" />);
+    const optionsSection = within(await screen.findByLabelText("Seçenekler"));
+    expect(optionsSection.getByText("Fiyat Artışı Örneği")).toBeInTheDocument();
+    expect(optionsSection.getByText(/Hesaplanamadı: Beklenen müşteri kaybı/)).toBeInTheDocument();
+    expect(optionsSection.getByText("Hesaplanamadı")).toBeInTheDocument();
+  });
+
   it("answers the four questions on one screen", async () => {
     packet.getDecisionPacket.mockResolvedValue(full);
-    render(<DecisionPacketPanel jobId="job-1" />);
+    renderWithQuery(<DecisionPacketPanel jobId="job-1" />);
     expect(packet.getDecisionPacket).toHaveBeenCalledWith("job-1");
 
     expect(await screen.findByText("Karar Paketi")).toBeInTheDocument();
@@ -148,7 +186,7 @@ describe("Karar Paketi paneli", () => {
     const optionsSection = within(screen.getByLabelText("Seçenekler"));
     expect(optionsSection.getByText("Hiçbir şey yapma")).toBeInTheDocument();
     expect(screen.getByText("referans")).toBeInTheDocument();
-    expect(screen.getByText("0 ₺ (referans)")).toBeInTheDocument();
+    expect(screen.getByText("₺0 (referans)")).toBeInTheDocument();
     expect(optionsSection.getByText("2 Kişi İşe Alma")).toBeInTheDocument();
     expect(screen.getByText(/240\.000/)).toBeInTheDocument(); // −240.000 ₺
     expect(screen.getByText("6 ay")).toBeInTheDocument(); // break-even
@@ -172,7 +210,7 @@ describe("Karar Paketi paneli", () => {
 
   it("renders nothing when the packet cannot be loaded", async () => {
     packet.getDecisionPacket.mockRejectedValue(new Error("backend kapalı"));
-    const { container } = render(<DecisionPacketPanel jobId="job-1" />);
+    const { container } = renderWithQuery(<DecisionPacketPanel jobId="job-1" />);
     await waitFor(() => expect(container).toBeEmptyDOMElement());
     expect(screen.queryByText("Karar Paketi")).not.toBeInTheDocument();
   });

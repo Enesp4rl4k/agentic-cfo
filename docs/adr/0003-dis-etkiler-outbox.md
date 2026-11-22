@@ -15,8 +15,15 @@ E-posta, bildirim, Slack/WhatsApp ve webhook gibi dış etkiler iş kodunun içi
 ## Sonuçlar
 - Her dış etki bir kez olur; olmayan etki gerekçesiyle görünür (`GET /briefing/monday/deliveries`).
 - SMTP istemcisini yalnız teslim servisi içe aktarır; uygunluk testi F3 bunu zorlar.
+- Risk uyarıları (Slack, e-posta) ve tetikleyici webhook'ları da outbox'tan çıkar (`slack` ve `webhook` kanalları; URL gövdede, alıcı yalnız ana makine adı). Doğrudan gönderim F3 testini kırar.
 - Etkinin kendisi ile iş mantığı ayrı test edilir.
 - Bekleyen bir mesaj en fazla 5 dakika gecikir; pazartesi gönderimi bu gecikmeyi beklemeden aynı koşuda teslim eder.
+
+## Ek: tek gönderici ve iki teslim sınıfı (parola sıfırlama PR'ı)
+- **Hiçbir modül outbox gönderici dışında posta, WhatsApp, Slack ya da webhook istemcisi içe aktaramaz** (`services/outbox_transport.py`, `alert_dispatcher.py`, `outbox.py`). `test_architecture_fitness.py` içe aktarmaları, çağrıları, sağlayıcı adreslerini ve HTTP yazımlarını tarar; bağlı sisteme çekme (ERP, banka, SSO) yazımları gerekçesiyle `_HTTP_WRITERS` listesindedir. Sohbet botunun yanıtları, davet e-postası, bildirim e-postası ve WhatsApp'ı, Slack/webhook bağlantı testleri artık outbox satırıdır.
+- **`released` (varsayılan):** iş içeriği. Kurumun kalıcı tercihiyle `pending`, ya da bir insanın onayına kadar `held`. Teslimde alıcı yine kurumun yapılandırdığı biri olmalı (aktif üye ya da listelenmiş alıcı; kayıtlı WhatsApp numarası); değilse satır gerekçeyle `failed` olur.
+- **`immediate`:** davet, parola sıfırlama, bağlantı testi, bot yanıtı. Onay gerektirmez; iş verisi taşımaz. Yalnız `services/outbox_immediate.py` yazar; izinli şablon türleri `IMMEDIATE_KINDS` listesindedir, metni çağıran değil şablon üretir, gönderici her teslimde türü yeniden denetler. Tek kullanımlık bağlantı taşıyan türler gerçekten gittikten sonra satırdan silinir.
+- Geliştirmede ve testte gönderici kayıtlı bir no-op'tur (`transport = noop`); canlı gönderim `OUTBOX_TRANSPORT=live` ya da üretimdir.
 
 ## Alternatifler
 - **İş kodunda doğrudan gönderim artı "gönderildi" bayrağı:** gönderim ile bayrak arasında bir çökme mesajı iki kez gönderir ya da hiç göndermez. Reddedildi.

@@ -21,6 +21,7 @@ import logging
 from typing import Any
 
 from app.agents.ceo.state import CEORunConfig, CEOSkillResult, CEOState
+from app.services.runway_display import runway_for_display, view_from_fin
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,7 @@ def _detect_cross_risks(
     risks: list[dict[str, Any]] = []
 
     runway = fin.get("cash_runway_months")
+    runway_view = view_from_fin(fin)
     infra_waste = tech.get("infra_waste_cents", 0)
     infra_cost  = tech.get("infra_cost_cents", 0)
     debt_score  = tech.get("debt_score", 0)
@@ -89,11 +91,12 @@ def _detect_cross_risks(
 
     # Internal Audit inputs (optional)
     audit                   = audit or {}
-    audit_health_score      = audit.get("audit_health_score", 100.0)
-    audit_maturity          = audit.get("maturity_level", "optimised")
+    # No audit data is "unknown", never a perfect audit: a risk rule fires only on a measured value.
+    audit_health_score      = audit.get("audit_health_score")
+    audit_maturity          = audit.get("maturity_level") or "unknown"
     open_critical_findings  = audit.get("open_critical_findings", 0)
     ineffective_controls    = audit.get("ineffective_controls_count", 0)
-    audit_coverage          = audit.get("coverage_rate", 1.0)
+    audit_coverage          = audit.get("coverage_rate")
 
     # ── Risk 1: Infra waste while cash is short ────────────────────────────────
     if infra_waste > 0 and runway is not None and runway <= 6:
@@ -107,7 +110,7 @@ def _detect_cross_risks(
             "financial_impact_cents": infra_waste,
             "tech_impact": "None — pure cost reduction",
             "recommended_action": (
-                f"Eliminate ₺{monthly_savings:,.0f}/month cloud waste immediately. "
+                f"Eliminate {monthly_savings:,.0f}/month cloud waste immediately. "
                 f"This extends cash runway by ~{infra_waste / max(fin.get('monthly_burn_cents', 1), 1):.1f} months."
             ),
             "urgency": "now" if severity == "critical" else "30d",
@@ -210,7 +213,7 @@ def _detect_cross_risks(
             "financial_impact_cents": monthly_churn_rev,
             "tech_impact": "Churn may indicate product-market fit or reliability issues",
             "recommended_action": (
-                f"Monthly churn {churn_rate:.0%} costs ~₺{monthly_churn_rev / 100:,.0f}/month. "
+                f"Monthly churn {churn_rate:.0%} costs ~{monthly_churn_rev / 100:,.0f}/month. "
                 "Launch retention program and investigate exit reasons."
             ),
             "urgency": "30d",
@@ -245,7 +248,7 @@ def _detect_cross_risks(
             "financial_impact_cents": est_churn_rev,
             "tech_impact": f"SLA breach rate {sla_breach_rate:.0%} — customers experiencing poor service",
             "recommended_action": (
-                f"SLA breach rate {sla_breach_rate:.0%} risks ~₺{est_churn_rev / 100:,.0f}/month in churn. "
+                f"SLA breach rate {sla_breach_rate:.0%} risks ~{est_churn_rev / 100:,.0f}/month in churn. "
                 "Investigate root-cause ticket categories and implement escalation playbooks."
             ),
             "urgency": "now" if severity == "critical" else "30d",
@@ -296,7 +299,7 @@ def _detect_cross_risks(
                 "title": "High early attrition while margins too thin for retention programs",
                 "domains": ["chro", "cfo"],
                 "severity": "high",
-                "financial_impact_cents": int(total_departures * 75_000 * 100),  # replacement cost
+                "financial_impact_cents": 0,  # not quantified: no source for a per-head / per-violation cost, so no figure is invented
                 "tech_impact": f"Early departure rate {early_departure_rate:.0%} — culture or onboarding issue",
                 "recommended_action": (
                     f"Early departures at {early_departure_rate:.0%}. "
@@ -319,7 +322,7 @@ def _detect_cross_risks(
                 "title": "Below-market compensation creating retention risk",
                 "domains": ["chro", "cfo"],
                 "severity": "medium",
-                "financial_impact_cents": int(below_market_count * 50_000 * 100),  # salary adjustment cost
+                "financial_impact_cents": 0,  # not quantified: no source for a per-head / per-violation cost, so no figure is invented
                 "tech_impact": f"{below_market_count} employees at risk — below market with low equity",
                 "recommended_action": (
                     f"{below_market_count} employees below market rate. "
@@ -335,7 +338,7 @@ def _detect_cross_risks(
             "title": "Critical compliance violations creating regulatory penalty risk",
             "domains": ["compliance", "cfo"],
             "severity": "critical" if critical_violations > 2 else "high",
-            "financial_impact_cents": critical_violations * 100_000 * 100,  # ~₺100k per critical violation estimate
+            "financial_impact_cents": 0,  # not quantified: no source for a per-head / per-violation cost, so no figure is invented
             "tech_impact": f"{critical_violations} critical violation(s) open — potential regulatory fines",
             "recommended_action": (
                 f"{critical_violations} critical violation(s) unresolved with {runway:.0f} months runway. "
@@ -475,7 +478,7 @@ def _detect_cross_risks(
         })
 
     # ── Risk 22 (Internal Audit): Low audit coverage + high-risk business ─────
-    if audit_coverage < 0.60 and fin.get("revenue_cents", 0) > 1_000_000 * 100:
+    if audit_coverage is not None and audit_coverage < 0.60 and fin.get("revenue_cents", 0) > 1_000_000 * 100:
         risks.append({
             "risk_id": "cross-audit-coverage-revenue",
             "title": "Insufficient audit coverage for revenue-generating business size",
@@ -514,7 +517,19 @@ def _detect_cross_risks(
         severity_order.get(r.get("severity", "low"), 3),
     ))
 
+    # A risk that stands on the runway is no more severe than the runway's basis allows, and says what it is.
+    if runway is not None and not runway_view.proven:
+        for risk in risks:
+            if risk["risk_id"] in _RUNWAY_RISKS:
+                risk["severity"] = runway_view.cap(risk["severity"])
+                risk["recommended_action"] = f"{risk['recommended_action']} (Nakit ömrü: {runway_view.text()})"
     return risks
+
+
+_RUNWAY_RISKS = frozenset({
+    "cross-infra-cash-runway", "cross-cmo-negative-unit-econ", "cross-cmo-roas-runway", "cross-coo-ops-runway",
+    "cross-compliance-violations-cash", "cross-risk-critical-runway",
+})
 
 
 def _condense_financial_summary(cfo_state: dict[str, Any]) -> dict[str, Any]:
@@ -529,7 +544,8 @@ def _condense_financial_summary(cfo_state: dict[str, Any]) -> dict[str, Any]:
         alerts.extend(src or [])
 
     base_scenario = (forecast.get("scenarios") or {}).get("base", {})
-    runway = base_scenario.get("runway_months")
+    view = runway_for_display(forecast)
+    runway = view.months
 
     # Estimate monthly burn: total expenses / months
     monthly_burn = 0
@@ -545,10 +561,16 @@ def _condense_financial_summary(cfo_state: dict[str, Any]) -> dict[str, Any]:
         "gross_margin":          pnl.get("gross_margin", 0),
         "cash_flow_net_cents":   cashflow.get("net_change", 0),
         "cash_runway_months":    runway,
+        **view.fin_fields(),   # basis and sentence travel with the bare number
         "monthly_burn_cents":    monthly_burn,
         "forecast_base_12m_cents": base_scenario.get("twelve_month_net", 0),
         "top_alerts":            alerts[:5],
         "narrative":             pnl.get("narrative", ""),
+        # What currency the figures above are in, how that was decided, and what was left out of them
+        # (`core/currency_totals`): the chat labels amounts from these, never with a default symbol.
+        "currency":              pnl.get("currency"),
+        "base_state":            pnl.get("base_state"),
+        "other_currencies":      pnl.get("other_currencies", []),
     }
 
 
@@ -693,8 +715,8 @@ def _condense_audit_summary(audit_state: dict[str, Any]) -> dict[str, Any]:
     summary  = audit_state.get("audit_summary") or {}
 
     return {
-        "audit_health_score":        summary.get("audit_health_score", 100.0),
-        "maturity_level":            summary.get("maturity_level", "optimised"),
+        "audit_health_score":        summary.get("audit_health_score"),
+        "maturity_level":            summary.get("maturity_level"),
         "open_critical_findings":    findings.get("open_critical", 0),
         "overdue_findings":          findings.get("overdue_count", 0),
         "repeat_findings":           findings.get("repeat_findings", 0),

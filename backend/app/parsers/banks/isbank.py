@@ -2,12 +2,16 @@
 from __future__ import annotations
 
 import re
+from datetime import UTC, datetime
 
 from app.parsers.base import BankParser, ParsedStatement, ParsedTransaction
+from app.parsers.direction import signed_money
 
 
 class IsBankParser(BankParser):
     bank_id = "isbank"
+    # Printed as Borç/Alacak columns: whose book that is differs between banks, so it needs a balance to verify it.
+    debit_credit_layout = True
     bank_display_name = "Türkiye İş Bankası"
     _MARKERS = ["TÜRKİYE İŞ BANKASI", "İş Bankası", "ISBANK", "İşCep", "İşBankası"]
 
@@ -38,17 +42,17 @@ class IsBankParser(BankParser):
         """
         transactions: list[ParsedTransaction] = []
         row_pattern = re.compile(
-            r"(\d{2}\.\d{2}\.\d{4})\s+"
-            r"(.+?)\s+"
-            r"([\d.,]+|-)\s+"    # debit or dash
-            r"([\d.,]+|-)\s+"    # credit or dash
-            r"([\d.,]+)\s*$",
+            r"(\d{2}\.\d{2}\.\d{4})[ \t]+"
+            r"(.+?)[ \t]+"
+            r"((?=[\d.,]*[.,])[\d.,]+|-)[ \t]+"    # debit or dash
+            r"((?=[\d.,]*[.,])[\d.,]+|-)[ \t]+"    # credit or dash
+            r"([+\-−]?[\d.,]+)[ \t]*$",
             re.MULTILINE,
         )
         for m in row_pattern.finditer(text):
             date = self.parse_turkish_date(m.group(1))
-            if not date:
-                continue
+            estimated = date is None
+            date = date or datetime.now(UTC)
             description = m.group(2).strip()
             debit_raw = m.group(3)
             credit_raw = m.group(4)
@@ -60,16 +64,16 @@ class IsBankParser(BankParser):
                 amount = self.parse_turkish_amount(debit_raw)
                 tx_type = "expense"
             else:
-                continue
+                amount, tx_type = 0, ""
 
-            if not amount:
-                continue
+            amount = amount or 0
 
             transactions.append(ParsedTransaction(
                 date=date,
                 description=description,
                 amount_cents=amount,
                 tx_type=tx_type,
-                raw_row=m.group(0),
+                balance_cents=signed_money(m.group(5)),
+                raw_row=m.group(0), date_estimated=estimated,
             ))
         return transactions

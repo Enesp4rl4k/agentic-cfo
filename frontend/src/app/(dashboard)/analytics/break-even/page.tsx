@@ -19,10 +19,10 @@ const fmtTRY = (v: number) =>
 
 export default function BreakEvenPage() {
   const [form, setForm] = useState({
-    fixed_costs_monthly_try:    "500000",
-    variable_cost_per_unit_try: "150",
-    price_per_unit_try:         "400",
-    current_units_monthly:      "1800",
+    fixed_costs_monthly_try:    "",
+    variable_cost_per_unit_try: "",
+    price_per_unit_try:         "",
+    current_units_monthly:      "",
   });
   const [result,  setResult]  = useState<BreakEvenResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -82,6 +82,7 @@ export default function BreakEvenPage() {
                   type="number"
                   value={(form as Record<string, string>)[key]}
                   onChange={(e) => setField(key, e.target.value)}
+                  required={key !== "current_units_monthly"}
                   className="w-full rounded border border-input bg-background px-3 py-1.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-ring"
                 />
               </div>

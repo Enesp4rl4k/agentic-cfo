@@ -243,7 +243,7 @@ def _build_resource_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
         alerts.append({
             "level": "medium",
             "message": (
-                f"Revenue per FTE ₺{rev_fte / 100:,.0f} is below ₺50k benchmark. "
+                f"Revenue per FTE {rev_fte / 100:,.0f} is below the 50k benchmark. "
                 "Review pricing, product mix, or team structure."
             ),
         })

@@ -43,6 +43,7 @@ BANKA = _xlsx(
     ["İşlem Tarihi", "Açıklama", "Borç", "Alacak", "Bakiye"],
     ["05.01.2024", "Ofis kirası", "28.500,00", None, "100.000,00"],
     ["06.01.2024", "EFT gelen - ABC Ltd", None, "10.000,00", "110.000,00"],
+    ["07.01.2024", "Ofis kirası", "5.000,00", None, "105.000,00"],
     ["TOPLAM", None, "28.500,00", "10.000,00", None],
 )
 PERSONEL = ("Ad Soyad;Departman;Unvan;Brüt Maaş (TL);İşe Giriş Tarihi;Durum\n"
@@ -78,10 +79,14 @@ def test_headers_fold_units_and_punctuation():
 
 def test_a_bank_export_under_its_title_rows():
     t = tani(BANKA, "ekstre.xlsx")
-    assert (t.durum, t.tur, t.alan, t.satir_sayisi) == (KESIN, S.BANKA_EKSTRESI, "cfo", 2)
+    assert (t.durum, t.tur, t.alan, t.satir_sayisi) == (KESIN, S.BANKA_EKSTRESI, "cfo", 3)
     rows = _csv_rows(standart_csv(t.tablo, t.tur)[0])
-    # Debit leaves the account, credit arrives; the TOPLAM row is not a transaction.
-    assert [(r["tarih"], r["tutar"]) for r in rows] == [("2024-01-05", "-28500"), ("2024-01-06", "10000")]
+    # The two columns reach the statement reader as they are: which way each moved the money is
+    # decided there (app.parsers.direction), never by the column normaliser. TOPLAM is not a row.
+    # The TOPLAM line is kept by the reader (tagged) and judged by the statement reader, which counts it.
+    assert [(r["tarih"], r["Borç"], r["Alacak"]) for r in rows] == [
+        ("2024-01-05", "28500", ""), ("2024-01-06", "", "10000"), ("2024-01-07", "5000", ""), ("TOPLAM", "28500", "10000"),
+    ]
 
 
 def test_a_turkish_staff_list_in_windows_1254_with_semicolons():
@@ -260,7 +265,7 @@ async def test_drop_a_statement_and_three_hr_files_together_and_the_hr_page_anal
         ingested = await run_data_ingestion({"file_path": job.file_path, "file_type": job.file_type,
                                              "job_id": job.id}, AgentRunConfig())
         assert [(t["type"], t["amount_cents"]) for t in ingested.patch["transactions"]] == [
-            ("expense", 2_850_000), ("income", 1_000_000)]
+            ("expense", 2_850_000), ("income", 1_000_000), ("expense", 500_000)]
 
         out = await da.analiz_et(db, job, "chro")
     assert out["durum"] == da.ANALIZ_EDILDI, out.get("neden")

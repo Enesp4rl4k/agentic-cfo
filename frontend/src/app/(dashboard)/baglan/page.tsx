@@ -14,6 +14,7 @@ import { veriEkle, veriTurleri, type DosyaSonucu, type TurSecenegi } from "@/lib
 import { EpostaKutusu } from "@/components/veri/EpostaKutusu";
 import { RecentUploads } from "@/components/veri/RecentUploads";
 import { OodaFooter } from "@/components/brand-app/OodaFooter";
+import { isHrefAvailable } from "@/lib/legacy-dashboards";
 
 // What the server reads. .xls is left out on purpose: the door cannot read it and says how to
 // re-save it; e-Fatura XML and the GİB batch zip were missing and are the documents a company holds.
@@ -74,7 +75,7 @@ export default function BaglanPage() {
 
   const eklenen = sonuclar.filter((s) => s.durum === "eklendi");
   const acilanSayfalar = useMemo(
-    () => Array.from(new Set(eklenen.map((s) => s.sayfa).filter(Boolean))) as string[],
+    () => Array.from(new Set(eklenen.map((s) => s.sayfa).filter((p): p is string => !!p && isHrefAvailable(p)))),
     [eklenen],
   );
   const gruplu = useMemo(() => {
@@ -255,7 +256,7 @@ function DosyaKarti({
               {sonuc.mesaj ?? tanima.ozet}
             </p>
           </div>
-          {durum === "eklendi" && sonuc.sayfa && (
+          {durum === "eklendi" && sonuc.sayfa && isHrefAvailable(sonuc.sayfa) && (
             <Link href={sonuc.sayfa} className="shrink-0 text-xs font-medium text-primary hover:underline">
               {baglan.goToPage}
             </Link>

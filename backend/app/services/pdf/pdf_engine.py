@@ -26,6 +26,8 @@ from datetime import UTC
 from typing import Any
 
 from app.core.branding import get_brand
+from app.core.currency_totals import fmt_compact
+from app.services.runway_display import runway_for_display
 
 logger = logging.getLogger(__name__)
 
@@ -315,13 +317,12 @@ def build_cfo_summary_context(
     alerts   = dashboard_json.get("alerts") or []
     anomalies = dashboard_json.get("anomalies") or []
 
+    cur = pnl.get("currency")  # the currency the P&L states; bare when it states none
+
     def fmt_money(val: Any) -> str:
         if val is None: return "—"
         try:
-            v = float(val)
-            if abs(v) >= 1_000_000: return f"₺{v/1_000_000:.1f}M"
-            if abs(v) >= 1_000:     return f"₺{v/1_000:.0f}K"
-            return f"₺{v:.0f}"
+            return fmt_compact(float(val), cur)
         except Exception:
             return str(val)
 
@@ -332,10 +333,7 @@ def build_cfo_summary_context(
         except Exception:
             return str(val)
 
-    runway_months = None
-    scenarios = forecast.get("scenarios") or {}
-    base_scenario = scenarios.get("base") or {}
-    runway_months = base_scenario.get("runway_months")
+    runway_view = runway_for_display(forecast)
 
     recommendations = forecast.get("recommendations") or pnl.get("recommendations") or []
 
@@ -349,7 +347,7 @@ def build_cfo_summary_context(
         "gross_margin_str": fmt_pct(pnl.get("gross_margin")),
         "ebitda":         fmt_money(pnl.get("ebitda")),
         "cash_flow":      fmt_money(cashflow.get("operating_cash_flow")),
-        "runway":         f"{runway_months:.1f} ay" if runway_months is not None else "—",
+        "runway":         runway_view.text(),
         "risk_level":     "Kritik" if any(a.get("level") == "critical" for a in alerts) else "Normal",
         "alerts":         alerts,
         "anomalies":      anomalies,

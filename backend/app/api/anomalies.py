@@ -15,8 +15,9 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.access import load_owned_job
+from app.api.access import load_owned_job, require_writer
 from app.api.auth import get_current_user
+from app.core.currency_totals import fmt_amount
 from app.database import get_db
 from app.models.analysis_job import AnalysisJob, JobStatus
 from app.models.anomaly import Anomaly
@@ -95,7 +96,8 @@ async def list_anomalies(
     }
 
 
-@router.post("/anomalies/scan/{job_id}")
+@router.post("/anomalies/scan/{job_id}",
+    dependencies=[Depends(require_writer)])
 async def scan_anomalies(
     job_id: str,
     current_user: User = Depends(get_current_user),
@@ -134,7 +136,7 @@ async def scan_anomalies(
             "description": tx.description,
             "vendor": tx.vendor,
             "transaction_date": tx.transaction_date.isoformat() if tx.transaction_date else None,
-            "confidence": float(tx.confidence) if tx.confidence else None,
+            "confidence": float(tx.confidence) if tx.confidence is not None else None,
         }
         for tx in txs
     ]
@@ -228,7 +230,8 @@ class AcknowledgeRequest(BaseModel):
     acknowledged: bool = True
 
 
-@router.patch("/anomalies/{anomaly_id}/acknowledge")
+@router.patch("/anomalies/{anomaly_id}/acknowledge",
+    dependencies=[Depends(require_writer)])
 async def acknowledge_anomaly(
     anomaly_id: str,
     body: AcknowledgeRequest,
@@ -292,6 +295,7 @@ async def explain_anomaly(
             related_txs.append({
                 "id": str(tx.id),
                 "amount": tx.amount_kurus / 100 if tx.amount_kurus else 0,
+                "currency": tx.currency,
                 "vendor": tx.vendor or "",
                 "category": tx.category or "",
                 "description": tx.description or "",
@@ -301,7 +305,7 @@ async def explain_anomaly(
     evidence = anomaly.evidence or {}
     evidence_text = ", ".join(f"{k}: {v}" for k, v in evidence.items() if k not in ("detectors",))
     tx_text = "\n".join(
-        f"  - {t['date']} | {t['vendor']} | {t['category']} | {t['amount']:,.2f} TL | {t['description']}"
+        f"  - {t['date']} | {t['vendor']} | {t['category']} | {fmt_amount(t['amount'], t['currency'], 2)} | {t['description']}"
         for t in related_txs
     ) or "  (ilgili işlem bulunamadı)"
 

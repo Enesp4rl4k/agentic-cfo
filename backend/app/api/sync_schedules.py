@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import require_writer
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.sync_schedule import SyncSchedule
@@ -206,7 +207,8 @@ async def list_schedules(
     return {"data": {"schedules": schedules}, "error": None}
 
 
-@router.post("/sync/schedules", status_code=status.HTTP_201_CREATED)
+@router.post("/sync/schedules",
+    dependencies=[Depends(require_writer)], status_code=status.HTTP_201_CREATED)
 async def create_schedule(
     body: CreateScheduleRequest,
     user: User = Depends(get_current_user),
@@ -245,7 +247,8 @@ async def create_schedule(
     }
 
 
-@router.put("/sync/schedules/{schedule_id}")
+@router.put("/sync/schedules/{schedule_id}",
+    dependencies=[Depends(require_writer)])
 async def update_schedule(
     schedule_id: str,
     body: UpdateScheduleRequest,
@@ -273,7 +276,8 @@ async def update_schedule(
     return {"data": {"updated": True, "schedule_id": schedule_id}, "error": None}
 
 
-@router.delete("/sync/schedules/{schedule_id}")
+@router.delete("/sync/schedules/{schedule_id}",
+    dependencies=[Depends(require_writer)])
 async def delete_schedule(
     schedule_id: str,
     user: User = Depends(get_current_user),
@@ -288,7 +292,8 @@ async def delete_schedule(
     return {"data": {"deleted": True, "schedule_id": schedule_id}, "error": None}
 
 
-@router.post("/sync/schedules/{schedule_id}/run")
+@router.post("/sync/schedules/{schedule_id}/run",
+    dependencies=[Depends(require_writer)])
 async def trigger_manual_run(
     schedule_id: str,
     user: User = Depends(get_current_user),

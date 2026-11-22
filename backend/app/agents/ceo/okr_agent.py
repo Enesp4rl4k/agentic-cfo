@@ -55,6 +55,8 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
+from app.services.runway_display import view_from_fin
+
 logger = logging.getLogger(__name__)
 
 
@@ -219,6 +221,7 @@ def _infer_okrs(
                     "kr":               "Nakit pisti ≥ 12 ay",
                     "target":           12.0,
                     "actual":           cash_runway_months,
+                    "actual_basis":     view_from_fin(fin).text(),
                     "unit":             "ay",
                     "higher_is_better": True,
 

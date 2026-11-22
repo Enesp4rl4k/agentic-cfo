@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import uuid
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
@@ -31,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.alert_rule import AlertHistory
 from app.models.analysis_job import AnalysisJob
 from app.models.report import Report, ReportFormat, ReportType
+from app.services import outbox
 from app.services.triggers.contracts import TriggerDefinition
 
 logger = logging.getLogger(__name__)
@@ -51,8 +53,8 @@ async def _alert_dispatch(
 
     The alert is always recorded so the trigger's effect is auditable. If the
     params carry a ``webhook_url`` the alert is also delivered best-effort via
-    the existing ``AlertDispatcher``; delivery failure is reported in the result
-    but never fails the run (the alert is already persisted).
+    the outbox (queued, delivered and retried by the sender); the run reports the
+    outbox row, never a delivery it did not see.
     """
     params = definition.action_params
     message = str(
@@ -83,20 +85,20 @@ async def _alert_dispatch(
 
     webhook_url = params.get("webhook_url")
     if webhook_url:
-        try:
-            from app.services.alert_dispatcher import AlertDispatcher
-
-            dispatched = await AlertDispatcher.dispatch_webhook(
-                webhook_url,
-                event_type="trigger.alert",
-                data={"alert_id": alert.id, "message": message, "severity": severity},
-            )
-            result["delivered"] = bool(dispatched.delivered)
-            result["delivery_status"] = dispatched.status_code
-        except Exception as exc:  # pragma: no cover - network best-effort
-            logger.warning("trigger alert webhook delivery failed: %s", exc)
-            result["delivered"] = False
-            result["delivery_error"] = str(exc)
+        # Not sent here: a row in the outbox, delivered and retried by the sender; a
+        # failure shows there as a failed row. "queued" is all this run can truthfully say.
+        row = await outbox.enqueue_webhook(
+            db,
+            key=f"trigger_alert_webhook:{org_id}:{alert.id}",
+            org_id=org_id,
+            url=str(webhook_url),
+            event_type="trigger.alert",
+            data={"alert_id": alert.id, "message": message, "severity": severity},
+            source="trigger_alert",
+            source_ref=str(alert.id),
+        )
+        result["outbox_id"] = row.id
+        result["delivery_status"] = row.status
 
     return result
 
@@ -113,24 +115,28 @@ async def _webhook_call(
 ) -> dict[str, Any]:
     """POST the event to an arbitrary URL (``action_params.url``).
 
-    Uses the existing ``AlertDispatcher.dispatch_webhook`` (bounded timeout,
-    best-effort). A ``https://dummy…`` target is treated as delivered without a
-    network call — the same escape hatch the alert tests rely on.
+    Written to the outbox (ADR 0003); the sender delivers it with bounded timeout and
+    retries, and records the outcome on the row. Nothing is sent from here.
     """
     url = str(definition.action_params.get("url") or "").strip()
     if not url:
         raise ValueError("webhook.call requires action_params.url")
 
-    from app.services.alert_dispatcher import AlertDispatcher
-
     event_type = str(definition.action_params.get("event_type") or f"trigger.{definition.name}")
     data = {"org_id": org_id, "trigger": definition.name, "payload": payload}
-    dispatched = await AlertDispatcher.dispatch_webhook(url, event_type, data)
-    return {
-        "delivered": bool(dispatched.delivered),
-        "status_code": dispatched.status_code,
-        "target": dispatched.target,
-    }
+    run_ref = uuid.uuid4().hex  # each firing is its own effect; the engine already dedups events
+    row = await outbox.enqueue_webhook(
+        db,
+        key=f"trigger_webhook:{org_id}:{run_ref}",
+        org_id=org_id,
+        url=url,
+        event_type=event_type,
+        data=data,
+        source="trigger_webhook",
+        source_ref=run_ref,
+    )
+    # Queued, not delivered: the outbox sender POSTs it and records sent or failed.
+    return {"queued": True, "outbox_id": row.id, "status": row.status, "target": row.recipient}
 
 
 async def _analysis_start(
@@ -172,7 +178,12 @@ async def _cascade_simulate(
     ``action_params.trigger``. Trigger-specific params (``runway_months``,
     ``drop_pct``, ``role``, …) are passed through to the simulator.
     """
-    from app.services.cascade_simulator import TriggerType, get_cascade_simulator
+    from app.services.cascade_inputs import measured_baseline_with_basis
+    from app.services.cascade_simulator import (
+        CascadeInputsMissing,
+        TriggerType,
+        get_cascade_simulator,
+    )
     from app.services.company_context import get_company_context
 
     raw_trigger = str(definition.action_params.get("trigger") or "").strip()
@@ -198,10 +209,14 @@ async def _cascade_simulate(
         "cmo_data": (ctx_obj.last_cmo_result or {}) if ctx_obj else {},
         "coo_data": (ctx_obj.last_coo_result or {}) if ctx_obj else {},
     }
-    sim = get_cascade_simulator(**ctx)
+    baseline, basis = await measured_baseline_with_basis(db, org_id)
+    sim = get_cascade_simulator(**ctx, **baseline)
     kwargs = {k: definition.action_params[k] for k in _SIMULATE_KWARGS if k in definition.action_params}
-    result = sim.simulate(trigger, **kwargs)
-    return {"trigger": trigger.value, "result": result.to_dict()}
+    try:
+        result = sim.simulate(trigger, **kwargs)
+    except CascadeInputsMissing as exc:
+        return {"trigger": trigger.value, "result": None, "unavailable": exc.missing, "basis": basis.to_dict()}
+    return {"trigger": trigger.value, "result": result.to_dict(), "basis": basis.to_dict()}
 
 
 async def _report_generate(

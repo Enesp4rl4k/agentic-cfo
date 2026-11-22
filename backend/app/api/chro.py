@@ -2,7 +2,6 @@
 CHRO API Endpoints
 
 POST /chro/analyze - Run CHRO pipeline (headcount, attrition, compensation analysis)
-GET /chro/health-check - Service health check
 """
 
 import logging
@@ -15,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.chro.orchestrator import run_chro_pipeline
 from app.agents.run_ledger import recorded_run
+from app.api.access import require_writer
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.user import User
@@ -32,7 +32,7 @@ class CHROAnalyzeRequest(BaseModel):
     analysis_period: str | None = None
 
 
-@router.post("/chro/analyze")
+@router.post("/chro/analyze", dependencies=[Depends(require_writer)])
 async def run_chro_analysis(
     body: CHROAnalyzeRequest,
     current_user: User = Depends(get_current_user),
@@ -99,12 +99,3 @@ async def run_chro_analysis(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"CHRO analysis failed: {e!s}")
 
-
-@router.get("/chro/health-check")
-async def chro_health(current_user: User = Depends(get_current_user)) -> dict[str, Any]:
-    """Health check for CHRO service."""
-    return {
-        "status": "healthy",
-        "service": "chro",
-        "capabilities": ["headcount_analysis", "attrition_analysis", "compensation_analysis"],
-    }

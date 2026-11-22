@@ -40,6 +40,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import require_decider, require_writer
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.user import User
@@ -105,7 +106,8 @@ async def list_banks() -> dict[str, Any]:
     }
 
 
-@router.post("/open-banking/connect/{bank_id}")
+@router.post("/open-banking/connect/{bank_id}",
+    dependencies=[Depends(require_decider)])
 async def start_oauth(
     bank_id: str,
     body: ConnectRequest,
@@ -238,7 +240,8 @@ class OpenBankingSyncBody(BaseModel):
     days_back: int = Field(default=90, ge=1, le=730, description="How many days of history to fetch")
 
 
-@router.post("/open-banking/connections/{connection_id}/sync")
+@router.post("/open-banking/connections/{connection_id}/sync",
+    dependencies=[Depends(require_writer)])
 async def sync_transactions(
     connection_id: str,
     body: OpenBankingSyncBody,
@@ -254,6 +257,7 @@ async def sync_transactions(
     the same path Paraşüt's sync uses.
     """
     from app.services.ingest.ekle import EKLENDI, Sahip, islemleri_ekle
+    from app.services.ingest.feed import rows_for_pipeline
 
     start_date = (datetime.now(UTC) - timedelta(days=body.days_back)).strftime("%Y-%m-%d")
     end_date   = datetime.now(UTC).strftime("%Y-%m-%d")
@@ -264,7 +268,7 @@ async def sync_transactions(
     client = get_bank_client(body.bank_id, client_id, client_secret, sandbox)
 
     try:
-        transactions = await client.get_transactions(
+        result = await client.get_transactions(
             access_token=body.access_token,
             account_id=body.account_id,
             start_date=start_date,
@@ -273,26 +277,33 @@ async def sync_transactions(
     except Exception as exc:
         raise HTTPException(
             status_code=502,
-            detail=f"İşlem senkronizasyonu başarısız: {exc}",
+            detail=f"İşlem senkronizasyonu başarısız: {type(exc).__name__}",
         ) from exc
 
-    if not transactions:
-        return {"data": {"job_id": None, "bank_id": body.bank_id, "transaction_count": 0,
-                         "period": f"{start_date} – {end_date}", "status": "veri_yok"},
-                "error": None}
+    outcome = result.outcome()
+    period = f"{start_date} – {end_date}"
+    if result.failed:
+        # An outage, a refusal or a malformed response is a failed sync, never "no transactions".
+        raise HTTPException(status_code=502, detail=f"İşlem senkronizasyonu başarısız: {result.failed}")
 
-    sonuc = await islemleri_ekle(db, Sahip.kullanici(current_user), transactions,
-                                 kaynak=f"{body.bank_id}_open_banking")
+    summary = {
+        "bank_id": body.bank_id, "transaction_count": len(result.rows), "period": period,
+        "sync_status": outcome["status"], "period_covered": outcome["complete"], "reason": outcome["reason"],
+        "counts": outcome["counts"], "held_candidates": outcome["held_candidates"], "ignored": outcome["ignored"],
+    }
+    if not result.rows:
+        return {"data": {"job_id": None, **summary, "status": "veri_yok"}, "error": None}
+
+    sonuc = await islemleri_ekle(db, Sahip.kullanici(current_user), rows_for_pipeline(result.rows),
+                                 kaynak=f"{body.bank_id}_open_banking", besleme=result.feed_meta())
     dosya = (sonuc.get("dosyalar") or [{}])[0]
     if dosya.get("durum") != EKLENDI:
         raise HTTPException(status_code=422, detail=dosya.get("mesaj") or "İşlemler eklenemedi.")
 
     return {
         "data": {
+            **summary,
             "job_id":            sonuc.get("job_id"),
-            "bank_id":           body.bank_id,
-            "transaction_count": len(transactions),
-            "period":            f"{start_date} – {end_date}",
             # What actually happened to the analysis, not a hopeful "queued".
             "status":            dosya.get("dispatch", "not_requested"),
             "message":           dosya.get("mesaj"),

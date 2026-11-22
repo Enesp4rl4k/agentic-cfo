@@ -23,6 +23,10 @@ import {
   type FreshnessState,
   type PacketOption,
 } from "@/lib/api/decisionPacket";
+import { useCan } from "@/hooks/useCan";
+import { useCentsFormat } from "@/hooks/useCurrencyFormat";
+import { useI18n } from "@/hooks/useI18n";
+import { failureMessage } from "@/lib/forbidden";
 import {
   createDecision,
   listDecisions,
@@ -32,18 +36,6 @@ import {
 import { cn } from "@/lib/utils";
 
 // ── Formatting ────────────────────────────────────────────────────────────────
-
-const tl = new Intl.NumberFormat("tr-TR", {
-  style: "currency",
-  currency: "TRY",
-  maximumFractionDigits: 0,
-});
-
-/** Report money is kuruş — the UI shows lira. */
-function fmtTL(value: number | null | undefined): string {
-  if (value === null || value === undefined) return "—";
-  return tl.format(value / 100);
-}
 
 function fmtAge(item: FreshnessItem): string {
   if (item.state === "never") return "hiç senkron yok";
@@ -113,6 +105,7 @@ function FreshnessStrip({ items }: { items: FreshnessItem[] }) {
 /** P3 — "did your forecasts actually hold?". Honest about thin data:
  *  below three closed windows it reports that, never a metric on noise. */
 function CalibrationLine({ cal }: { cal?: Calibration }) {
+  const fmtTL = useCentsFormat();
   if (!cal) return null;
   const ok = cal.status === "ok";
   return (
@@ -147,10 +140,17 @@ function CalibrationLine({ cal }: { cal?: Calibration }) {
 }
 
 function SituationRow({ packet }: { packet: DecisionPacket }) {
+  const fmtTL = useCentsFormat();
   const s = packet.situation;
   const cells: { label: string; value: string }[] = [
     { label: "12 ay gelir", value: fmtTL(s.revenue_12m) },
-    { label: "Nakit ömrü (baz)", value: s.runway_months != null ? `${s.runway_months} ay` : "—" },
+    {
+      label: "Nakit ömrü (baz)",
+      value:
+        s.runway_months != null
+          ? `${s.runway_months} ay${s.runway_note ? " (varsayıma dayanıyor)" : ""}`
+          : "—",
+    },
     {
       label: "En büyük gider",
       value: s.top_opex_category ? `${s.top_opex_category} · ${fmtTL(s.top_opex_amount)}` : "—",
@@ -173,6 +173,7 @@ function SituationRow({ packet }: { packet: DecisionPacket }) {
 }
 
 function OptionsTable({ options }: { options: PacketOption[] }) {
+  const fmtTL = useCentsFormat();
   if (options.length === 0) return null;
   return (
     <section aria-label="Seçenekler">
@@ -207,6 +208,11 @@ function OptionsTable({ options }: { options: PacketOption[] }) {
                       </Badge>
                     )}
                   </span>
+                  {o.available === false && (
+                    <span className="mt-0.5 block text-[11px] font-normal leading-snug text-muted-foreground">
+                      Hesaplanamadı: {o.unavailable_reason ?? "veri yok"}
+                    </span>
+                  )}
                   {o.assumptions.length > 0 && (
                     <span className="mt-0.5 block text-[11px] font-normal leading-snug text-muted-foreground">
                       {o.assumptions.join(" · ")}
@@ -217,10 +223,15 @@ function OptionsTable({ options }: { options: PacketOption[] }) {
                   className={cn(
                     "px-3 py-2 text-right tabular-nums",
                     !o.baseline &&
+                      o.base_net_impact != null &&
                       (o.base_net_impact >= 0 ? "text-emerald-500" : "text-red-400")
                   )}
                 >
-                  {o.baseline ? "0 ₺ (referans)" : fmtTL(o.base_net_impact)}
+                  {o.baseline
+                    ? `${fmtTL(0)} (referans)`
+                    : o.base_net_impact == null
+                      ? "Hesaplanamadı"
+                      : fmtTL(o.base_net_impact)}
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">
                   {o.breakeven_months != null ? `${o.breakeven_months} ay` : "—"}
@@ -307,6 +318,9 @@ function DecisionRecorder({
   jobId: string;
   options: PacketOption[];
 }) {
+  const { t } = useI18n();
+  const fmtTL = useCentsFormat();
+  const can = useCan("edit");
   const [loading, setLoading] = useState(true);
   const [decision, setDecision] = useState<DecisionRecord | null>(null);
   const [optionId, setOptionId] = useState("");
@@ -333,7 +347,7 @@ function DecisionRecorder({
   }, [jobId]);
 
   const save = async () => {
-    if (!optionId || saving) return;
+    if (!optionId || saving || !can.allowed) return;
     setSaving(true);
     setError(null);
     try {
@@ -343,23 +357,27 @@ function DecisionRecorder({
         rationale: rationale.trim() || undefined,
       });
       setDecision(created);
-    } catch {
-      setError("Karar kaydedilemedi — tekrar deneyin.");
+    } catch (e) {
+      setError(failureMessage(e, "Karar kaydedilemedi — tekrar deneyin.", t.roleGate.forbidden));
     } finally {
       setSaving(false);
     }
   };
 
   const measure = async () => {
-    if (!decision || measuring) return;
+    if (!decision || measuring || !can.allowed) return;
     setMeasuring(true);
     setError(null);
     try {
       const updated = await measureOutcome(decision.id);
       setDecision(updated);
-    } catch {
+    } catch (e) {
       setError(
-        "Sonuç ölçülemedi — ölçüm için tamamlanmış bir analiz gerekiyor olabilir."
+        failureMessage(
+          e,
+          "Sonuç ölçülemedi — ölçüm için tamamlanmış bir analiz gerekiyor olabilir.",
+          t.roleGate.forbidden,
+        ),
       );
     } finally {
       setMeasuring(false);
@@ -427,7 +445,9 @@ function DecisionRecorder({
               type="button"
               onClick={measure}
               disabled={measuring}
-              className="mt-1.5 rounded-md border px-2 py-0.5 text-[11px] hover:bg-muted/40 disabled:opacity-50"
+              aria-disabled={can.allowed ? undefined : true}
+              title={can.reason ?? undefined}
+              className="mt-1.5 rounded-md border px-2 py-0.5 text-[11px] hover:bg-muted/40 disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
             >
               {measuring ? "Ölçülüyor…" : "Sonucu ölç"}
             </button>
@@ -452,7 +472,7 @@ function DecisionRecorder({
             className="h-8 rounded-md border bg-background px-2 text-xs"
           >
             <option value="">Seçenek seçin…</option>
-            {options.map((o) => (
+            {options.filter((o) => o.available !== false).map((o) => (
               <option key={o.id} value={o.id}>
                 {o.label}
               </option>
@@ -462,7 +482,9 @@ function DecisionRecorder({
             type="button"
             onClick={save}
             disabled={!optionId || saving}
-            className="h-8 rounded-md border px-2.5 text-xs font-medium hover:bg-muted/40 disabled:opacity-50"
+            aria-disabled={can.allowed ? undefined : true}
+            title={can.reason ?? undefined}
+            className="h-8 rounded-md border px-2.5 text-xs font-medium hover:bg-muted/40 disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
           >
             {saving ? "Kaydediliyor…" : "Kararı deftere yaz"}
           </button>

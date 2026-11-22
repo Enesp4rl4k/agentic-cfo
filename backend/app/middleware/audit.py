@@ -39,6 +39,8 @@ _AUDIT_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 _SENSITIVE_FIELDS = {
     "password", "hashed_password", "token", "access_token", "refresh_token",
     "api_key", "secret", "secret_key", "authorization",
+    "new_password", "current_password", "old_password", "password_confirm",
+    "reset_token", "client_secret",
 }
 
 # Max body size to store in the audit log (avoid huge blobs in DB)
@@ -143,12 +145,10 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
 
     @staticmethod
     def _get_ip(request: Request) -> str | None:
-        forwarded = request.headers.get("X-Forwarded-For")
-        if forwarded:
-            return forwarded.split(",")[0].strip()
-        if request.client:
-            return request.client.host
-        return None
+        from app.core.client_ip import UNKNOWN, client_ip
+
+        address = client_ip(request)
+        return None if address == UNKNOWN else address
 
     @staticmethod
     async def _write_audit(data: dict) -> None:

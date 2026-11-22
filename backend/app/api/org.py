@@ -15,19 +15,28 @@ from __future__ import annotations
 
 import logging
 import re
-import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.auth import _cache_invalidate, get_current_user
+from app.api.auth import _bearer, get_current_user
+from app.core.email_address import normalize_email
 from app.database import get_db
+from app.models.decision import DecidedVia, DecisionKind
 from app.models.organization import Organization, OrgInvite, OrgMembership
+from app.models.password_reset import PasswordResetToken
 from app.models.user import User, UserRole
+from app.services import email_verification
+from app.services.acting_role import acting_role
+from app.services.decisions import record_decision
+from app.services.org_identity_decision import identity_view, record_identity_change
+from app.services.secret_tokens import hash_token, new_token
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -69,7 +78,7 @@ async def _require_org(user: User, db: AsyncSession) -> Organization:
 
 async def _require_admin(user: User, db: AsyncSession) -> Organization:
     org = await _load_org(user, db)
-    if user.role not in (UserRole.OWNER, UserRole.ADMIN):
+    if await acting_role(db, user) not in (UserRole.OWNER, UserRole.ADMIN):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Bu işlem için admin yetkisi gerekli.",
@@ -79,7 +88,7 @@ async def _require_admin(user: User, db: AsyncSession) -> Organization:
 
 async def _require_owner(user: User, db: AsyncSession) -> Organization:
     org = await _load_org(user, db)
-    if user.role != UserRole.OWNER:
+    if await acting_role(db, user) != UserRole.OWNER:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Bu işlem için owner yetkisi gerekli.",
@@ -114,13 +123,28 @@ class UpdateOrgRequest(BaseModel):
 
 class InviteRequest(BaseModel):
     email: EmailStr
-    role: str = "analyst"  # analyst | viewer | admin
+    # An enum, not a string: a junk value used to be stored and then raised
+    # ValueError (500) when the invite was accepted. Pydantic answers 422.
+    role: UserRole = UserRole.ANALYST
+
+
+# Who may hand out which role. Only an owner makes an owner or an admin; an admin
+# may invite anything below them. `smmm` is invitable: a company adds its own
+# accountant that way (the accountant who adds a *client* gets `smmm` in it
+# through /smmm/clients instead).
+_INVITER_MAY_GRANT: dict[str, frozenset[str]] = {
+    # One owner per company: an owner cannot make another owner. Transferring ownership is a separate,
+    # explicit action (not built yet).
+    "owner": frozenset({"admin", "cfo", "smmm", "analyst", "viewer"}),
+    "admin": frozenset({"cfo", "smmm", "analyst", "viewer"}),
+}
 
 
 class AcceptInviteRequest(BaseModel):
     token: str
     full_name: str | None = None
-    password: str = Field(min_length=8)
+    # Needed to create an account, and to prove an existing one when the caller has no session of it.
+    password: str | None = Field(default=None, min_length=8)
 
 
 def _org_dict(org: Organization) -> dict[str, Any]:
@@ -139,6 +163,7 @@ def _org_dict(org: Organization) -> dict[str, Any]:
         "locale":               getattr(org, "locale", None) or "en-US",
         "regional_packs":       normalize_packs(getattr(org, "regional_packs", None)),
         "focus_mode":           bool(org.focus_mode),
+        "size_profile":         org.size_profile,
         "plan":                 org.plan,
         "max_members":          org.max_members,
         "max_jobs_per_month":   org.max_jobs_per_month,
@@ -147,12 +172,48 @@ def _org_dict(org: Organization) -> dict[str, Any]:
     }
 
 
-def _member_dict(u: User) -> dict[str, Any]:
+async def _base_fields(db: AsyncSession, org: Organization) -> dict[str, Any]:
+    """How this organisation's money is labelled: `base_currency` above is only the stored column (its default
+    is USD), so screens format with `effective_currency` (`core/currency_totals.effective_base`)."""
+    from app.services.ledger_base import effective_base_of
+
+    eb = await effective_base_of(db, str(org.id))
+    return {
+        "base_currency_confirmed": org.base_currency_confirmed_at is not None,
+        "effective_currency": eb.run_currency,
+        "base_state": eb.state,
+    }
+
+
+async def _org_members(db: AsyncSession, org_id: str) -> list[tuple[User, str]]:
+    """Members of an organisation with their role *in it*, oldest first.
+
+    Listed by membership rows, not `users.org_id`: that column is only the
+    organisation a user is acting in, so an accountant switched into another
+    client would vanish from this one while `require_smmm` still counts them.
+    A user with `users.org_id` here and no membership row (older than migration
+    050) is included with `users.role`.
+    """
+    rows = (
+        await db.execute(
+            select(User, OrgMembership.role)
+            .join(OrgMembership, OrgMembership.user_id == User.id)
+            .where(OrgMembership.org_id == org_id)
+        )
+    ).all()
+    members: dict[str, tuple[User, str]] = {str(u.id): (u, str(r)) for u, r in rows}
+    legacy = (await db.execute(select(User).where(User.org_id == org_id))).scalars().all()
+    for u in legacy:
+        members.setdefault(str(u.id), (u, str(getattr(u.role, "value", u.role))))
+    return sorted(members.values(), key=lambda m: m[0].created_at)
+
+
+def _member_dict(u: User, role: str) -> dict[str, Any]:
     return {
         "user_id":      u.id,
         "email":        u.email,
         "full_name":    u.full_name,
-        "role":         u.role,
+        "role":         role,
         "is_active":    u.is_active,
         "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None,
         "joined_at":    u.created_at.isoformat(),
@@ -182,7 +243,11 @@ async def create_org(
         )
 
     # Generate unique slug
+    if body.slug and body.slug.lower().startswith("demo-"):
+        raise HTTPException(status_code=422, detail="'demo-' öneki ayrılmıştır; başka bir kısa ad seçin.")
     base_slug = body.slug or _slugify(body.name)
+    if base_slug.startswith("demo-"):
+        base_slug = f"org-{base_slug}"  # the demo prefix is reserved for guest workspaces
     slug = base_slug
     counter = 1
     while True:
@@ -218,9 +283,6 @@ async def create_org(
     await db.commit()
     await db.refresh(org)
 
-    # Drop the stale cached copy so the next request sees the new org and role
-    # instead of the pre-creation snapshot.
-    _cache_invalidate(str(current_user.id))
 
     logger.info("Org created: %s (slug=%s) by user %s", org.name, org.slug, current_user.email)
 
@@ -235,12 +297,17 @@ async def get_my_org(
     """Get the current user's organization."""
     org = await _require_org(current_user, db)
     # Count members
-    result = await db.execute(
-        select(User).where(User.org_id == org.id, User.is_active)
-    )
-    members = result.scalars().all()
-    data = _org_dict(org)
+    members = [u for u, _ in await _org_members(db, str(org.id)) if u.is_active]
+    data = {**_org_dict(org), **await _base_fields(db, org)}
     data["member_count"] = len(members)
+    # Whether an active accountant (smmm) belongs to the company, so the screens can adapt, and the
+    # defaults the confirmed size profile sets (a starting point, never a lock).
+    from app.services.accountant import has_active_smmm
+    from app.services.size_profile import profile_defaults
+
+    data["has_smmm"] = await has_active_smmm(db, str(org.id))
+    data["briefing_to_smmm"] = bool(org.briefing_to_smmm)
+    data["profile_defaults"] = profile_defaults(org.size_profile)
     return {"data": data, "error": None}
 
 
@@ -252,6 +319,7 @@ async def update_org(
 ) -> dict[str, Any]:
     """Update org settings. Requires admin role."""
     org = await _require_admin(current_user, db)
+    before = identity_view(org)
     if body.name is not None:
         org.name = body.name
     if body.description is not None:
@@ -260,8 +328,14 @@ async def update_org(
         org.logo_url = body.logo_url
     if body.country_code is not None:
         org.country_code = body.country_code.upper()
-    if body.base_currency is not None:
-        org.base_currency = body.base_currency.upper()
+    if body.base_currency is not None and body.base_currency.upper() != (org.base_currency or "").upper():
+        # The company currency decides how every currency-less document is read, so changing it is a
+        # decision: POST /org/base-currency (owner or admin, recorded with before and after). The
+        # same value as stored is ignored, so a form that always sends it still saves.
+        raise HTTPException(
+            status_code=422,
+            detail="base_currency yalnızca POST /org/base-currency ile değiştirilir (onay kaydı tutulur).",
+        )
     if body.locale is not None:
         org.locale = body.locale
     if body.regional_packs is not None:
@@ -270,6 +344,7 @@ async def update_org(
         org.regional_packs = normalize_packs(body.regional_packs)
     if body.focus_mode is not None:
         org.focus_mode = body.focus_mode
+        org.focus_mode_explicit = True  # a person chose; a size profile never overrides it
     if body.vkn is not None:
         from app.services.org_identity import normalize, vkn_gecerli
 
@@ -284,9 +359,10 @@ async def update_org(
             org.vkn = normalize(body.vkn)
     if body.legal_title is not None:
         org.legal_title = body.legal_title.strip() or None
+    await record_identity_change(db, org, current_user, before)
     await db.commit()
     await db.refresh(org)
-    return {"data": _org_dict(org), "error": None}
+    return {"data": {**_org_dict(org), **await _base_fields(db, org)}, "error": None}
 
 
 @router.get("/org/me/tax-rates")
@@ -313,14 +389,11 @@ async def list_members(
 ) -> dict[str, Any]:
     """List all members of the current user's org."""
     org = await _require_org(current_user, db)
-    result = await db.execute(
-        select(User).where(User.org_id == org.id).order_by(User.created_at)
-    )
-    members = result.scalars().all()
+    members = await _org_members(db, str(org.id))
     return {
         "data": {
             "org_id":  org.id,
-            "members": [_member_dict(m) for m in members],
+            "members": [_member_dict(m, role) for m, role in members],
             "total":   len(members),
         },
         "error": None,
@@ -340,15 +413,34 @@ async def remove_member(
         raise HTTPException(400, detail="Kendinizi org'dan çıkaramazsınız.")
 
     target = await db.get(User, user_id)
-    if not target or target.org_id != org.id:
+    membership = (
+        await db.execute(
+            select(OrgMembership).where(
+                OrgMembership.user_id == user_id, OrgMembership.org_id == str(org.id)
+            )
+        )
+    ).scalar_one_or_none()
+    # A member is whoever holds a membership row here (an accountant switched
+    # into another client has `users.org_id` elsewhere), or a legacy user with
+    # no row whose acting organisation this is.
+    if not target or (membership is None and str(target.org_id) != str(org.id)):
         raise HTTPException(404, detail="Kullanıcı bu org'da bulunamadı.")
 
     # Admins cannot remove other admins or owners
-    if current_user.role == UserRole.ADMIN and target.role in (UserRole.OWNER, UserRole.ADMIN):
+    target_role = membership.role if membership is not None else str(getattr(target.role, "value", target.role))
+    if await acting_role(db, current_user) == UserRole.ADMIN and target_role in (UserRole.OWNER, UserRole.ADMIN):
         raise HTTPException(403, detail="Admin, başka bir admin veya owner'ı çıkaramaz.")
 
-    target.org_id = None
-    target.role = UserRole.ANALYST  # reset to default
+    from app.services.org_membership import drop_membership
+
+    await record_decision(
+        db, org_id=str(org.id), kind=DecisionKind.MEMBER_CHANGE, target_type="org_membership",
+        target_id=str(membership.id) if membership is not None else str(target.id), outcome="removed",
+        decided_via=DecidedVia.HUMAN, decided_by=str(current_user.id),
+        evidence_refs=[{"type": "user", "id": str(target.id)}],
+        before={"role": target_role}, after=None,
+    )
+    await drop_membership(db, user_id=str(target.id), org_id=str(org.id))
     await db.commit()
 
     logger.info("User %s removed from org %s by %s", target.email, org.id, current_user.email)
@@ -364,11 +456,19 @@ async def invite_member(
     """Invite someone to join the org by email."""
     org = await _require_admin(current_user, db)
 
+    inviter_role = str(await acting_role(db, current_user))
+    if body.role.value not in _INVITER_MAY_GRANT.get(inviter_role, frozenset()):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Şirketin tek bir sahibi (owner) olur; davetle ikinci bir owner eklenemez."
+                if body.role.value == "owner"
+                else f"'{body.role.value}' rolünü bu rolünüzle veremezsiniz (admin rolünü yalnızca owner verir)."
+            ),
+        )
+
     # Check member limit
-    result = await db.execute(
-        select(User).where(User.org_id == org.id, User.is_active)
-    )
-    count = len(result.scalars().all())
+    count = len([u for u, _ in await _org_members(db, str(org.id)) if u.is_active])
     if count >= org.max_members:
         raise HTTPException(400, detail=f"Üye limiti doldu ({org.max_members}).")
 
@@ -376,46 +476,46 @@ async def invite_member(
     old = await db.execute(
         select(OrgInvite).where(
             OrgInvite.org_id == org.id,
-            OrgInvite.email == str(body.email),
+            OrgInvite.email == normalize_email(str(body.email)),
             OrgInvite.accepted.is_(False),
         )
     )
     for inv in old.scalars().all():
         await db.delete(inv)
 
+    raw_token, token_digest = new_token()
     invite = OrgInvite(
         org_id=org.id,
-        email=str(body.email),
-        role=body.role,
-        token=secrets.token_hex(32),
+        email=normalize_email(str(body.email)),
+        role=body.role.value,
+        token_hash=token_digest,
         expires_at=datetime.now(UTC) + timedelta(days=INVITE_EXPIRE_DAYS),
     )
     db.add(invite)
+    await db.flush()
+    # The e-mail is an outbox row of the immediate class (no release; the link is the only content),
+    # written in the invitation's own transaction and delivered, retried and recorded by the outbox
+    # sender: a failure shows on the row, never silently.
+    from app.config import get_settings
+    from app.services import outbox, outbox_immediate
+
+    frontend = get_settings().frontend_url.rstrip("/")
+    await outbox_immediate.enqueue_org_invite(
+        db, invite_id=str(invite.id), org_id=str(org.id), email=invite.email, org_name=org.name or "",
+        role=invite.role, accept_url=f"{frontend}/auth/accept-invite?token={raw_token}",
+        expires_at=invite.expires_at,
+    )
+    await record_decision(
+        db, org_id=str(org.id), kind=DecisionKind.MEMBER_CHANGE, target_type="org_invite",
+        target_id=str(invite.id), outcome="invited", decided_via=DecidedVia.HUMAN, decided_by=str(current_user.id),
+        after={"role": invite.role, "email": invite.email},
+    )
     await db.commit()
     await db.refresh(invite)
 
-    logger.info("Invite sent: %s → %s (role=%s)", org.name, body.email, body.role)
-
-    email_sent = False
-    try:
-        from app.config import get_settings
-        from app.services.integrations import WebhookDispatcher
-
-        settings = get_settings()
-        frontend = getattr(settings, "frontend_url", None) or "http://localhost:3000"
-        accept_url = f"{frontend}/auth/accept-invite?token={invite.token}"
-        notifier = WebhookDispatcher()
-        email_sent = await notifier.send_email(
-            to=invite.email,
-            subject=f"You're invited to {org.name}",
-            body=(
-                f"You have been invited to join {org.name} as {invite.role}.\n\n"
-                f"Accept: {accept_url}\n\n"
-                f"This invite expires at {invite.expires_at.isoformat()}."
-            ),
-        )
-    except Exception as exc:
-        logger.warning("Invite email failed (non-fatal): %s", exc)
+    outbox.kick()
+    email_sent = True  # handed to the outbox; its delivery is recorded there
+    logger.info("Invite queued: %s → %s (role=%s)", org.name, body.email, body.role.value)
 
     return {
         "data": {
@@ -429,60 +529,184 @@ async def invite_member(
     }
 
 
+def _utc(moment: datetime) -> datetime:
+    return moment if moment.tzinfo else moment.replace(tzinfo=UTC)
+
+
+def _invite_state(invite: OrgInvite | None) -> str:
+    """`valid`, `used` (already accepted), `expired`, or `unknown` (no such invitation, or cancelled)."""
+    if invite is None:
+        return "unknown"
+    if invite.accepted:
+        return "used"
+    if _utc(invite.expires_at) < datetime.now(UTC):
+        return "expired"
+    return "valid"
+
+
+class PreviewInviteRequest(BaseModel):
+    token: str = Field(min_length=8, max_length=128)
+
+
+@router.post("/org/invite/preview")
+async def preview_invite(
+    body: PreviewInviteRequest,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """What the invitation page needs before anyone signs in: whose invitation, in which role, in what state.
+
+    The token is the secret (64 random hex characters, e-mailed to the invitee); whoever holds it
+    may read this. It is a POST so the token is in the body, not in a URL that access logs and proxies
+    keep. It says whether the invited address already has an account, so the page asks for
+    a password to sign in or to create one.
+    """
+    invite = (await db.execute(select(OrgInvite).where(OrgInvite.token_hash == hash_token(body.token)))).scalar_one_or_none()
+    state = _invite_state(invite)
+    if invite is None:
+        return {"data": {"state": state}, "error": None}
+    org = await db.get(Organization, str(invite.org_id))
+    account = (await db.execute(select(User.id).where(User.email == normalize_email(invite.email)))).first()
+    return {
+        "data": {
+            "state": state,
+            "email": invite.email,
+            "role": invite.role,
+            "org_name": org.name if org else None,
+            "account_exists": account is not None,
+            "expires_at": _utc(invite.expires_at).isoformat(),
+        },
+        "error": None,
+    }
+
+
 @router.post("/org/invite/accept", status_code=status.HTTP_201_CREATED)
 async def accept_invite(
     body: AcceptInviteRequest,
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    """
-    Accept an org invite. Creates user account if email not yet registered,
-    otherwise joins existing user to the org.
+    """Accept an org invite. Creates the account if the address has none; otherwise adds this
+    organisation to the existing account.
+
+    A person may belong to several organisations (an accountant to every client): accepting adds a
+    membership and never disturbs the ones they have, nor the organisation they are acting in. Only
+    someone with no organisation yet starts acting in this one. An existing account proves it is
+    theirs, with its password or a session of the invited address: the token alone is not enough to
+    sign in as somebody who already has an account.
     """
     from app.services.auth import create_access_token, create_refresh_token, hash_password
 
-    result = await db.execute(
-        select(OrgInvite).where(
-            OrgInvite.token == body.token, OrgInvite.accepted.is_(False)
-        )
-    )
+    result = await db.execute(select(OrgInvite).where(OrgInvite.token_hash == hash_token(body.token)))
     invite = result.scalar_one_or_none()
-    if not invite:
+    state = _invite_state(invite)
+    if invite is None or state == "unknown":
         raise HTTPException(400, detail="Geçersiz veya süresi dolmuş davet bağlantısı.")
-
-    if invite.expires_at < datetime.now(UTC):
+    if state == "used":
+        raise HTTPException(400, detail="Bu davet daha önce kullanılmış.")
+    if state == "expired":
         raise HTTPException(400, detail="Davet bağlantısının süresi dolmuş.")
+    if invite.role not in {r.value for r in UserRole}:
+        # An invite stored before the role was validated.
+        raise HTTPException(400, detail="Davetteki rol geçersiz; yeni bir davet isteyin.")
 
     # Find or create user
-    result = await db.execute(select(User).where(User.email == invite.email))
+    result = await db.execute(select(User).where(User.email == normalize_email(invite.email)))
     user = result.scalar_one_or_none()
 
-    if user:
-        if user.org_id and user.org_id != invite.org_id:
-            raise HTTPException(400, detail="Zaten başka bir organizasyona üyesiniz.")
+    async def claim() -> None:
+        # Single use, decided by the database: of two simultaneous accepts only the one whose UPDATE flips
+        # `accepted` goes on; the other changes nothing and is refused. Done after the caller has proved
+        # who they are (a wrong password must not burn the token) and before anything else is written.
+        claimed = await db.execute(
+            update(OrgInvite).where(OrgInvite.id == invite.id, OrgInvite.accepted.is_(False)).values(accepted=True)
+        )
+        if claimed.rowcount != 1:
+            await db.rollback()
+            raise HTTPException(400, detail="Bu davet daha önce kullanılmış.")
+
+    now = datetime.now(UTC)
+    # An account at this address that nobody has verified (someone may have registered the invitee's
+    # address in advance, to lock them out). The invitation was e-mailed to this address, so holding its
+    # token is the proof of ownership: the account is taken over in place. Its password becomes the one
+    # given here, its sessions end, and nothing else the squatter set (name, API key, SSO link,
+    # memberships, organisation) is kept; it signs in nowhere before this, so it holds no data.
+    squatter = (
+        user is not None and user.email_verified_at is None and email_verification.required()
+    )
+
+    if user is not None and squatter:
+        if not user.is_active:
+            raise HTTPException(403, detail="Hesabınız devre dışı bırakılmış.")
+        if not body.password:
+            raise HTTPException(422, detail="Hesabı devralmak için en az 8 karakterlik bir şifre gerekli.")
+        await claim()
+        await db.execute(delete(OrgMembership).where(OrgMembership.user_id == str(user.id)))
+        user.hashed_password = hash_password(body.password)
+        user.full_name = body.full_name
+        user.api_key = None
+        user.sso_provider = None
+        user.sso_id = None
+        user.token_version = (user.token_version or 0) + 1
+        user.password_changed_at = now
+        user.org_id = invite.org_id
+        user.role = invite.role
+        user.email_verified_at = now
+        await db.execute(
+            update(PasswordResetToken)
+            .where(PasswordResetToken.user_id == str(user.id), PasswordResetToken.used_at.is_(None))
+            .values(used_at=now).execution_options(synchronize_session=False)
+        )
+        await email_verification.mark_verified(db, str(user.id))
+    elif user is not None:
+        if not user.is_active:
+            raise HTTPException(403, detail="Hesabınız devre dışı bırakılmış.")
+        if not _proves_account(credentials, user, body.password):
+            raise HTTPException(401, detail="Şifre yanlış. Bu davet için bu adresin hesabıyla giriş yapmalısınız.")
+        await claim()
+        # First organisation of this account: act in it. Otherwise the person keeps working where
+        # they were; the invitation page then switches them if they wish.
+        if not user.org_id:
+            user.org_id = invite.org_id
+            user.role = invite.role
     else:
+        if not body.password:
+            raise HTTPException(422, detail="Hesap oluşturmak için en az 8 karakterlik bir şifre gerekli.")
+        await claim()
         user = User(
-            email=invite.email,
+            email=normalize_email(invite.email),
             hashed_password=hash_password(body.password),
             full_name=body.full_name,
             role=invite.role,
+            org_id=invite.org_id,
+            email_verified_at=now,  # the invitation was e-mailed to this address
         )
         db.add(user)
-        await db.flush()
+        try:
+            await db.flush()
+        except IntegrityError:
+            # Someone made an account for this address between the lookup and now.
+            await db.rollback()
+            raise HTTPException(409, detail="Bu adres için bir hesap az önce oluşturuldu; lütfen yeniden deneyin.") from None
 
-    user.org_id = invite.org_id
-    user.role = invite.role
-    invite.accepted = True
     from app.services.org_membership import ensure_membership
 
-    await ensure_membership(
+    membership = await ensure_membership(
         db, user_id=str(user.id), org_id=str(invite.org_id), role=str(invite.role)
+    )
+    # Someone who was acting in another organisation before memberships existed must stay able to go back.
+    if user.org_id and str(user.org_id) != str(invite.org_id):
+        await ensure_membership(db, user_id=str(user.id), org_id=str(user.org_id), role=str(user.role))
+    await record_decision(
+        db, org_id=str(invite.org_id), kind=DecisionKind.MEMBER_CHANGE, target_type="org_membership",
+        target_id=str(membership.id), outcome="joined", decided_via=DecidedVia.HUMAN, decided_by=str(user.id),
+        evidence_refs=[{"type": "org_invite", "id": str(invite.id)}], after={"role": membership.role},
     )
 
     await db.commit()
     await db.refresh(user)
 
-    access  = create_access_token(user.id, user.email, user.role)
-    refresh = create_refresh_token(user.id)
+    access  = create_access_token(user.id, user.email, user.role, token_version=user.token_version)
+    refresh = create_refresh_token(user.id, token_version=user.token_version)
 
     logger.info("Invite accepted: %s joined org %s", user.email, invite.org_id)
 
@@ -492,6 +716,7 @@ async def accept_invite(
             "refresh_token": refresh,
             "token_type":    "bearer",
             "expires_in":    1800,
+            "joined_org_id": str(invite.org_id),
             "user": {
                 "user_id":  user.id,
                 "email":    user.email,
@@ -501,6 +726,26 @@ async def accept_invite(
         },
         "error": None,
     }
+
+
+def _proves_account(credentials: HTTPAuthorizationCredentials | None, user: User, password: str | None) -> bool:
+    """The caller is this account: a valid access token of it, or its password."""
+    from jose import JWTError
+
+    from app.services.auth import decode_token, token_is_current, verify_password
+
+    if credentials and credentials.credentials:
+        try:
+            payload = decode_token(credentials.credentials)
+        except JWTError:
+            payload = {}
+        if (
+            payload.get("type") == "access"
+            and payload.get("sub") == str(user.id)
+            and token_is_current(payload, user.token_version)
+        ):
+            return True
+    return bool(password and user.hashed_password) and verify_password(password, user.hashed_password)
 
 
 class SwitchOrgRequest(BaseModel):
@@ -541,6 +786,7 @@ async def list_memberships(
 @router.post("/org/switch")
 async def switch_org(
     body: SwitchOrgRequest,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
@@ -573,6 +819,14 @@ async def switch_org(
         raise HTTPException(status_code=404, detail="Organizasyon bulunamadı.")
     membership, org = target
 
+    # Moving INTO an organisation that limits its addresses: refused from outside them (moving out is not).
+    from app.core.client_ip import client_ip
+    from app.services import ip_allowlist
+
+    refusal = await ip_allowlist.org_refusal(db, str(org.id), client_ip(request))
+    if refusal:
+        raise HTTPException(status_code=403, detail=refusal)
+
     # Leaving an organisation the user was in before memberships existed must
     # stay reversible: record it before switching away.
     if user_row.org_id and str(user_row.org_id) != str(org.id):
@@ -583,7 +837,6 @@ async def switch_org(
     user_row.org_id = org.id
     user_row.role = membership.role
     await db.commit()
-    _cache_invalidate(str(user_row.id))
     logger.info("Org switch: user=%s -> org=%s role=%s", user_row.email, org.id, membership.role)
     return {"data": {"org_id": org.id, "name": org.name, "role": membership.role}, "error": None}
 
@@ -630,6 +883,11 @@ async def cancel_invite(
     invite = result.scalar_one_or_none()
     if not invite:
         raise HTTPException(404, detail="Davet bulunamadı.")
+    await record_decision(
+        db, org_id=str(org.id), kind=DecisionKind.MEMBER_CHANGE, target_type="org_invite",
+        target_id=str(invite.id), outcome="invite_cancelled", decided_via=DecidedVia.HUMAN,
+        decided_by=str(current_user.id), before={"role": invite.role, "email": invite.email}, after=None,
+    )
     await db.delete(invite)
     await db.commit()
     return {"data": {"cancelled": True}, "error": None}

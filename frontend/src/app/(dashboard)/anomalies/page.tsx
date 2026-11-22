@@ -20,10 +20,12 @@ import {
 } from "lucide-react";
 import {
   useAnomalies,
+  useDashboard,
   useScanAnomalies,
   useAcknowledgeAnomaly,
 } from "@/hooks/useCFO";
 import { cn } from "@/lib/utils";
+import { useCan } from "@/hooks/useCan";
 import { useI18n } from "@/hooks/useI18n";
 import type { MessageTree } from "@/lib/i18n";
 import type { AnomalyItem } from "@/lib/api/cfo";
@@ -175,6 +177,7 @@ function AnomalyCard({
 }) {
   const [expanded, setExpanded] = useState(false);
   const acknowledge = useAcknowledgeAnomaly(jobId);
+  const canEdit = useCan("edit");
   const { t } = useI18n();
   const anom = t.anomalies;
   const sev = (anomaly.severity as Severity) in SEVERITY_CONFIG
@@ -328,13 +331,15 @@ function AnomalyCard({
         {/* Acknowledge button */}
         <button
           onClick={() =>
-            acknowledge.mutate({ id: anomaly.id, ack: !anomaly.acknowledged })
+            canEdit.allowed && acknowledge.mutate({ id: anomaly.id, ack: !anomaly.acknowledged })
           }
           disabled={acknowledge.isPending}
+          aria-disabled={canEdit.allowed ? undefined : true}
+          title={canEdit.reason ?? undefined}
           className={cn(
             "shrink-0 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-            "disabled:pointer-events-none disabled:opacity-50",
+            "disabled:pointer-events-none disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50",
             anomaly.acknowledged
               ? "border-border text-muted-foreground hover:border-primary/40 hover:text-foreground"
               : "border-border bg-background/50 text-muted-foreground hover:border-emerald-500/40 hover:text-emerald-400"
@@ -471,7 +476,11 @@ export default function AnomaliesPage() {
   const [showAcknowledged, setShowAcknowledged] = useState(false);
 
   const { data, isLoading } = useAnomalies(jobId);
+  // The checks ran on rows of one currency; how many rows in other currencies they did not read is said here.
+  const { data: dashboard } = useDashboard(jobId);
+  const leftOut = dashboard?.currency_scope?.note;
   const scan = useScanAnomalies(jobId);
+  const canEdit = useCan("edit");
   const { t } = useI18n();
   const anom = t.anomalies;
 
@@ -546,6 +555,7 @@ export default function AnomaliesPage() {
 
   return (
     <div className="space-y-4 p-5">
+      {leftOut && <p className="text-xs text-muted-foreground" data-testid="anomaly-left-out">{leftOut}</p>}
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
@@ -589,13 +599,15 @@ export default function AnomaliesPage() {
 
           {/* Re-scan */}
           <button
-            onClick={() => scan.mutate()}
+            onClick={() => canEdit.allowed && scan.mutate()}
             disabled={scan.isPending}
+            aria-disabled={canEdit.allowed ? undefined : true}
+            title={canEdit.reason ?? undefined}
             className={cn(
               "flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border px-3 text-xs font-medium",
               "text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              "disabled:pointer-events-none disabled:opacity-50"
+              "disabled:pointer-events-none disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
             )}
             aria-label={anom.ariaRescan}
           >

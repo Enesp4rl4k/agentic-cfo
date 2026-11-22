@@ -50,6 +50,9 @@ services:
     environment:
       POSTGRES_HOST: postgres
       REDIS_URL: redis://redis:6379/0
+      # Behind a reverse proxy set one (see .env.example); unset = trust no proxy.
+      TRUSTED_PROXY_COUNT: ${TRUSTED_PROXY_COUNT:-0}
+      TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-}
     volumes:
       - uploads_data:/app/uploads
     depends_on:

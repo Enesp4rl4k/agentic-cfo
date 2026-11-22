@@ -12,21 +12,29 @@ import hashlib
 import hmac
 import json
 import logging
+import time
+import uuid
 from typing import Any
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.database import get_db
-from app.services.bot_gateways import OmnichannelCFOBotGateway
+from app.services import outbox, outbox_immediate
+from app.services.bot_gateways import OmnichannelCFOBotGateway, resolve_linked_member
 
 router = APIRouter(tags=["bot-webhooks"])
 logger = logging.getLogger(__name__)
 
 
 # ── WhatsApp Hub Verification ─────────────────────────────────────────────────
+
+def _require_whatsapp_enabled(settings: Any) -> None:
+    """Closed, not open: without a verify token and an app secret the WhatsApp webhook does not exist."""
+    if not (settings.whatsapp_verify_token and settings.whatsapp_app_secret):
+        raise HTTPException(status_code=404, detail="Not found")
+
 
 @router.get("/webhooks/whatsapp")
 async def whatsapp_verify(
@@ -39,7 +47,8 @@ async def whatsapp_verify(
     Meta calls this GET endpoint once when you register the webhook URL.
     """
     settings = get_settings()
-    if hub_mode == "subscribe" and hub_verify_token == settings.whatsapp_verify_token:
+    _require_whatsapp_enabled(settings)
+    if hub_mode == "subscribe" and hmac.compare_digest(hub_verify_token or "", settings.whatsapp_verify_token):
         logger.info("WhatsApp webhook verified.")
         return Response(content=hub_challenge, media_type="text/plain")
     raise HTTPException(status_code=403, detail="Verification failed.")
@@ -51,16 +60,14 @@ async def whatsapp_verify(
 async def whatsapp_inbound(request: Request, db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
     """
     Receives inbound WhatsApp messages from Meta Cloud API.
-    Dispatches to OmnichannelCFOBotGateway and sends reply via httpx.
+    Dispatches to OmnichannelCFOBotGateway and queues the reply in the outbox (the sender delivers it).
 
     Meta signs each post with the App Secret. This route verified nothing, so
     anyone could post a message as any sender and have the bot answer it.
     """
     settings = get_settings()
+    _require_whatsapp_enabled(settings)
     body_bytes = await request.body()
-    if not settings.whatsapp_app_secret:
-        # Closed, not open: an unconfigured secret is not permission to skip it.
-        raise HTTPException(status_code=503, detail="WhatsApp webhook yapılandırılmamış (WHATSAPP_APP_SECRET).")
     expected = "sha256=" + hmac.new(
         settings.whatsapp_app_secret.encode(), body_bytes, hashlib.sha256
     ).hexdigest()
@@ -86,39 +93,22 @@ async def whatsapp_inbound(request: Request, db: AsyncSession = Depends(get_db))
         if not message_text:
             return {"status": "non_text_message"}
 
-        # Load basic financial context (use defaults if no active job)
-        financial_context: dict[str, Any] = {}
+        # Only a verified, linked member is answered (none exists yet: see services/bot_gateways.py).
+        if await resolve_linked_member(db, "whatsapp", sender_id) is None:
+            return {"status": "unlinked"}
 
-        # Dispatch to gateway
         bot_response = OmnichannelCFOBotGateway.handle_command(
-            channel="whatsapp",
-            sender_id=sender_id,
-            message_text=message_text,
-            financial_context=financial_context,
+            channel="whatsapp", sender_id=sender_id, message_text=message_text,
         )
 
-        # Send reply via WhatsApp Cloud API
-        if settings.whatsapp_access_token and settings.whatsapp_phone_number_id:
-            wa_payload = {
-                "messaging_product": "whatsapp",
-                "to": sender_id,
-                "type": "text",
-                "text": {"body": bot_response.reply_text},
-            }
-            async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.post(
-                    f"https://graph.facebook.com/{settings.whatsapp_api_version}"
-                    f"/{settings.whatsapp_phone_number_id}/messages",
-                    headers={
-                        "Authorization": f"Bearer {settings.whatsapp_access_token}",
-                        "Content-Type": "application/json",
-                    },
-                    json=wa_payload,
-                )
-                resp.raise_for_status()
-            logger.info("WhatsApp reply sent to %s", sender_id)
-        else:
-            logger.warning("WhatsApp credentials not configured — skipping send. Reply: %s", bot_response.reply_text)
+        # The reply is an outbox row (immediate class, bot_reply): to the linked member's number, with an
+        # answer that carries no company data. The sender delivers it.
+        await outbox_immediate.enqueue_bot_reply(
+            db, reply_id=f"wa:{msg.get('id') or uuid.uuid4().hex}", channel="whatsapp",
+            recipient=sender_id, text=bot_response.reply_text,
+        )
+        await db.commit()
+        outbox.kick()
 
         return {"status": "handled"}
 
@@ -130,8 +120,16 @@ async def whatsapp_inbound(request: Request, db: AsyncSession = Depends(get_db))
 
 # ── Slack Events API ──────────────────────────────────────────────────────────
 
+SLACK_MAX_SKEW_SECONDS = 300  # Slack's own guidance: refuse a request older (or newer) than five minutes
+
+
 def _verify_slack_signature(request_body: bytes, timestamp: str, signature: str, signing_secret: str) -> bool:
-    """Verify Slack request using HMAC-SHA256 signing secret."""
+    """Verify a Slack request: HMAC-SHA256 over the body, and a timestamp within ±5 minutes (replay protection)."""
+    try:
+        if abs(time.time() - int(timestamp)) > SLACK_MAX_SKEW_SECONDS:
+            return False
+    except ValueError:
+        return False
     base = f"v0:{timestamp}:{request_body.decode('utf-8')}"
     expected = "v0=" + hmac.new(
         signing_secret.encode(), base.encode(), hashlib.sha256
@@ -171,31 +169,10 @@ async def slack_events(request: Request, db: AsyncSession = Depends(get_db)) -> 
     if payload.get("type") == "url_verification":
         return {"challenge": payload.get("challenge")}
 
-    # Interactive action (button click: approve/reject)
+    # Interactive action (button click): nothing is approved or rejected from a chat button (the decision
+    # is made in the app, by a person with the authority for it), and a sender with no verified link gets
+    # no reply. No message carries an approve/reject button any more.
     if payload.get("type") == "block_actions":
-        actions = payload.get("actions", [])
-        for action in actions:
-            action_value = action.get("value", "")
-            user_id = payload.get("user", {}).get("id", "")
-            channel_id = payload.get("channel", {}).get("id", "")
-            logger.info("Slack interactive action: %s by %s", action_value, user_id)
-
-            # Wire to action_runner for approve/reject
-            if action_value.startswith(("approve_", "reject_")):
-                action_id = action_value.replace("approve_", "").replace("reject_", "")
-                reply_text = (
-                    f"✅ `{action_id}` onaylandı ve sisteme iletildi."
-                    if action_value.startswith("approve_")
-                    else f"❌ `{action_id}` reddedildi."
-                )
-                # Reply in the same Slack channel
-                if settings.slack_bot_token and channel_id:
-                    async with httpx.AsyncClient(timeout=10) as client:
-                        await client.post(
-                            "https://slack.com/api/chat.postMessage",
-                            headers={"Authorization": f"Bearer {settings.slack_bot_token}"},
-                            json={"channel": channel_id, "text": reply_text},
-                        )
         return {"status": "ok"}
 
     # Message event
@@ -211,21 +188,12 @@ async def slack_events(request: Request, db: AsyncSession = Depends(get_db)) -> 
             message_text=message_text,
         )
 
-        if settings.slack_bot_token and channel_id:
-            slack_msg: dict[str, Any] = {
-                "channel": channel_id,
-                "text": bot_response.reply_text,
-            }
-            if bot_response.interactive_blocks:
-                slack_msg["blocks"] = bot_response.interactive_blocks
-
-            async with httpx.AsyncClient(timeout=10) as client:
-                await client.post(
-                    "https://slack.com/api/chat.postMessage",
-                    headers={"Authorization": f"Bearer {settings.slack_bot_token}"},
-                    json=slack_msg,
-                )
-        else:
-            logger.warning("Slack token not configured. Reply: %s", bot_response.reply_text)
+        if channel_id and await resolve_linked_member(db, "slack", sender_id) is not None:
+            await outbox_immediate.enqueue_bot_reply(
+                db, reply_id=f"slack:{payload.get('event_id') or event.get('ts') or uuid.uuid4().hex}",
+                channel="slack_bot", recipient=channel_id, text=bot_response.reply_text,
+            )
+            await db.commit()
+            outbox.kick()
 
     return {"status": "ok"}

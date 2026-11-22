@@ -167,6 +167,14 @@ async def build_situation(
         "top_opex_category": top_cat,
         "top_opex_amount": int(opex.get(top_cat)) if top_cat else None,
         "runway_months": base.get("runway_months"),
+        # The runway's basis is not dropped on the way to the screen: an assumed balance says so.
+        "runway_basis": (forecast.get("runway") or {}).get("basis"),
+        "runway_note": (
+            (forecast.get("runway") or {}).get("message")
+            if (forecast.get("runway") or {}).get("basis") not in (None, "known")
+            or (forecast.get("runway") or {}).get("identity_uncertain")
+            else None
+        ),
         "forecast_12m_net": base.get("twelve_month_net"),
         "anomaly_count": int(anomaly_count),
         "min_confidence": (
@@ -191,10 +199,7 @@ def build_preset_options(
     if not pnl:
         return []
 
-    from app.services.counterfactual_engine import (
-        CounterfactualEngine,
-        compute_preset_results,
-    )
+    from app.services.counterfactual_engine import CounterfactualEngine, compute_presets
 
     engine = CounterfactualEngine(pnl=pnl, cashflow=cashflow, forecast=forecast)
     options: list[dict[str, Any]] = [
@@ -206,6 +211,8 @@ def build_preset_options(
                 "geçerli kalır."
             ),
             "baseline": True,
+            "available": True,
+            "unavailable_reason": None,
             "base_net_impact": 0,
             "breakeven_months": None,
             "cashflow_risk": None,
@@ -217,14 +224,38 @@ def build_preset_options(
         }
     ]
 
-    for i, (label, result) in enumerate(compute_preset_results(pnl, cashflow, forecast)):
-        d = result.to_dict()
+    for i, outcome in enumerate(compute_presets(pnl, cashflow, forecast)):
+        if outcome.result is None:
+            # A preset the data cannot answer is shown as unavailable with the reason, never as a figure.
+            options.append(
+                {
+                    "id": f"preset_{i + 1}",
+                    "label": outcome.label,
+                    "description": outcome.unavailable_reason,
+                    "baseline": False,
+                    "available": False,
+                    "unavailable_reason": outcome.unavailable_reason,
+                    "runway_after": None,
+                    "base_net_impact": None,
+                    "breakeven_months": None,
+                    "cashflow_risk": None,
+                    "assumptions": [],
+                    "recommendation": None,
+                    "engine": "counterfactual",
+                    "scenarios": [],
+                }
+            )
+            continue
+        label = outcome.label
+        d = outcome.result.to_dict()
         options.append(
             {
                 "id": f"preset_{i + 1}",
                 "label": label,
                 "description": d["description"],
                 "baseline": False,
+                "available": True,
+                "unavailable_reason": None,
                 # The engine does not model runway-after, and inventing one
                 # would be the exact failure this packet exists to prevent.
                 "runway_after": None,

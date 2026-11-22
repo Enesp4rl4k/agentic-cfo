@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
   BarChart,
@@ -16,10 +17,15 @@ import { Upload, TrendingUp, TrendingDown, ChevronDown, ChevronRight, BarChart3,
 import { useQuery } from "@tanstack/react-query";
 import { useDashboard } from "@/hooks/useCFO";
 import { useI18n } from "@/hooks/useI18n";
-import { useCurrencyFormat, useCurrencySymbol } from "@/hooks/useCurrencyFormat";
+import { useOrgSettings } from "@/hooks/useOrgSettings";
+import { CurrencyScope, useCurrencyFormat, useCurrencySymbol } from "@/hooks/useCurrencyFormat";
+import { effectiveCurrencyOf } from "@/lib/effective-currency";
 import { apiClient } from "@/lib/api/client";
 import { formatPercent, cn } from "@/lib/utils";
 import { ProvenanceBadge } from "@/components/ui/provenance-badge";
+import { BaseCurrencyNotice, DominantCaption, LeftOutNote, OtherCurrencyLines } from "@/components/ui/other-currency-lines";
+import { HeldRowsLink } from "@/components/held-rows/HeldRowsLink";
+import { SailMark } from "@/components/brand-landing/SailMark";
 import type { PnLData, ProvenanceBlock } from "@/types";
 
 // ── Chart style ───────────────────────────────────────────────────────────────
@@ -61,6 +67,7 @@ function titleCaseKey(key: string): string {
 
 function KPIStrip({ pnl, prov }: { pnl: PnLData; prov?: ProvenanceBlock }) {
   const fmt = useCurrencyFormat();
+  const { org } = useOrgSettings();
   const { t } = useI18n();
   const { kpi } = t.pnl;
 
@@ -118,6 +125,11 @@ function KPIStrip({ pnl, prov }: { pnl: PnLData; prov?: ProvenanceBlock }) {
           {item.margin != null && <MarginBar value={item.margin} />}
         </div>
       ))}
+      </div>
+      <div className="mt-1.5">
+        {pnl.base_state !== "ambiguous" && <BaseCurrencyNotice state={pnl.base_state} base={pnl.currency} />}
+        <OtherCurrencyLines items={pnl.other_currencies} base={pnl.currency ?? effectiveCurrencyOf(org) ?? ""} ratios />
+        <LeftOutNote items={pnl.other_currencies} />
       </div>
     </>
   );
@@ -486,6 +498,51 @@ function PnLStatement({ pnl }: { pnl: PnLData }) {
   );
 }
 
+// ── Running / held / failed ───────────────────────────────────────────────────
+
+/** The run is still going: said so, and the page reads the result by itself when it ends. */
+function RunningState() {
+  const { t } = useI18n();
+  const copy = t.heldAnalysis.pnl;
+  return (
+    <section aria-live="polite" className="m-5 flex items-center gap-4 rounded-xl border border-border bg-card p-5">
+      <span className="shrink-0 animate-pulse text-foreground" aria-hidden="true">
+        <SailMark size={44} />
+      </span>
+      <div className="space-y-1">
+        <h2 className="tc-display m-0 text-[24px] leading-tight">{copy.runningTitle}</h2>
+        <p className="m-0 text-sm text-muted-foreground">{copy.runningBody}</p>
+      </div>
+    </section>
+  );
+}
+
+/** The results are shown, but they are not the company's until a person approves them. */
+function HeldNotice() {
+  const { t } = useI18n();
+  const copy = t.heldAnalysis.pnl;
+  return (
+    <output className="block space-y-1 rounded-md border border-warning/40 bg-warning/5 p-3 text-sm">
+      <p className="m-0 font-medium">{copy.heldTitle}</p>
+      <p className="m-0 text-muted-foreground">{copy.heldBody}</p>
+      <Link href="/onay" className="inline-block font-medium underline underline-offset-2">
+        {copy.heldCta}
+      </Link>
+    </output>
+  );
+}
+
+function FailedState({ reason }: { reason: string | null }) {
+  const { t } = useI18n();
+  const copy = t.heldAnalysis.pnl;
+  return (
+    <div role="alert" className="m-5 space-y-1 rounded-md border border-destructive/30 bg-destructive/5 p-4 text-sm">
+      <p className="m-0 font-medium">{copy.failedTitle}</p>
+      <p className="m-0 text-muted-foreground">{reason ?? copy.noReason}</p>
+    </div>
+  );
+}
+
 // ── Empty state ───────────────────────────────────────────────────────────────
 
 function EmptyState() {
@@ -521,10 +578,17 @@ export default function PnLPage() {
   const searchParams = useSearchParams();
   const jobId = searchParams.get("job");
 
-  const { data: dashboard, isLoading } = useDashboard(jobId);
+  const { data: dashboard, isLoading, running, job } = useDashboard(jobId);
   const { t } = useI18n();
 
-  if (!jobId || (!isLoading && !dashboard)) return <EmptyState />;
+  if (!jobId) return <EmptyState />;
+  if (running) return <RunningState />;
+  if (!isLoading && !dashboard) {
+    if (job?.status === "failed") return <FailedState reason={job.error} />;
+    // Held before any figure was computed (every row waits for a person): say that, not "no data".
+    if (job?.status === "awaiting_review") return <div className="p-5"><HeldNotice /></div>;
+    return <EmptyState />;
+  }
 
   if (isLoading) {
     return (
@@ -546,7 +610,17 @@ export default function PnLPage() {
 
   const pnl = dashboard!.pnl;
 
+  // Several currencies and none confirmed: no single headline. Each currency stands alone, and the figures
+  // below (computed on the dominant one) are labelled with it.
+  const ambiguous = pnl.base_state === "ambiguous";
+  const dominant = {
+    currency: pnl.currency ?? "",
+    revenue_cents: Math.round(pnl.revenue * 100),
+    expense_cents: Math.round((pnl.revenue - pnl.net_income) * 100),
+  };
+
   return (
+    <CurrencyScope currency={pnl.currency}>
     <div className="space-y-4 p-5">
       <div>
         <h1 className="text-lg font-semibold tracking-tight">{t.pnl.title}</h1>
@@ -555,12 +629,25 @@ export default function PnLPage() {
         </p>
       </div>
 
+      {job?.status === "awaiting_review" && <HeldNotice />}
+
+      {/* Rows from this upload that wait for a person are in none of the figures below. */}
+      <HeldRowsLink jobId={jobId} />
+
+      {ambiguous && (
+        <div className="space-y-1" data-testid="pnl-per-currency">
+          <BaseCurrencyNotice state="ambiguous" base={pnl.currency} />
+          <OtherCurrencyLines base="" items={[dominant, ...(pnl.other_currencies ?? [])]} />
+          <DominantCaption currency={pnl.currency} />
+        </div>
+      )}
       <KPIStrip pnl={pnl} prov={dashboard!.provenance?.pnl} />
       <WaterfallChart pnl={pnl} />
       <OpExDrillDown pnl={pnl} />
       <PnLStatement pnl={pnl} />
       <BenchmarkPanel jobId={jobId} />
     </div>
+    </CurrencyScope>
   );
 }
 

@@ -238,11 +238,12 @@ async def _dispatch_monday_briefings() -> None:
         orgs = (await db.execute(select(Organization))).scalars().all()
         for org in orgs:
             try:
-                briefing = await assemble_monday_briefing(db, org.id)
+                anchor = datetime.now(UTC).date()
+                briefing = await assemble_monday_briefing(db, org.id, anchor_date=anchor)
                 if not briefing.has_data:
                     continue  # nothing known about this company: no briefing, no invented calm
                 # E-mail goes through the outbox: once per recipient, held for an accountant.
-                await enqueue_briefing_emails(db, org.id, briefing)
+                await enqueue_briefing_emails(db, org.id, briefing, anchor_date=anchor)
                 # Redis cache
                 try:
                     from app.worker import get_arq_pool
@@ -394,6 +395,7 @@ async def _generate_morning_brief_for_org(org_id: str) -> None:
     from app.database import engine, get_session_factory
     from app.models.analysis_job import AnalysisJob, JobStatus
     from app.models.report import Report, ReportFormat
+    from app.services import morning_brief
     from app.services.alert_router import AlertRouter, RawAlert
 
     logger.info("Scheduler: generating morning executive brief")
@@ -416,12 +418,10 @@ async def _generate_morning_brief_for_org(org_id: str) -> None:
             logger.info("Scheduler: no completed jobs in last 24h — skipping brief")
             return
 
-        # Aggregate dashboard data and alerts
+        # Alerts come from the uploads' reports; FIGURES do not: summing the per-upload
+        # P&L double-counts overlapping uploads. They are read once from the ledger and
+        # the radar (services/morning_brief.py).
         all_raw_alerts: list[RawAlert] = []
-        all_pnl: list[dict] = []
-        all_cashflow: list[dict] = []
-        all_forecast: list[dict] = []
-
         for job in jobs:
             rep_result = await db.execute(
                 select(Report)
@@ -435,92 +435,49 @@ async def _generate_morning_brief_for_org(org_id: str) -> None:
 
             d = rep.data
             ts = job.completed_at or datetime.now(UTC)
-
-            for a in (d.get("cashflow") or {}).get("alerts") or []:
-                all_raw_alerts.append(RawAlert(
-                    level=a.get("level", "warning"),
-                    message=a.get("message", ""),
-                    domain="cfo", source="cashflow",
-                    job_id=job.id, timestamp=ts,
-                ))
-            for a in (d.get("forecast") or {}).get("alerts") or []:
-                all_raw_alerts.append(RawAlert(
-                    level=a.get("level", "warning"),
-                    message=a.get("message", ""),
-                    domain="cfo", source="forecast",
-                    job_id=job.id, timestamp=ts,
-                ))
-
-            if d.get("pnl"):
-                all_pnl.append(d["pnl"])
-            if d.get("cashflow"):
-                all_cashflow.append(d["cashflow"])
-            if d.get("forecast"):
-                all_forecast.append(d["forecast"])
+            for source in ("cashflow", "forecast"):
+                for a in (d.get(source) or {}).get("alerts") or []:
+                    all_raw_alerts.append(RawAlert(
+                        level=a.get("level", "warning"),
+                        message=a.get("message", ""),
+                        domain="cfo", source=source,
+                        job_id=job.id, timestamp=ts,
+                    ))
 
         # Run smart alert router
         router = AlertRouter()
         decisions = router.process_alerts(all_raw_alerts)
         digest = router.build_digest(decisions)
 
-        # Build summary context for LLM
-        avg_net_margin = (
-            sum(p.get("net_margin", 0) for p in all_pnl) / len(all_pnl)
-            if all_pnl else 0
+        facts = await morning_brief.build_facts(
+            db, org_id, job_count=len(jobs), critical_count=len(digest["critical"]),
+            high_count=len(digest["high"]), today=datetime.now(UTC).date(),
         )
-        total_revenue = sum(p.get("revenue", 0) for p in all_pnl)
-        net_cash_changes = [cf.get("net_change", 0) for cf in all_cashflow]
-        avg_cash_change = sum(net_cash_changes) / len(net_cash_changes) if net_cash_changes else 0
+        brief_text = morning_brief.template_brief(facts)
+        narrative = "template"
+        if facts.has_figures:
+            try:
+                from app.platform.model_gateway import complete_text
 
-        # Base runway from first forecast
-        runway = None
-        if all_forecast:
-            base_sc = (all_forecast[0].get("scenarios") or {}).get("base") or {}
-            runway = base_sc.get("runway_months")
-
-        try:
-            from app.platform.model_gateway import complete_text
-
-            critical_msgs = "\n".join(
-                f"• {a['message']}" for a in digest["critical"][:3]
-            ) or "Kritik uyarı yok."
-
-            high_msgs = "\n".join(
-                f"• {a['message']}" for a in digest["high"][:3]
-            ) or "Yüksek öncelikli uyarı yok."
-
-            context = (
-                f"Son 24 saatte tamamlanan analiz sayısı: {len(jobs)}\n"
-                f"Ortalama net kâr marjı: %{avg_net_margin*100:.1f}\n"
-                f"Toplam ciro: {total_revenue:,.0f} TL\n"
-                f"Ortalama nakit değişimi: {avg_cash_change:,.0f} TL\n"
-                f"Nakit ömrü (baz senaryo): {runway or 'bilinmiyor'} ay\n\n"
-                f"Kritik uyarılar:\n{critical_msgs}\n\n"
-                f"Yüksek öncelikli uyarılar:\n{high_msgs}"
-            )
-
-            brief_text = (await complete_text(
-                task="short_narrative",
-                system_prompt=(
-                    "Sen deneyimli bir CEO danışmanısın. "
-                    "Sabah brifingini Türkçe yaz. Yapı:\n"
-                    "• Manşet (1 cümle — bugünün en kritik durumu)\n"
-                    "• Finansal özet (2-3 cümle)\n"
-                    "• Kritik riskler (madde madde, varsa)\n"
-                    "• Bugün yapılması gereken en önemli 3 eylem\n"
-                    "Sade, doğrudan, KOBİ yöneticisinin anlayacağı dilde."
-                ),
-                prompt=f"Veri:\n{context}",
-                max_tokens=700,
-            )).strip()
-        except Exception as exc:
-            logger.warning("Morning brief LLM failed: %s", exc)
-            brief_text = (
-                f"Özet: {len(jobs)} analiz tamamlandı. "
-                f"Net kâr marjı: %{avg_net_margin*100:.1f}. "
-                f"Kritik uyarı: {len(digest['critical'])}. "
-                f"Nakit ömrü: {runway or 'bilinmiyor'} ay."
-            )
+                candidate = await complete_text(
+                    task="short_narrative",
+                    system_prompt=(
+                        "Sen deneyimli bir CEO danışmanısın. Sabah brifingini Türkçe yaz: "
+                        "önce tek cümlelik manşet, sonra kısa finansal özet, varsa riskler. "
+                        "YALNIZCA verilen sayıları kullan; sayı türetme, yuvarlama, madde "
+                        "numarası verme (• kullan). Sade, KOBİ yöneticisinin dilinde."
+                    ),
+                    prompt=morning_brief.llm_prompt(facts),
+                    max_tokens=700,
+                    org_id=org_id,
+                )
+                accepted = morning_brief.accept_narrative(candidate, facts)
+                if accepted is not None:
+                    brief_text, narrative = accepted, "llm"
+                else:
+                    logger.warning("Morning brief narrative rejected: a number is not a fact")
+            except Exception as exc:
+                logger.warning("Morning brief LLM unavailable, using the template: %s", exc)
 
         brief = {
             "generated_at": datetime.now(UTC).isoformat(),
@@ -532,6 +489,9 @@ async def _generate_morning_brief_for_org(org_id: str) -> None:
             "high_count": len(digest["high"]),
             "top_action": digest.get("top_action", ""),
             "digest": digest,
+            "data_date": facts.data_date,
+            "figures_source": morning_brief.SOURCE,
+            "narrative": narrative,
         }
 
         # Store in Redis with 25h TTL (survives until next brief)
@@ -811,11 +771,10 @@ async def _purge_expired_guests(db: Any, *, ttl_hours: int) -> int:
     """
     from datetime import UTC, datetime, timedelta
 
-    from sqlalchemy import or_, select
+    from sqlalchemy import select
 
     from app.models.organization import Organization
     from app.services.demo_template import (
-        GUEST_DESCRIPTION,
         GUEST_SLUG_RE,
         is_guest_org,
         purge_demo_workspace,
@@ -826,10 +785,7 @@ async def _purge_expired_guests(db: Any, *, ttl_hours: int) -> int:
         await db.execute(
             select(Organization).where(
                 Organization.created_at < cutoff,
-                or_(
-                    Organization.slug.like("demo-%"),
-                    Organization.description == GUEST_DESCRIPTION,
-                ),
+                Organization.is_demo_guest.is_(True),
             )
         )
     ).scalars().all()

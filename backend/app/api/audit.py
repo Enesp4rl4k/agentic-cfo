@@ -2,7 +2,6 @@
 Internal Audit API Endpoints
 
 POST /audit/analyze  — Run Internal Audit pipeline
-GET  /audit/health-check
 """
 
 from __future__ import annotations
@@ -16,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.audit.orchestrator import run_audit_pipeline
 from app.agents.run_ledger import recorded_run
+from app.api.access import require_writer
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.user import User
@@ -31,7 +31,7 @@ class AuditAnalyzeRequest(BaseModel):
     audit_period: str | None = None
 
 
-@router.post("/audit/analyze")
+@router.post("/audit/analyze", dependencies=[Depends(require_writer)])
 async def run_audit_analysis(
     body: AuditAnalyzeRequest,
     current_user: User = Depends(get_current_user),
@@ -76,14 +76,3 @@ async def run_audit_analysis(
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Audit analysis failed: {exc}")
 
-
-@router.get("/audit/health-check")
-async def audit_health(current_user: User = Depends(get_current_user)) -> dict[str, Any]:
-    return {
-        "status": "healthy",
-        "service": "internal_audit",
-        "capabilities": [
-            "findings_tracking", "control_effectiveness",
-            "audit_universe_coverage", "maturity_assessment",
-        ],
-    }

@@ -4,8 +4,11 @@ import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { BriefingRelease } from "@/components/bulten/BriefingRelease";
 import { OodaFooter } from "@/components/brand-app/OodaFooter";
 import { RadarCurve } from "@/components/radar/RadarCurve";
+import { RunwayCard } from "@/components/radar/RunwayCard";
+import { formatDay, StaleBalanceNotice } from "@/components/radar/basis";
 import { useCurrencyFormat } from "@/hooks/useCurrencyFormat";
 import { useI18n } from "@/hooks/useI18n";
 import { useOrgSettings } from "@/hooks/useOrgSettings";
@@ -41,11 +44,17 @@ function Stat({ label, value, negative }: Readonly<{ label: string; value: strin
 }
 
 function Stats({ briefing, copy, fmt }: Readonly<{ briefing: MondayBriefing; copy: Copy; fmt: Fmt }>) {
+  const { t } = useI18n();
+  const { org } = useOrgSettings();
   const known = briefing.balance_known;
+  // The opening balance is a statement's, not today's: it is labelled with the statement's day.
+  const cashLabel = briefing.balance_as_of
+    ? t.cashRadar.cashAsOf.replace("{date}", formatDay(briefing.balance_as_of, org?.locale || "tr-TR"))
+    : copy.statToday;
   return (
     <dl className="m-0 grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
       {known && briefing.starting_cash_cents !== null && (
-        <Stat label={copy.statToday} value={fmt(briefing.starting_cash_cents / 100)} negative={briefing.starting_cash_cents < 0} />
+        <Stat label={cashLabel} value={fmt(briefing.starting_cash_cents / 100)} negative={briefing.starting_cash_cents < 0} />
       )}
       <Stat label={copy.statNet} value={fmt(briefing.net_change_cents / 100)} negative={briefing.net_change_cents < 0} />
       {known && <Stat label={copy.statEnd} value={fmt(briefing.end_balance_cents / 100)} negative={briefing.end_balance_cents < 0} />}
@@ -56,6 +65,23 @@ function Stats({ briefing, copy, fmt }: Readonly<{ briefing: MondayBriefing; cop
         />
       )}
     </dl>
+  );
+}
+
+function BriefingRunway({ briefing }: Readonly<{ briefing: MondayBriefing }>) {
+  const { t } = useI18n();
+  const { org } = useOrgSettings();
+  if (!briefing.runway_line) return null;
+  return (
+    <RunwayCard
+      status={briefing.runway_status ?? "no_balance"}
+      level={briefing.runway_level ?? null}
+      basis={briefing.runway_basis ?? null}
+      months={briefing.runway_months ?? null}
+      text={briefing.runway_line}
+      copy={t.cashRadar}
+      locale={org?.locale || "tr-TR"}
+    />
   );
 }
 
@@ -96,7 +122,11 @@ function Answer({ briefing, copy }: Readonly<{ briefing: MondayBriefing; copy: C
       </div>
       {answer.isPending && <p className="m-0 text-sm text-muted-foreground">{copy.saving}</p>}
       {/* Saved is said only once the server has answered that it is. */}
-      {answer.isSuccess && <p className="m-0 text-sm">{copy.saved}</p>}
+      {answer.isSuccess && (
+        <p className="m-0 text-sm">
+          {answer.variables === "done" ? copy.savedDoneUnverified : copy.saved}
+        </p>
+      )}
       {answer.isError && (
         <p className="m-0 text-sm text-destructive" role="alert">
           {copy.saveFailed} {answer.error instanceof Error ? answer.error.message : ""}
@@ -126,7 +156,7 @@ function Route({ copy, fmt }: Readonly<{ copy: Copy; fmt: Fmt }>) {
         onSelect={() => {}}
         copy={t.cashRadar}
         fmt={fmt}
-        locale={org?.locale || "en-US"}
+        locale={org?.locale || "tr-TR"}
       />
     </Card>
   );
@@ -164,6 +194,7 @@ export default function BultenPage() {
   const { t } = useI18n();
   const copy = t.bulten;
   const fmt = useCurrencyFormat();
+  const { org } = useOrgSettings();
   const { data: briefing, isLoading, isError } = useQuery({ queryKey: BRIEFING_KEY, queryFn: getMondayBriefing });
 
   return (
@@ -186,6 +217,8 @@ export default function BultenPage() {
 
       {briefing && briefing.has_data && (
         <>
+          {/* Cash running out comes first, above the week's own answer. */}
+          {briefing.runway_level === "critical" && <BriefingRunway briefing={briefing} />}
           <header className="space-y-3">
             <span className="tc-eyebrow text-muted-foreground">
               {copy.eyebrow.replace("{start}", briefing.week_start).replace("{end}", briefing.week_end)}
@@ -198,11 +231,16 @@ export default function BultenPage() {
             {briefing.fallback_used && <p className="m-0 text-xs text-muted-foreground">{copy.fallbackNote}</p>}
           </header>
 
+          {briefing.runway_level !== "critical" && <BriefingRunway briefing={briefing} />}
           <Stats briefing={briefing} copy={copy} fmt={fmt} />
+          {briefing.balance_known && briefing.balance_stale && briefing.balance_as_of && (
+            <StaleBalanceNotice asOf={briefing.balance_as_of} ageDays={briefing.balance_age_days ?? 0} locale={org?.locale || "tr-TR"} />
+          )}
 
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
             <Route copy={copy} fmt={fmt} />
             <div className="space-y-4">
+              <BriefingRelease briefing={briefing} />
               <Decisions copy={copy} />
               <Answer briefing={briefing} copy={copy} />
             </div>

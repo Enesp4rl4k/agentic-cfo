@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/hooks/useI18n";
+import { useCan } from "@/hooks/useCan";
 import {
   validateAndUpload, acceptColumnMapping,
   type ValidationResult, type ColumnInfo,
@@ -16,6 +17,9 @@ import {
 import { MultiBatchUpload } from "@/components/upload/MultiBatchUpload";
 import { QuickDemoBanner } from "@/components/demo/QuickDemoBanner";
 import { POST_UPLOAD_ROUTE } from "@/lib/routes";
+import { useQuery } from "@tanstack/react-query";
+import { IngestCounts } from "@/components/held-rows/IngestCounts";
+import { getJobStatus } from "@/lib/api/cfo";
 import { apiClient } from "@/lib/api/client";
 
 // ── Health score helpers ──────────────────────────────────────────────────────
@@ -245,12 +249,13 @@ function DropZone({
   const [dragging, setDragging] = useState(false);
   const { t } = useI18n();
   const { dropzone } = t.upload;
+  const can = useCan("upload");
 
   function handleDrop(e: React.DragEvent) {
     e.preventDefault();
     setDragging(false);
     const file = e.dataTransfer.files[0];
-    if (file) onFile(file);
+    if (file && can.allowed) onFile(file);
   }
 
   return (
@@ -258,8 +263,10 @@ function DropZone({
       role="button"
       tabIndex={0}
       aria-label={dropzone.aria}
-      onClick={() => inputRef.current?.click()}
-      onKeyDown={(e) => e.key === "Enter" && inputRef.current?.click()}
+      aria-disabled={can.allowed ? undefined : true}
+      title={can.reason ?? undefined}
+      onClick={() => can.allowed && inputRef.current?.click()}
+      onKeyDown={(e) => e.key === "Enter" && can.allowed && inputRef.current?.click()}
       onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
       onDragLeave={() => setDragging(false)}
       onDrop={handleDrop}
@@ -267,7 +274,8 @@ function DropZone({
         "flex flex-col items-center justify-center gap-4 rounded-2xl border-2 border-dashed p-12 transition-colors cursor-pointer",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         dragging ? "border-primary bg-primary/5" : "border-border hover:border-primary/40 hover:bg-muted/30",
-        loading && "pointer-events-none opacity-60"
+        loading && "pointer-events-none opacity-60",
+        !can.allowed && "cursor-not-allowed opacity-60"
       )}
     >
       <div className={cn(
@@ -290,6 +298,7 @@ function DropZone({
         <p className="mt-1 text-xs text-muted-foreground">
           {dropzone.limits}
         </p>
+        {!can.allowed && <p className="mt-2 text-xs font-medium">{can.reason}</p>}
       </div>
 
       <input
@@ -297,6 +306,7 @@ function DropZone({
         type="file"
         accept=".csv,.xlsx,.pdf,.xml"
         className="sr-only"
+        disabled={!can.allowed}
         onChange={(e) => {
           const file = e.target.files?.[0];
           if (file) onFile(file);
@@ -348,6 +358,14 @@ export default function UploadPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Where every row of the upload went, as soon as the run has read it (polled while this screen shows).
+  const ingestCounts = useQuery({
+    queryKey: ["job-ingest", jobId],
+    queryFn: () => getJobStatus(jobId as string),
+    enabled: phase === "done" && Boolean(jobId),
+    refetchInterval: (q) => (q.state.data?.ingest ? false : 2000),
+  });
 
   // Auto-redirect to dashboard once job is ready
   useEffect(() => {
@@ -677,6 +695,7 @@ export default function UploadPage() {
               {up.done.body}
             </p>
           </div>
+          <IngestCounts ingest={ingestCounts.data?.ingest} />
           {/* Fallback manual button in case redirect is slow */}
           <button
             onClick={goToDashboard}

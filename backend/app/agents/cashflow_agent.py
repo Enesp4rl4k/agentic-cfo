@@ -15,6 +15,15 @@ from typing import Any
 from app.agents.narrative_guard import narrative_guard
 from app.agents.state import AgentRunConfig, CFOState, SkillResult
 from app.config import get_settings
+from app.core.currency_totals import (
+    DEFAULT_BASE,
+    currency_note,
+    fmt_amount,
+    foreign_summaries,
+    normalise,
+    split_by_currency,
+)
+from app.services.coverage import annotate_series, extents_for, next_month
 from app.services.ledger import BOOK
 from app.services.telemetry import trace_agent
 
@@ -28,12 +37,26 @@ INVESTING_CATEGORIES: set[str] = set()   # extend when asset purchases are added
 FINANCING_CATEGORIES = {"loan"}
 
 
-def _fmt(cents: int) -> str:
-    return f"₺{cents / 100:,.2f}"
+def _fmt(cents: int, currency: str | None = None) -> str:
+    """Kuruş as an amount labelled with the figures' own currency; bare when none is known."""
+    return fmt_amount(cents / 100, currency, 2)
 
 
-def _classify_cashflow(transactions: list[dict[str, Any]]) -> dict[str, Any]:
-    """Pure calculation — classifies each transaction and sums by activity."""
+def _classify_cashflow(
+    transactions: list[dict[str, Any]],
+    base_currency: str | None = None,
+    foreign_totals: list[dict[str, Any]] | None = None,
+    base_state: str | None = None,
+) -> dict[str, Any]:
+    """Pure calculation — classifies each transaction and sums by activity.
+
+    Only `base_currency` rows (default TRY) are summed; another currency is its own
+    sub-total in `other_currencies`, never added in (`core/currency_totals`).
+    """
+    base = normalise(base_currency) or DEFAULT_BASE
+    everything = transactions
+    transactions, other = split_by_currency(transactions, base)
+    foreign = foreign_summaries(everything, everything, base) if other else list(foreign_totals or [])
     operating_in = operating_out = 0
     investing_in = investing_out = 0
     financing_in = financing_out = 0
@@ -84,7 +107,7 @@ def _classify_cashflow(transactions: list[dict[str, Any]]) -> dict[str, Any]:
     # DSO (Days Sales Outstanding): how long to collect receivables
     # DIO (Days Inventory Outstanding): how long inventory sits (0 for service cos)
     # DPO (Days Payable Outstanding): how long to pay suppliers
-    ccc = _compute_ccc(transactions, operating_in, operating_out)
+    ccc = _compute_ccc(transactions, operating_in, operating_out, base)
 
     return {
         "operating": operating,
@@ -94,6 +117,10 @@ def _classify_cashflow(transactions: list[dict[str, Any]]) -> dict[str, Any]:
         "financing": financing,
         "net_change": net_change,
         "monthly_series": monthly_series,
+        "currency": base,
+        "other_currencies": foreign,
+        "base_state": base_state,
+        "currency_note": currency_note(base, foreign, "cash", base_state),
         # CCC metrics
         "dso_days": ccc["dso_days"],
         "dpo_days": ccc["dpo_days"],
@@ -110,6 +137,7 @@ def _compute_ccc(
     transactions: list[dict[str, Any]],
     total_revenue_cents: int,
     total_expenses_cents: int,
+    currency: str | None = None,
 ) -> dict[str, Any]:
     """
     Nakit döngüsü — ölçüm değil, tahmin.
@@ -175,8 +203,8 @@ def _compute_ccc(
         "dpo_days": dpo_days,
         "ccc_days": ccc_days,
         "olcum": "tahmin",
-        "dayanak": (f"Ortalama tahsilat {avg_invoice_size / 100:,.0f} TL, ortalama ödeme "
-                    f"{avg_expense_size / 100:,.0f} TL; gün sayıları bu büyüklüklere göre seçilen bantlar."),
+        "dayanak": (f"Ortalama tahsilat {fmt_amount(avg_invoice_size / 100, currency)}, ortalama ödeme "
+                    f"{fmt_amount(avg_expense_size / 100, currency)}; gün sayıları bu büyüklüklere göre seçilen bantlar."),
         "interpretation": interpretation,
     }
 
@@ -188,7 +216,7 @@ def _detect_alerts(cashflow: dict[str, Any]) -> list[dict[str, str]]:
     if cashflow["net_change"] < 0:
         alerts.append({
             "level": "warning",
-            "message": f"Net nakit akışı negatif: {_fmt(cashflow['net_change'])}. Nakit dengesini izleyin.",
+            "message": f"Net nakit akışı negatif: {_fmt(cashflow['net_change'], cashflow.get('currency'))}. Nakit dengesini izleyin.",
         })
 
     if cashflow["operating"] < 0:
@@ -197,9 +225,15 @@ def _detect_alerts(cashflow: dict[str, Any]) -> list[dict[str, str]]:
             "message": "Faaliyet nakit akışı negatif — işletme, faaliyetlerini kendi nakit akışıyla finanse edemiyor. Acil önlem gerekiyor.",
         })
 
-    series = cashflow.get("monthly_series", [])
+    # Only complete months count, and only when consecutive: a month the data covers in part, or
+    # a skipped month, is not a month of negative cash flow.
+    series = [m for m in cashflow.get("monthly_series", []) if m.get("complete") is not False]
     neg_streak = 0
+    previous: str | None = None
     for entry in series:
+        if previous is not None and next_month(previous) != entry["month"]:
+            neg_streak = 0
+        previous = entry["month"]
         if entry["net"] < 0:
             neg_streak += 1
         else:
@@ -251,12 +285,18 @@ async def run_cashflow(state: CFOState, config: AgentRunConfig) -> SkillResult:
     # company holding only invoices has no cash movement yet, which is an answer.
     ledger = state.get("ledger_view")
     transactions = ledger["cash"] if ledger is not None else state.get("transactions", [])
-    if not transactions and ledger is None:
+    if not transactions and ledger is None and not state.get("foreign_totals"):
         return SkillResult(ok=False, detail="No transactions for cash flow analysis.", halt=True)
 
     try:
         settings = get_settings()
-        cashflow = _classify_cashflow(transactions)
+        cashflow = _classify_cashflow(
+            transactions, state.get("base_currency"), state.get("foreign_totals"), state.get("base_state"))
+        # Which months the rows cover whole: a month a statement only starts or ends in is not
+        # a month of cash movement (and a month nothing covers is missing, not zero).
+        cashflow["monthly_series"] = annotate_series(
+            cashflow["monthly_series"], transactions, extents_for(state)  # type: ignore[arg-type]
+        )
         alerts = _detect_alerts(cashflow)
         # Rows read from an e-Defter journal are accrual income-statement lines:
         # a sale counts when invoiced, paid or not. Classified as cash they make
@@ -282,8 +322,9 @@ async def run_cashflow(state: CFOState, config: AgentRunConfig) -> SkillResult:
         cashflow["alerts"] = alerts
         cashflow["narrative"] = narrative
 
-        has_critical = any(a["level"] == "critical" for a in alerts)
-        confidence = 0.90 if not has_critical else 0.85
+        # Alerts are findings about the company, shown with their basis; none of them holds
+        # the run (a hold asks a person about THIS upload) and bad news is not doubt.
+        confidence = 0.90
 
         # S3-3: Attach cashflow evidence
         try:
@@ -296,10 +337,10 @@ async def run_cashflow(state: CFOState, config: AgentRunConfig) -> SkillResult:
             ok=True,
             patch={"cashflow": cashflow},
             confidence=confidence,
-            needs_review=has_critical,
+            needs_review=False,
             detail=(
-                f"Cash flow: operating={_fmt(cashflow['operating'])}, "
-                f"net={_fmt(cashflow['net_change'])}, "
+                f"Cash flow: operating={_fmt(cashflow['operating'], cashflow.get('currency'))}, "
+                f"net={_fmt(cashflow['net_change'], cashflow.get('currency'))}, "
                 f"alerts={len(alerts)}"
             ),
         )

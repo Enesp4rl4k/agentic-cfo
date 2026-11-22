@@ -2,10 +2,14 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BookOpen } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { CanButton } from "@/components/ui/can-button";
 import { Card } from "@/components/ui/card";
 import { useCurrencyFormat } from "@/hooks/useCurrencyFormat";
 import { useI18n } from "@/hooks/useI18n";
+import { BaseCurrencyNotice, OtherCurrencyLines } from "@/components/ui/other-currency-lines";
+import { useOrgSettings } from "@/hooks/useOrgSettings";
+import { formatCurrency } from "@/lib/utils";
+import { failureMessage } from "@/lib/forbidden";
 import {
   getLedgerSummary,
   getPossibleDuplicates,
@@ -23,6 +27,12 @@ export function LedgerCard() {
   const { t } = useI18n();
   const copy = t.ledger;
   const fmt = useCurrencyFormat();
+  const { org } = useOrgSettings();
+  // A row in another currency is shown in its own, never in the base currency's symbol.
+  const fmtIn = (value: number, currency?: string) =>
+    currency && currency !== (org?.base_currency || currency)
+      ? formatCurrency(value, currency, org?.locale || "tr-TR")
+      : fmt(value);
   const queryClient = useQueryClient();
   const { data: summary } = useQuery({ queryKey: SUMMARY_KEY, queryFn: getLedgerSummary });
   const { data: duplicates } = useQuery({ queryKey: DUPLICATES_KEY, queryFn: getPossibleDuplicates });
@@ -44,6 +54,8 @@ export function LedgerCard() {
     },
   });
 
+  const failure = settle.error ?? decide.error;
+
   if (!summary?.rows && !duplicates?.length) return null;
 
   return (
@@ -55,6 +67,11 @@ export function LedgerCard() {
         </p>
         <p className="mt-0.5 text-xs text-muted-foreground">{copy.body}</p>
       </div>
+      {failure && (
+        <p role="alert" className="text-xs text-red-400">
+          {failureMessage(failure, copy.actionError, t.roleGate.forbidden)}
+        </p>
+      )}
       {summary && (
         <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
           <div>
@@ -65,15 +82,39 @@ export function LedgerCard() {
             <dt className="text-xs text-muted-foreground">{copy.rows}</dt>
             <dd className="font-medium tabular-nums">{summary.rows}</dd>
           </div>
-          <div>
-            <dt className="text-xs text-muted-foreground">{copy.revenue}</dt>
-            <dd className="font-medium tabular-nums">{fmt(summary.revenue_cents / 100)}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-muted-foreground">{copy.expense}</dt>
-            <dd className="font-medium tabular-nums">{fmt(summary.expense_cents / 100)}</dd>
-          </div>
+          {summary.currency && (
+            <>
+              <div>
+                <dt className="text-xs text-muted-foreground">{copy.revenue}</dt>
+                <dd className="font-medium tabular-nums">{fmtIn(summary.revenue_cents / 100, summary.currency)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-muted-foreground">{copy.expense}</dt>
+                <dd className="font-medium tabular-nums">{fmtIn(summary.expense_cents / 100, summary.currency)}</dd>
+              </div>
+            </>
+          )}
         </dl>
+      )}
+      {summary && !summary.currency && summary.currency_totals.length > 0 && (
+        /* No single headline: every currency on its own, side by side. */
+        <dl className="grid gap-2 text-sm sm:grid-cols-2" data-testid="per-currency-totals">
+          {summary.currency_totals.map((c) => (
+            <div key={c.currency} className="rounded-md border border-border p-2">
+              <dt className="text-xs font-medium text-muted-foreground">{c.currency}</dt>
+              <dd className="tabular-nums">
+                {copy.revenue}: {fmtIn((c.revenue_cents ?? 0) / 100, c.currency)} · {copy.expense}:{" "}
+                {fmtIn((c.expense_cents ?? 0) / 100, c.currency)}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      {summary && (
+        <BaseCurrencyNotice state={summary.base_state} base={summary.currency} confirmPath={summary.confirm_path} />
+      )}
+      {summary && summary.currency && (
+        <OtherCurrencyLines items={summary.other_currencies} base={summary.currency} ratios />
       )}
       {summary && summary.open_items.receivable_cents + summary.open_items.payable_cents > 0 && (
         <p className="text-xs">
@@ -100,7 +141,7 @@ export function LedgerCard() {
               <li key={s.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border p-3">
                 <div className="min-w-0 text-xs">
                   <p className="font-medium tabular-nums">
-                    {s.row.transaction_date} · {fmt(s.amount_cents / 100)}
+                    {s.row.transaction_date} · {fmtIn(s.amount_cents / 100, s.row.currency)}
                   </p>
                   <p>{s.row.description}</p>
                   {(s.items?.length ? s.items : [s.item]).map((it, k) => (
@@ -112,14 +153,14 @@ export function LedgerCard() {
                   ))}
                 </div>
                 <div className="flex shrink-0 gap-2">
-                  <Button size="sm" variant="outline" disabled={settle.isPending}
+                  <CanButton action="edit" size="sm" variant="outline" disabled={settle.isPending}
                     onClick={() => settle.mutate({ id: s.id, action: "confirm" })}>
                     {copy.settleYes}
-                  </Button>
-                  <Button size="sm" variant="outline" disabled={settle.isPending}
+                  </CanButton>
+                  <CanButton action="edit" size="sm" variant="outline" disabled={settle.isPending}
                     onClick={() => settle.mutate({ id: s.id, action: "reject" })}>
                     {copy.settleNo}
-                  </Button>
+                  </CanButton>
                 </div>
               </li>
             ))}
@@ -134,7 +175,7 @@ export function LedgerCard() {
               <li key={row.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border p-3">
                 <div className="min-w-0 text-xs">
                   <p className="font-medium tabular-nums">
-                    {row.transaction_date} · {fmt(row.amount_cents / 100)}
+                    {row.transaction_date} · {fmtIn(row.amount_cents / 100, row.currency)}
                   </p>
                   <p>{row.description}</p>
                   {row.matches?.map((match) => (
@@ -144,22 +185,22 @@ export function LedgerCard() {
                   ))}
                 </div>
                 <div className="flex shrink-0 gap-2">
-                  <Button
+                  <CanButton action="edit"
                     size="sm"
                     variant="outline"
                     disabled={decide.isPending}
                     onClick={() => decide.mutate({ id: row.id, action: "keep" })}
                   >
                     {copy.keep}
-                  </Button>
-                  <Button
+                  </CanButton>
+                  <CanButton action="edit"
                     size="sm"
                     variant="outline"
                     disabled={decide.isPending}
                     onClick={() => decide.mutate({ id: row.id, action: "exclude" })}
                   >
                     {copy.exclude}
-                  </Button>
+                  </CanButton>
                 </div>
               </li>
             ))}

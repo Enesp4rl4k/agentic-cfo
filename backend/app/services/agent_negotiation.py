@@ -231,7 +231,7 @@ class CFONegotiationScenarios(AgentNegotiator):
                         "context":       "cash_crisis",
                         "months_ahead":  3,
                     },
-                    "fallback": {"planned_hires": 0, "deferrable": True},
+                    "fallback": {"planned_hires": None, "deferrable": None},
                 },
                 {
                     "to":      "cto",
@@ -240,7 +240,7 @@ class CFONegotiationScenarios(AgentNegotiator):
                         "runway_months": runway_months,
                         "max_cut_pct":   0.30,
                     },
-                    "fallback": {"savings_try": 0, "velocity_impact_pct": 0},
+                    "fallback": {"savings_try": None, "velocity_impact_pct": None},
                 },
                 {
                     "to":      "cmo",
@@ -249,7 +249,7 @@ class CFONegotiationScenarios(AgentNegotiator):
                         "runway_months": runway_months,
                         "ask":           "can_reduce_spend",
                     },
-                    "fallback": {"reducible_pct": 0.20, "revenue_impact_pct": 0.05},
+                    "fallback": {"reducible_pct": None, "revenue_impact_pct": None},
                 },
             ],
             org_id = org_id,
@@ -260,15 +260,13 @@ class CFONegotiationScenarios(AgentNegotiator):
         cto_data   = results[1].response_data
         cmo_data   = results[2].response_data
 
-        # Revize senaryo hesapla
-        monthly_savings = (
-            cto_data.get("savings_try", 0) +
-            cmo_data.get("monthly_savings_try", 0)
+        # An agent that did not answer contributes nothing: its fallback carries no figures. No revised
+        # runway is computed: the former formula (savings / 100,000 x 0.5 + delayed hires x 0.3) was a
+        # guess, and a runway has exactly one source (`services/runway.py`).
+        monthly_savings = sum(
+            v for v in (cto_data.get("savings_try"), cmo_data.get("monthly_savings_try"))
+            if isinstance(v, (int, float))
         )
-        hire_delay_months = chro_data.get("deferrable_months", 0)
-
-        # Nakit omru revizyonu (basit yaklaşim)
-        revised_runway = runway_months + (monthly_savings / max(1, 100_000)) * 0.5 + hire_delay_months * 0.3
 
         # Broadcast: revize senaryo hazir
         await self.broadcast_finding(
@@ -276,11 +274,16 @@ class CFONegotiationScenarios(AgentNegotiator):
             payload    = {
                 "trigger":         "cash_crisis",
                 "original_runway": runway_months,
-                "revised_runway":  round(revised_runway, 1),
+                "revised_runway":  None,
                 "actions_taken":   [
-                    f"CHRO: {chro_data.get('planned_hires', 0)} ise alim ertelendi",
-                    f"CTO: aylık ₺{cto_data.get('savings_try', 0):,.0f} tasarruf",
-                    f"CMO: pazarlama %{cmo_data.get('reducible_pct', 0)*100:.0f} azaltildi",
+                    text for text in (
+                        f"CHRO: {chro_data['planned_hires']} ise alim ertelendi"
+                        if chro_data.get("planned_hires") is not None else None,
+                        f"CTO: aylık {cto_data['savings_try']:,.0f} tasarruf"
+                        if cto_data.get("savings_try") is not None else None,
+                        f"CMO: pazarlama %{cmo_data['reducible_pct']*100:.0f} azaltildi"
+                        if cmo_data.get("reducible_pct") is not None else None,
+                    ) if text
                 ],
             },
             org_id = org_id,
@@ -291,7 +294,7 @@ class CFONegotiationScenarios(AgentNegotiator):
             "hiring_plan":  chro_data,
             "tech_savings": cto_data,
             "marketing_roi": cmo_data,
-            "revised_runway": round(revised_runway, 1),
+            "revised_runway": None,
             "monthly_savings_total": round(monthly_savings),
             "negotiation_logs": [
                 {
@@ -471,7 +474,7 @@ class CTONegotiationResponder(AgentNegotiator):
             # The 0.8 factor below is a rule of thumb, not a measured relation.
             "velocity_olcum":          "kural",
             "recommendation": (
-                f"Cloud optimizasyonu ile aylik ₺{cloud_savings:,.0f} tasarruf guvenli. "
+                f"Cloud optimizasyonu ile aylik {cloud_savings:,.0f} tasarruf guvenli. "
                 f"Bunun otesinde velocity %{velocity_loss*100:.0f} duser."
             ),
         }

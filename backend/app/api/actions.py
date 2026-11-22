@@ -9,12 +9,17 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.access import current_user_org_matches
+from app.api.access import current_user_org_matches, require_decider
 from app.api.auth import get_current_user
+from app.database import get_db
+from app.models.decision import DecidedVia, DecisionKind
 from app.models.user import User
-from app.services.execution.action_runner import get_action_runner
+from app.services.decisions import record_decision
+from app.services.execution.action_runner import NOT_CONNECTED, NOT_FOUND, get_action_runner
 from app.services.negotiation.boardroom_memory import get_boardroom_memory
 
 router = APIRouter(tags=["actions"])
@@ -53,13 +58,15 @@ async def get_pending_actions(
     }
 
 
-@router.post("/actions/{action_id}/approve")
+@router.post("/actions/{action_id}/approve",
+    dependencies=[Depends(require_decider)])
 async def approve_action(
     action_id: str,
     body: ActionApproveRequest | None = None,
     user: User = Depends(get_current_user),
-) -> dict[str, Any]:
-    """CEO'nun aksiyonu onaylayarak ilgili sisteme (ERP, Ads vb.) göndermesini sağlar."""
+    db: AsyncSession = Depends(get_db),
+) -> Any:
+    """Onay isteği. Hiçbir aksiyon türünün bağlayıcısı yok: 501 `action_not_connected`, hiçbir şey yapılmaz."""
     # An approved action is sent to an external system (ERP, ads). Actions had
     # no organisation, so any user could execute any company's.
     action = get_boardroom_memory().get_action_by_id(action_id)
@@ -73,26 +80,55 @@ async def approve_action(
         custom_params=params,
     )
 
+    # The person's yes is recorded whatever came of it: an approval that ran nothing (not connected)
+    # says so in its outcome, so the log never reads as if something had been done.
+    if (result.success or result.outcome == NOT_CONNECTED) and user.org_id:
+        await record_decision(
+            db, org_id=str(user.org_id), kind=DecisionKind.ACTION_DECISION, target_type="boardroom_action",
+            target_id=action_id,
+            outcome="approved" if result.success else "approved_not_executed",
+            decided_via=DecidedVia.HUMAN, decided_by=str(user.id),
+            evidence_refs=[{"type": "boardroom_debate", "id": action.debate_id}] if action.debate_id else None,
+            after={"executed": bool(result.success), "result": result.outcome, "action_kind": result.action_kind},
+        )
+        await db.commit()
+
+    if result.outcome == NOT_CONNECTED:
+        # Honest outcome: nothing was called, nothing was recorded as done. 501 so
+        # the screen can say "not connected" instead of showing a success.
+        return JSONResponse(
+            status_code=501,
+            content={
+                "detail": result.message,
+                "error_code": "action_not_connected",
+                "executed": False,
+                "action_id": action_id,
+                "action_kind": result.action_kind,
+            },
+        )
     if not result.success:
-        raise HTTPException(status_code=400, detail=result.message)
+        status = 404 if result.outcome == NOT_FOUND else 409
+        raise HTTPException(status_code=status, detail=result.message)
 
     return {
         "status": "executed",
         "action_id": action_id,
         "result": {
             "message": result.message,
-            "target_system": result.target_system,
+            "action_kind": result.action_kind,
             "payload": result.payload,
             "timestamp": result.timestamp,
         },
     }
 
 
-@router.post("/actions/{action_id}/reject")
+@router.post("/actions/{action_id}/reject",
+    dependencies=[Depends(require_decider)])
 async def reject_action(
     action_id: str,
     body: ActionRejectRequest,
     user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """CEO'nun aksiyonu reddetmesi."""
     # An approved action is sent to an external system (ERP, ads). Actions had
@@ -108,4 +144,12 @@ async def reject_action(
     )
     if not success:
         raise HTTPException(status_code=404, detail="Aksiyon bulunamadı.")
+    if user.org_id:
+        await record_decision(
+            db, org_id=str(user.org_id), kind=DecisionKind.ACTION_DECISION, target_type="boardroom_action",
+            target_id=action_id, outcome="rejected", decided_via=DecidedVia.HUMAN, decided_by=str(user.id),
+            reason=body.reason,
+            evidence_refs=[{"type": "boardroom_debate", "id": action.debate_id}] if action.debate_id else None,
+        )
+        await db.commit()
     return {"status": "rejected", "action_id": action_id, "reason": body.reason}

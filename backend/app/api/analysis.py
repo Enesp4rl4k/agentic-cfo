@@ -6,11 +6,14 @@ from pydantic import BaseModel
 from sqlalchemy import desc, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import require_contributor, require_writer
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.analysis_job import AnalysisJob, JobStatus
+from app.models.decision import DecidedVia, DecisionKind
 from app.models.transaction import Transaction
 from app.models.user import User
+from app.services.decisions import record_decision
 
 router = APIRouter()
 
@@ -31,7 +34,8 @@ class AnalyzeRequest(BaseModel):
     budget_input: dict[str, Any] | None = None
 
 
-@router.post("/analyze/{job_id}")
+@router.post("/analyze/{job_id}",
+    dependencies=[Depends(require_contributor)])
 async def start_analysis(
     job_id: str,
     request: Request,
@@ -86,6 +90,7 @@ async def start_analysis(
 
 @router.post(
     "/analysis/{job_id}/rerun",
+    dependencies=[Depends(require_contributor)],
     responses={
         404: {"description": "Job not found."},
         409: {"description": "Job is under review, still running, or its SMMM packet is finalized."},
@@ -140,6 +145,7 @@ async def rerun_analysis(
 
 @router.post(
     "/analysis/{job_id}/company-view",
+    dependencies=[Depends(require_writer)],
     responses={
         404: {"description": "Job not found."},
         409: {"description": "Job is not completed or has no dashboard."},
@@ -178,6 +184,11 @@ async def apply_as_company_view(
     org_id = str(job.org_id)
     chain_result = cfo_chain_result(job_id, result)
     await apply_company_view(job_id, org_id, chain_result, db, force=True)
+    await record_decision(
+        db, org_id=org_id, kind=DecisionKind.COMPANY_VIEW_ADOPTION, target_type="analysis_job", target_id=job_id,
+        outcome="applied", decided_via=DecidedVia.HUMAN, decided_by=str(current_user.id),
+    )
+    await db.commit()
     spawn_auto_chain(job_id, org_id, chain_result)
     return {"data": {"job_id": job_id, "company_view": True}, "error": None}
 
@@ -207,6 +218,18 @@ async def _idempotency_seized(user_id: str, key: str) -> bool:
     return not bool(acquired)
 
 
+@router.get("/analyses/held")
+async def list_held_analyses(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Analyses of this company waiting for a person's decision, each with why it was held."""
+    from app.services import held_analysis
+
+    jobs = await held_analysis.list_held(db, current_user.org_id, current_user.id)
+    return {"data": [held_analysis.describe(j) for j in jobs], "error": None}
+
+
 @router.get("/analysis/{job_id}")
 async def get_analysis_status(
     job_id: str,
@@ -224,9 +247,12 @@ async def get_analysis_status(
             "status": job.status,
             "filename": job.filename,
             "awaiting_review": job.awaiting_review,
-            "min_confidence": float(job.min_confidence) if job.min_confidence else None,
+            "min_confidence": float(job.min_confidence) if job.min_confidence is not None else None,
             # What this upload added to the company ledger; None until it finished.
             "ledger": (job.result_metadata or {}).get("ledger"),
+            # "N kayıt işlendi, M kayıt incelemenizi bekliyor", the rows without a
+            # readable date, the rows whose currency was assumed.
+            "ingest": (job.result_metadata or {}).get("ingest"),
             "company_view": (job.result_metadata or {}).get("company_view"),
             "logs": job.logs or [],
             "error": job.error_message,
@@ -237,7 +263,8 @@ async def get_analysis_status(
     }
 
 
-@router.post("/analysis/{job_id}/approve")
+@router.post("/analysis/{job_id}/approve",
+    dependencies=[Depends(require_writer)])
 async def approve_review(
     job_id: str,
     current_user: User = Depends(get_current_user),
@@ -283,9 +310,12 @@ async def approve_review(
         .execution_options(synchronize_session=False)
     )
     result = await db.execute(stmt)
-    await db.commit()
     if result.rowcount != 1:
+        await db.rollback()
         raise HTTPException(status_code=409, detail="Job is not awaiting review.")
+    # The decision commits with the status it records, or neither does.
+    await _record_review_decision(db, job, current_user, "approved", None)
+    await db.commit()
 
     if job.org_id:
         # Off the request (it reruns the semantic snapshot and the chain, ~20s
@@ -295,6 +325,79 @@ async def approve_review(
 
         await devami_baslat(job_id)
     return {"data": {"job_id": job_id, "approved": True, "status": JobStatus.COMPLETED.value}, "error": None}
+
+
+class RejectBody(BaseModel):
+    reason: str | None = None
+
+
+@router.post("/analysis/{job_id}/reject",
+    dependencies=[Depends(require_writer)])
+async def reject_review(
+    job_id: str,
+    body: RejectBody | None = None,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """A person refuses a held analysis: it stays on record as failed, out of the company view.
+
+    Nothing of it reached the ledger, the company view or the radar while it was held, so
+    refusing it removes nothing; the file can be uploaded again.
+    """
+    job = await db.get(AnalysisJob, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    _check_job_access(job, current_user)
+    if not job.awaiting_review:
+        raise HTTPException(status_code=409, detail="Job is not awaiting review.")
+    now = datetime.now(UTC)
+    reason = (body.reason.strip() if body and body.reason else "") or None
+    meta = dict(job.result_metadata or {})
+    meta["review"] = {"rejected_by": current_user.id, "rejected_at": now.isoformat(), "reason": reason}
+    result = await db.execute(
+        update(AnalysisJob)
+        .where(AnalysisJob.id == job_id, AnalysisJob.awaiting_review.is_(True))
+        .values(
+            awaiting_review=False,
+            status=JobStatus.FAILED,
+            error_message=reason or "Sahibi tarafından reddedildi.",
+            updated_at=now,
+            result_metadata=meta,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    if result.rowcount != 1:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Job is not awaiting review.")
+    await _record_review_decision(db, job, current_user, "rejected", reason)
+    await db.commit()
+    return {"data": {"job_id": job_id, "approved": False, "status": JobStatus.FAILED.value}, "error": None}
+
+
+async def _record_review_decision(
+    db: AsyncSession, job: AnalysisJob, user: User, outcome: str, reason: str | None
+) -> None:
+    """The held run's release is a decision of a person: who, when, on which analysis."""
+    if not job.org_id:
+        return
+    from app.models.decision import DecidedVia, DecisionKind
+    from app.services.decisions import record_decision
+    from app.services.held_analysis import why_held
+
+    await record_decision(
+        db,
+        org_id=job.org_id,
+        kind=DecisionKind.HELD_RUN_RELEASE,
+        target_type="analysis_job",
+        target_id=job.id,
+        outcome=outcome,
+        decided_via=DecidedVia.HUMAN,
+        decided_by=user.id,
+        reason=reason,
+        evidence_refs=[{"type": "analysis_job", "id": job.id}],
+        before={"status": JobStatus.AWAITING_REVIEW.value, "reasons": [r["code"] for r in why_held(job)]},
+        after={"status": JobStatus.COMPLETED.value if outcome == "approved" else JobStatus.FAILED.value},
+    )
 
 
 @router.get("/analysis/{job_id}/decision-packet")
@@ -395,23 +498,39 @@ async def list_transactions(
     )
     txs = result.scalars().all()
 
+    # How this list's currencies are read: the same effective-base rule every surface uses, over the whole
+    # job (not the page). The list itself holds every row, each in its own currency, nothing left out.
+    from app.core.currency_totals import effective_base
+    from app.services.ledger import confirmed_base_of
+
+    job_counts = {
+        str(c): int(n) for c, n in (await db.execute(
+            select(Transaction.currency, func.count()).where(Transaction.job_id == job_id)
+            .group_by(Transaction.currency)
+        )).all()
+    }
+    base = effective_base(await confirmed_base_of(db, str(job.org_id)) if job.org_id else None, job_counts)
+
     return {
         "data": {
             "total": total,
             "limit": limit,
             "offset": offset,
+            "base": base.as_dict(),
             "transactions": [
                 {
                     "id": tx.id,
                     "job_id": tx.job_id,
                     "amount_cents": tx.amount_kurus,
                     "currency": tx.currency,
+                    # True: the document did not say, the organisation's base currency was assumed.
+                    "currency_assumed": bool(tx.currency_assumed),
                     "type": tx.type,
                     "category": tx.category,
                     "description": tx.description,
                     "vendor": tx.vendor,
                     "transaction_date": tx.transaction_date.isoformat() if tx.transaction_date else None,
-                    "confidence": float(tx.confidence) if tx.confidence else None,
+                    "confidence": float(tx.confidence) if tx.confidence is not None else None,
                     # "user_rule" / "user_edit" / None — the user's own
                     # correction decided the category (plan v5 §F0).
                     "category_source": tx.category_source,

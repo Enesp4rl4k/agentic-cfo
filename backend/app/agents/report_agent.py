@@ -22,6 +22,7 @@ from typing import Any
 from app.agents.state import AgentRunConfig, CFOState, SkillResult
 from app.config import get_settings
 from app.core.container import get_report_exporter
+from app.services.runway_display import runway_for_display
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,20 @@ logger = logging.getLogger(__name__)
 def _fmt(cents: float) -> float | str:
     """Format cents to major currency float (or string in exporter)."""
     return cents / 100 if isinstance(cents, (int, float)) else cents
+
+
+def _currency_scope(state: CFOState) -> dict[str, Any]:
+    foreign = state.get("foreign_totals") or []
+    left_out = sum(int(f.get("rows") or 0) for f in foreign)
+    base = state.get("base_currency")
+    return {
+        "currency": base,
+        "base_state": state.get("base_state"),
+        "left_out_rows": left_out,
+        "by_currency": foreign,
+        "note": (f"{left_out} dövizli işlem dahil değil ({', '.join(str(f.get('currency')) for f in foreign)}; "
+                 f"{base}'ye çevrilmedi)") if left_out else None,
+    }
 
 
 def _build_dashboard_json(state: CFOState) -> dict[str, Any]:
@@ -67,13 +82,14 @@ def _build_dashboard_json(state: CFOState) -> dict[str, Any]:
     ]
 
     # Add runway KPI if forecast available
-    base_scenario = forecast.get("scenarios", {}).get("base", {})
-    if base_scenario.get("runway_months") is not None:
+    view = runway_for_display(forecast)
+    if view.months is not None:
         kpis.append({
             "label": "Cash Runway",
-            "value": base_scenario["runway_months"],
+            "value": view.months,
             "format": "months",
             "trend": None,
+            "basis": view.text(),   # known / assumed / unverified, with its date or assumption sentence
         })
 
     # Add anomaly summary KPI if anomalies detected
@@ -116,6 +132,11 @@ def _build_dashboard_json(state: CFOState) -> dict[str, Any]:
             "net_margin": pnl.get("net_margin", 0),
             "opex": {k: _fmt(v) for k, v in pnl.get("opex", {}).items()},
             "narrative": pnl.get("narrative", ""),
+            # The currency these figures are in, how it was decided, and what was left out of them.
+            "currency": pnl.get("currency"),
+            "base_state": pnl.get("base_state"),
+            "other_currencies": pnl.get("other_currencies", []),
+            "currency_note": pnl.get("currency_note"),
         },
         "cashflow": {
             "operating": _fmt(cashflow.get("operating", 0)),
@@ -125,6 +146,10 @@ def _build_dashboard_json(state: CFOState) -> dict[str, Any]:
             "monthly_series": cashflow.get("monthly_series", []),
             "narrative": cashflow.get("narrative", ""),
             "alerts": cashflow.get("alerts", []),
+            "currency": cashflow.get("currency"),
+            "base_state": cashflow.get("base_state"),
+            "other_currencies": cashflow.get("other_currencies", []),
+            "currency_note": cashflow.get("currency_note"),
         },
         "forecast": {
             "scenarios": {
@@ -132,12 +157,17 @@ def _build_dashboard_json(state: CFOState) -> dict[str, Any]:
                     "label": v.get("label"),
                     "description": v.get("description"),
                     "runway_months": v.get("runway_months"),
+                    "runway_basis": v.get("runway_basis"),
                     "twelve_month_net": _fmt(v.get("twelve_month_net", 0)),
                     "months": v.get("months", []),
                 }
                 for k, v in forecast.get("scenarios", {}).items()
             },
             "narrative": forecast.get("narrative", ""),
+            # The runway with its basis (proven balance, date, burn) or why there is none.
+            "runway": forecast.get("runway"),
+            "alerts": forecast.get("alerts", []),
+            "limited_history": forecast.get("limited_history"),
         },
         "anomalies": state.get("anomalies", []),
         "anomaly_narrative": state.get("anomaly_narrative", ""),
@@ -159,6 +189,9 @@ def _build_dashboard_json(state: CFOState) -> dict[str, Any]:
         "alerts": all_alerts,
         "recent_transactions": recent_transactions,
         "transaction_count": len(transactions),
+        # Everything below (anomalies, trends, tax, rankings) read rows of ONE currency. How many rows in
+        # other currencies are not in it, and why, is said here and shown next to those lists.
+        "currency_scope": _currency_scope(state),
 
         # Confidence decomposition — why min_confidence is what it is
         "min_confidence": state.get("min_confidence"),

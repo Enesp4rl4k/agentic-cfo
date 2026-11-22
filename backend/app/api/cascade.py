@@ -176,7 +176,12 @@ async def simulate_cascade(
 
     3 senaryo döner: iyimser / baz / kötümser.
     """
-    from app.services.cascade_simulator import TriggerType, get_cascade_simulator
+    from app.services.cascade_inputs import measured_baseline_with_basis
+    from app.services.cascade_simulator import (
+        CascadeInputsMissing,
+        TriggerType,
+        get_cascade_simulator,
+    )
 
     # Veri yükle
     ctx: dict[str, Any] = {}
@@ -205,7 +210,13 @@ async def simulate_cascade(
             "coo_data":  org_ctx.get("coo_data") or org_ctx.get("coo") or {},
         }
 
-    sim = get_cascade_simulator(**ctx)
+    baseline: dict[str, Any] = {}
+    basis_info: dict[str, Any] | None = None
+    owner_org = req.org_id or (str(current_user.org_id) if current_user.org_id else None)
+    if owner_org and current_user_org_matches(current_user, owner_org):
+        baseline, basis = await measured_baseline_with_basis(db, owner_org)
+        basis_info = basis.to_dict()
+    sim = get_cascade_simulator(**ctx, **baseline)
 
     # Tetikleyici parametrelerini hazırla
     try:
@@ -227,17 +238,22 @@ async def simulate_cascade(
             raise HTTPException(status_code=422, detail="key_person_loss parametreleri gerekli")
         kwargs["role"] = req.key_person_loss.role
     elif trigger == TriggerType.MARKET_SHOCK:
-        p = req.market_shock or MarketShockParams(usd_try_increase_pct=30.0, inflation_pct=50.0)
-        kwargs["usd_try_increase_pct"] = p.usd_try_increase_pct
-        kwargs["inflation_pct"]        = p.inflation_pct
+        if not req.market_shock:
+            raise HTTPException(status_code=422, detail="market_shock parametreleri gerekli (varsayımlarınız)")
+        kwargs["usd_try_increase_pct"] = req.market_shock.usd_try_increase_pct
+        kwargs["inflation_pct"]        = req.market_shock.inflation_pct
 
     try:
         result = sim.simulate(trigger, **kwargs)
+    except CascadeInputsMissing as exc:
+        # No stand-in figure: the request is refused with the inputs the company's data lacks.
+        raise HTTPException(status_code=422, detail={"message": str(exc), "missing": exc.missing}) from exc
     except Exception as exc:
         logger.exception("Cascade simülasyon hatası: %s", exc)
         raise HTTPException(status_code=500, detail=f"Simülasyon hatası: {exc}")
 
-    return result.to_dict()
+    # The balance's basis (known / assumed, date, months, assumption) travels with the answer.
+    return {**result.to_dict(), "baseline_basis": basis_info}
 
 
 @router.get("/cascade/triggers")

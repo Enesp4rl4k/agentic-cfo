@@ -6,6 +6,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Calendar, ShieldCheck } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { useCurrencyFormat } from "@/hooks/useCurrencyFormat";
+import { HeldRowsLink } from "@/components/held-rows/HeldRowsLink";
 import { useI18n } from "@/hooks/useI18n";
 import { useOrgSettings } from "@/hooks/useOrgSettings";
 import {
@@ -15,14 +16,18 @@ import {
   type CashRadar,
   type RadarWeek,
 } from "@/lib/api/ledger";
-import { cn } from "@/lib/utils";
+import { cn, formatCurrency } from "@/lib/utils";
+import { BaseCurrencyNotice } from "@/components/ui/other-currency-lines";
 import { WhatIfRadarPanel } from "@/components/simulation/WhatIfRadarPanel";
 import { ConsolidatedRadarView } from "@/components/consolidation/ConsolidatedRadarView";
 import { getConsolidatedRadar } from "@/lib/api/consolidation";
 import { OodaFooter } from "@/components/brand-app/OodaFooter";
 import { RadarCurve } from "@/components/radar/RadarCurve";
 import { RadarAnswer } from "@/components/radar/RadarAnswer";
+import { BalanceDetails } from "@/components/radar/BalanceDetails";
+import { RunwayCard } from "@/components/radar/RunwayCard";
 import { WeekDetail } from "@/components/radar/WeekDetail";
+import { BasisSplitLine, formatDay, hasUnverifiedTax, StaleBalanceNotice, TaxRulesNote } from "@/components/radar/basis";
 
 const RADAR_KEY = ["cash-radar"];
 const BRIEFING_KEY = ["monday-briefing"];
@@ -125,7 +130,7 @@ function MondayBriefingSection({ copy }: { copy: Copy }) {
   );
 }
 
-function StartingCash({ radar, copy, fmt }: { radar: CashRadar; copy: Copy; fmt: Fmt }) {
+function StartingCash({ radar, copy, fmt, locale }: { radar: CashRadar; copy: Copy; fmt: Fmt; locale: string }) {
   if (radar.starting_cash_cents === null) {
     return (
       <Card className="space-y-1 p-4">
@@ -134,19 +139,41 @@ function StartingCash({ radar, copy, fmt }: { radar: CashRadar; copy: Copy; fmt:
       </Card>
     );
   }
+  const opening = radar.opening_cash;
   return (
-    <Card className="p-4">
-      <dl className="grid grid-cols-2 gap-3 text-sm">
-        <div>
-          <dt className="text-xs text-muted-foreground">{copy.startingCash}</dt>
-          <dd className="text-lg font-semibold tabular-nums">{fmt(radar.starting_cash_cents / 100)}</dd>
-        </div>
-        <div>
-          <dt className="text-xs text-muted-foreground">{copy.asOf}</dt>
-          <dd className="font-medium tabular-nums">{radar.starting_cash_as_of}</dd>
-        </div>
-      </dl>
-    </Card>
+    <div className="space-y-2">
+      <Card className="p-4">
+        <dl className="grid grid-cols-2 gap-3 text-sm">
+          <div>
+            <dt className="text-xs text-muted-foreground">{copy.startingCash}</dt>
+            <dd className="text-lg font-semibold tabular-nums">{fmt(radar.starting_cash_cents / 100)}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted-foreground">{copy.asOf}</dt>
+            <dd className="font-medium">
+              {opening ? copy.cashAsOf.replace("{date}", formatDay(opening.as_of, locale)) : radar.starting_cash_as_of}
+            </dd>
+          </div>
+        </dl>
+      </Card>
+      {opening?.stale && <StaleBalanceNotice asOf={opening.as_of} ageDays={opening.age_days} locale={locale} />}
+    </div>
+  );
+}
+
+function Runway({ radar, copy, locale }: { radar: CashRadar; copy: Copy; locale: string }) {
+  const runway = radar.runway;
+  if (!runway) return null;
+  return (
+    <RunwayCard
+      status={runway.status}
+      level={runway.level ?? null}
+      basis={runway.basis ?? null}
+      months={runway.runway_months ?? null}
+      text={runway.message}
+      copy={copy}
+      locale={locale}
+    />
   );
 }
 
@@ -194,6 +221,7 @@ function WeekRow({
   selected,
   onSelect,
   pickLabel,
+  copy,
   fmt,
 }: {
   week: RadarWeek;
@@ -202,6 +230,7 @@ function WeekRow({
   selected: boolean;
   onSelect: (week: number) => void;
   pickLabel: string;
+  copy: Copy;
   fmt: Fmt;
 }) {
   const below = known && week.end_balance_cents < 0;
@@ -219,8 +248,14 @@ function WeekRow({
         </button>
       </td>
       <td className="px-3 py-2 text-xs text-muted-foreground tabular-nums">{week.start_date} – {week.end_date}</td>
-      <td className="px-3 py-2 text-right tabular-nums">{week.inflow_cents ? fmt(week.inflow_cents / 100) : "–"}</td>
-      <td className="px-3 py-2 text-right tabular-nums">{week.outflow_cents ? fmt(week.outflow_cents / 100) : "–"}</td>
+      <td className="px-3 py-2 text-right tabular-nums">
+        {week.inflow_cents ? fmt(week.inflow_cents / 100) : "–"}
+        <BasisSplitLine split={week.inflow_basis} copy={copy} fmt={fmt} />
+      </td>
+      <td className="px-3 py-2 text-right tabular-nums">
+        {week.outflow_cents ? fmt(week.outflow_cents / 100) : "–"}
+        <BasisSplitLine split={week.outflow_basis} copy={copy} fmt={fmt} />
+      </td>
       <td className={cn("px-3 py-2 text-right font-medium tabular-nums", below && "text-destructive")}>
         {fmt(week.end_balance_cents / 100)}
       </td>
@@ -265,11 +300,17 @@ function Weeks({
               selected={selected === week.week}
               onSelect={onSelect}
               pickLabel={copy.weekPick.replace("{week}", String(week.week))}
+              copy={copy}
               fmt={fmt}
             />
           ))}
         </tbody>
       </table>
+      {radar.weeks.some((w) => hasUnverifiedTax(w.payables)) && (
+        <div className="px-4 pb-4">
+          <TaxRulesNote copy={copy} />
+        </div>
+      )}
     </Card>
   );
 }
@@ -280,14 +321,44 @@ function NotCounted({ radar, copy, fmt }: { radar: CashRadar; copy: Copy; fmt: F
     [copy.undatedPayables, radar.undated_payables_cents],
     [copy.beyondHorizon, radar.beyond_horizon_cents],
   ];
+  // The two queues that wait for a person are one block below, not two stray lines in this list.
+  const awaiting = radar.awaiting_decision;
+  const inBlock = new Set([awaiting?.rows?.text, awaiting?.documents?.text]);
   return (
     <Card className="space-y-2 p-4">
       <p className="text-sm font-semibold">{copy.notCountedTitle}</p>
       <ul className="list-inside list-disc space-y-1 text-sm text-muted-foreground">
-        {radar.not_included.map((line) => (
+        {radar.not_included.filter((line) => !inBlock.has(line)).map((line) => (
           <li key={line}>{line}</li>
         ))}
       </ul>
+      {awaiting ? (
+        <div className="space-y-1 rounded-md border border-border p-3">
+          <p className="text-sm font-semibold">{copy.awaitingTitle}</p>
+          {[
+            { label: copy.awaitingRows, line: awaiting.rows },
+            { label: copy.awaitingDocuments, line: awaiting.documents },
+          ].map(({ label, line }) =>
+            line ? (
+              <p key={label} className="text-sm text-muted-foreground">
+                <span className="font-medium text-foreground">{label}:</span> {line.text}{" "}
+                <Link href={line.path} className="font-medium underline underline-offset-2">
+                  {line === awaiting.documents ? copy.heldReview : copy.awaitingOpen}
+                </Link>
+              </p>
+            ) : null,
+          )}
+        </div>
+      ) : (
+        <>
+          {radar.held_documents && (
+            <Link href={radar.held_documents.review_path} className="text-sm font-medium underline underline-offset-2">
+              {copy.heldReview}
+            </Link>
+          )}
+          <HeldRowsLink />
+        </>
+      )}
       <dl className="space-y-1 text-sm">
         {amounts
           .filter(([, cents]) => cents > 0)
@@ -360,13 +431,15 @@ function Headline({ radar, copy, fmt }: { radar: CashRadar; copy: Copy; fmt: Fmt
 export default function NakitRadariPage() {
   const { t } = useI18n();
   const copy = t.cashRadar;
-  const fmt = useCurrencyFormat();
+  const orgFmt = useCurrencyFormat();
   const { org } = useOrgSettings();
-  const locale = org?.locale || "en-US";
+  const locale = org?.locale || "tr-TR";
   const [viewMode, setViewMode] = useState<"individual" | "consolidated">("individual");
   const [pickedWeek, setPickedWeek] = useState<number | null>(null);
 
   const { data: radar, isLoading, isError } = useQuery({ queryKey: RADAR_KEY, queryFn: getCashRadar });
+  // The radar is in the same effective currency as the P&L (backend `effective_base`), not the column default.
+  const fmt: Fmt = (value) => (radar?.currency ? formatCurrency(value, radar.currency, locale) : orgFmt(value));
   const { data: consolidatedRadar } = useQuery({
     queryKey: ["consolidated-radar"],
     queryFn: () => getConsolidatedRadar([]),
@@ -395,6 +468,7 @@ export default function NakitRadariPage() {
           </div>
           {viewMode === "individual" && radar && !isEmpty(radar) && <Headline radar={radar} copy={copy} fmt={fmt} />}
         </div>
+        {radar && <BaseCurrencyNotice state={radar.base_state} base={radar.currency} />}
 
         <div className="flex w-fit items-center rounded-lg border border-border bg-muted/40 p-1">
           {(["individual", "consolidated"] as const).map((mode) => (
@@ -422,9 +496,13 @@ export default function NakitRadariPage() {
 
         {viewMode === "individual" && radar && (
           <>
-            {!isEmpty(radar) && <RadarAnswer radar={radar} copy={copy} fmt={fmt} />}
+            {/* Cash running out is said before anything else. */}
+            {radar.runway?.level === "critical" && <Runway radar={radar} copy={copy} locale={locale} />}
+            {!isEmpty(radar) && <RadarAnswer radar={radar} copy={copy} fmt={fmt} locale={locale} />}
             <MondayBriefingSection copy={copy} />
-            <StartingCash radar={radar} copy={copy} fmt={fmt} />
+            {radar.runway?.level !== "critical" && <Runway radar={radar} copy={copy} locale={locale} />}
+            <StartingCash radar={radar} copy={copy} fmt={fmt} locale={locale} />
+            <BalanceDetails radar={radar} copy={copy} fmt={fmt} locale={locale} />
             {isEmpty(radar) ? (
               <Card className="space-y-2 p-4">
                 <p className="text-sm text-muted-foreground">{copy.emptyBody}</p>
@@ -453,7 +531,7 @@ export default function NakitRadariPage() {
                   </div>
                   {detailWeek && (
                     <div className="min-w-0 flex-[1_1_320px]">
-                      <WeekDetail week={detailWeek} copy={copy} fmt={fmt} />
+                      <WeekDetail week={detailWeek} copy={copy} fmt={fmt} locale={locale} />
                     </div>
                   )}
                 </div>

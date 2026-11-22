@@ -1,3 +1,4 @@
+import type { OtherCurrency } from "@/components/ui/other-currency-lines";
 // Global TypeScript types for AI CFO frontend
 
 export interface KPI {
@@ -48,6 +49,12 @@ export interface PnLData {
   net_margin: number;
   opex: OpEx;
   narrative: string;
+  /** The currency the figures above are in; amounts in any other are in `other_currencies`. */
+  currency?: string;
+  base_state?: string;
+  currency_note?: string | null;
+  /** Other currencies, summed on their own and never converted (no exchange-rate source). */
+  other_currencies?: OtherCurrency[];
 }
 
 export interface CashFlowData {
@@ -58,12 +65,41 @@ export interface CashFlowData {
   monthly_series: MonthlyEntry[];
   narrative: string;
   alerts: Alert[];
+  currency?: string;
+  base_state?: string;
+  currency_note?: string | null;
+  other_currencies?: OtherCurrency[];
+}
+
+/** Cash runway from the balance a bank statement proves (backend `app.services.runway`). */
+export interface RunwayBlock {
+  status: "computed" | "not_burning" | "no_balance" | "insufficient_history" | "not_cash_basis" | "coverage_unknown";
+  opening_cash_cents: number | null;
+  as_of: string | null;
+  age_days: number | null;
+  stale: boolean | null;
+  source_filename: string | null;
+  months_needed: number;
+  months_used: number;
+  /** "assumed" when a month counted as whole on the edge tolerance (named in `message`), else "known". */
+  basis?: "known" | "assumed" | null;
+  assumptions?: { month: string; edge: "start" | "end"; days: number }[];
+  /** The complete months the burn averaged, with each month's net (kuruş). */
+  months?: { month: string; net_cents: number }[];
+  avg_monthly_net_cents: number | null;
+  runway_months: number | null;
+  beyond_horizon: boolean;
+  level: "critical" | "warning" | null;
+  /** The sentence the backend writes: the balance and its date, the burn, or why there is no runway. */
+  message: string;
 }
 
 export interface ForecastScenario {
   label: string;
   description: string;
   runway_months: number | null;
+  /** How the scenario's runway is known: absent on older results. */
+  runway_basis?: RunwayBlock["status"];
   twelve_month_net: number;
   months: MonthlyEntry[];
 }
@@ -76,6 +112,7 @@ export interface ForecastData {
   };
   narrative: string;
   alerts: Alert[];
+  runway?: RunwayBlock;
 }
 
 export type AlertLevel = "warning" | "critical" | "info";
@@ -131,6 +168,8 @@ export interface DashboardData {
   alerts: Alert[];
   recent_transactions: Transaction[];
   transaction_count: number;
+  /** Rows in other currencies that the lists and totals above were computed without. */
+  currency_scope?: { currency: string | null; base_state: string | null; left_out_rows: number; by_currency: OtherCurrency[]; note: string | null };
   // Anomaly data — present when anomaly agent ran
   anomalies?: AnomalyItem[];
   anomaly_narrative?: string;
@@ -171,6 +210,8 @@ export interface AnalysisJob {
   error: string | null;
   created_at: string;
   completed_at: string | null;
+  /** Where every row of the upload went: read, saved, waiting, skipped (null until the run read it). */
+  ingest?: import("@/components/held-rows/IngestCounts").IngestSummary | null;
 }
 
 export interface ReportMeta {

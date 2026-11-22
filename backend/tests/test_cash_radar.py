@@ -24,7 +24,7 @@ from app.models.transaction import Transaction
 from app.services.cash_radar import HORIZON_WEEKS, compute_cash_radar
 from app.services.ledger import append_job
 from app.services.reconciliation import CONFIRMED
-from tests.api_helpers import bellek_istemcisi, kullanici
+from tests.api_helpers import bellek_istemcisi, by_number, kullanici
 
 ANCHOR = date(2025, 1, 1)
 
@@ -123,7 +123,7 @@ async def test_a_customer_who_pays_late_is_expected_late(client):
     await _upload(client, org_id,
                   _sale("PAST", 10_000_00, "2024-11-01", customer="Geciktiren AS", issued="2024-10-01"))
     async with client._maker() as db:
-        item = (await db.execute(select(OpenItem).where(OpenItem.document_id == "PAST"))).scalars().one()
+        item = (await db.execute(select(OpenItem).where(by_number(OpenItem.document_id, "PAST")))).scalars().one()
         item.status, item.paid_cents = "settled", item.amount_cents
         # Paid 15 November against 1 November: 14 days late.
         db.add(OpenItemMatch(org_id=org_id, open_item_id=item.id, ledger_row_id="row",
@@ -191,8 +191,21 @@ async def test_a_gap_names_its_week_its_cause_and_real_amounts(client):
     assert radar.weeks[5].end_balance_cents == -25_000_00
 
 
+async def _confirm_try(client, org_id):
+    """The test company has confirmed its currency: the foreign document is then "another currency"."""
+    from datetime import UTC, datetime
+
+    from app.models.organization import Organization
+
+    async with client._maker() as db:
+        org = await db.get(Organization, org_id)
+        org.base_currency, org.base_currency_confirmed_at = "TRY", datetime.now(UTC)
+        await db.commit()
+
+
 async def test_a_foreign_currency_invoice_is_counted_never_converted(client):
     _, org_id, _ = await kullanici(client, "doviz@example.com")
+    await _confirm_try(client, org_id)
     await _upload(client, org_id, _sale("USD1", 1_000_00, "2025-01-10", currency="USD"))
 
     radar = await _radar(client, org_id)

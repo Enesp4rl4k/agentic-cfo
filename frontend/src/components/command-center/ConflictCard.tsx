@@ -4,6 +4,9 @@ import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useConflicts, useResolveConflict, useRunConsensus } from "@/hooks/useConflicts";
 import type { AgentConflict } from "@/lib/api/negotiation";
+import { useI18n } from "@/hooks/useI18n";
+import { codeLabel, mapLabel } from "@/lib/i18n/codes";
+import type { MessageTree } from "@/lib/i18n";
 
 const SEVERITY_CLASS: Record<string, string> = {
   critical: "border-red-500/40 bg-red-500/10 text-red-200",
@@ -22,7 +25,7 @@ function claimSummary(claim: unknown): string {
   return "—";
 }
 
-function recommendedAction(c: AgentConflict): string {
+function recommendedAction(c: AgentConflict, t: MessageTree): string {
   const res = c.resolution;
   if (res && typeof res === "object") {
     const r = res as Record<string, unknown>;
@@ -30,10 +33,14 @@ function recommendedAction(c: AgentConflict): string {
     if (typeof action === "string" && action.trim()) return action;
   }
   if (c.narrative) return c.narrative;
-  return `Reconcile ${c.agent_a?.toUpperCase() ?? "?"} vs ${c.agent_b?.toUpperCase() ?? "?"} on ${c.topic}`;
+  return t.conflicts.reconcile
+    .replace("{a}", c.agent_a?.toUpperCase() ?? "?")
+    .replace("{b}", c.agent_b?.toUpperCase() ?? "?")
+    .replace("{topic}", mapLabel(t, t.conflicts.topics, c.topic));
 }
 
 export function ConflictCard() {
+  const { t } = useI18n();
   const { data, isLoading, isError } = useConflicts();
   const resolveMut = useResolveConflict();
   const consensusMut = useRunConsensus();
@@ -46,10 +53,10 @@ export function ConflictCard() {
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <AlertTriangle className="h-4 w-4 text-amber-400" aria-hidden="true" />
-          <h2 className="text-sm font-semibold">Agent Conflicts</h2>
+          <h2 className="text-sm font-semibold">{t.conflicts.title}</h2>
         </div>
         <span className="rounded border border-border px-2 py-0.5 text-xs text-muted-foreground">
-          {openCount} open
+          {t.conflicts.openCount.replace("{n}", String(openCount))}
         </span>
       </div>
 
@@ -62,22 +69,22 @@ export function ConflictCard() {
             onClick={() => consensusMut.mutate(topic)}
             className="rounded border border-border bg-muted/20 px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted/40 disabled:opacity-50"
           >
-            Run {topic}
+            {t.conflicts.run.replace("{topic}", mapLabel(t, t.conflicts.topics, topic))}
           </button>
         ))}
       </div>
 
       {isLoading ? (
         <p className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Loader2 className="h-3 w-3 animate-spin" /> Loading conflicts…
+          <Loader2 className="h-3 w-3 animate-spin" /> {t.conflicts.loading}
         </p>
       ) : isError ? (
         <p className="rounded border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-          Conflicts unavailable (table or org scope may be missing).
+          {t.conflicts.unavailable}
         </p>
       ) : conflicts.length === 0 ? (
         <p className="rounded border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-          No agent conflicts detected. Consensus is stable.
+          {t.conflicts.none}
         </p>
       ) : (
         <div className="space-y-2">
@@ -90,12 +97,12 @@ export function ConflictCard() {
               >
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-xs font-medium">{c.topic}</p>
-                  <span className="text-[10px] opacity-80">{severity.toUpperCase()}</span>
+                  <span className="text-[10px] opacity-80">{codeLabel(t, "severity", severity)}</span>
                 </div>
                 {(c.agent_a || c.agent_b) && (
                   <div className="flex flex-wrap gap-1.5 text-[10px] font-semibold">
                     <span className="rounded bg-black/10 px-1.5 py-0.5">{(c.agent_a ?? "?").toUpperCase()}</span>
-                    <span className="opacity-60">vs</span>
+                    <span className="opacity-60">{t.conflicts.versus}</span>
                     <span className="rounded bg-black/10 px-1.5 py-0.5">{(c.agent_b ?? "?").toUpperCase()}</span>
                   </div>
                 )}
@@ -114,11 +121,11 @@ export function ConflictCard() {
                   )}
                 </div>
                 <p className="text-[11px] opacity-80">
-                  consensus {c.consensus_score != null ? c.consensus_score.toFixed(2) : "n/a"} · {c.status}
+                  {t.conflicts.consensus.replace("{score}", c.consensus_score != null ? c.consensus_score.toFixed(2) : t.ccPage.notAvailable)} · {codeLabel(t, "conflictStatus", c.status)}
                 </p>
                 <p className="rounded bg-black/10 px-2 py-1 text-[11px]">
                   <span className="font-medium">→ </span>
-                  {recommendedAction(c)}
+                  {recommendedAction(c, t)}
                 </p>
                 {c.status === "open" && (
                   <button
@@ -134,7 +141,7 @@ export function ConflictCard() {
                     className="inline-flex items-center gap-1 rounded border border-current/30 px-2 py-1 text-[11px] hover:bg-black/10 disabled:opacity-50"
                   >
                     <CheckCircle2 className="h-3 w-3" />
-                    Resolve
+                    {t.conflicts.resolve}
                   </button>
                 )}
               </div>

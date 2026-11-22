@@ -49,6 +49,8 @@ from app.agents.alert_agent import run_alerts
 from app.agents.anomaly_agent import run_anomaly_detection
 from app.agents.budget_agent import run_budget
 from app.agents.cashflow_agent import run_cashflow
+from app.agents.currency_split import keep_base_currency as _keep_base_currency
+from app.agents.currency_split import stored_base_currency as _stored_base_currency
 from app.agents.data_ingestion import run_data_ingestion
 from app.agents.forecast_agent import run_forecast
 from app.agents.multi_period_agent import run_multi_period
@@ -138,13 +140,16 @@ async def node_data_ingestion(state: CFOState, config: dict) -> CFOState:
                 sum(hits.values()), len(hits),
             )
 
+    _keep_base_currency(state, patch)
+
     if not result.ok:
         patch.update({"halted": True, "awaiting_review": True, "error": result.detail})
     if result.needs_review:
         patch["awaiting_review"] = True
     # Below the auto-proceed bar the run is held for a person — but still
     # analysed, so the person reviews numbers, not a blank (plan v7 §P0).
-    if float(patch.get("min_confidence") or 1.0) < CONFIDENCE_AUTO_PROCEED_MIN:
+    # (a measured 0.0 is the lowest confidence there is, not "unset")
+    if float(patch.get("min_confidence", 1.0)) < CONFIDENCE_AUTO_PROCEED_MIN:
         patch["awaiting_review"] = True
 
     # After ingestion, build routing plan for downstream agents
@@ -472,7 +477,10 @@ async def run_cfo_pipeline(
     period: str | None = None,
     ek_belgeler: list[dict[str, str]] | None = None,
     category_rules: list[dict[str, Any]] | None = None,
-    ledger_view: dict[str, list[dict[str, Any]]] | None = None,
+    ledger_view: dict[str, Any] | None = None,
+    opening_cash: dict[str, Any] | None = None,
+    statement_extents: list[dict[str, Any]] | None = None,
+    base_currency: str | None = None,
 ) -> CFOState:
     """
     Run the full CFO analysis pipeline.
@@ -486,6 +494,7 @@ async def run_cfo_pipeline(
         org_id:       Organization ID for memory retrieval/storage
         period:       Reporting period label (e.g. "2024-Q4") for memory
         ledger_view:  The company's ledger rows, read instead of a file
+        opening_cash: The company's latest proven bank balance (`proven_balance`), if any
 
     Returns:
         Final CFOState — caller persists to DB.
@@ -516,6 +525,11 @@ async def run_cfo_pipeline(
         "category_rules": category_rules or [],
         "category_rule_hits": None,
         "ledger_view": ledger_view,
+        "opening_cash": opening_cash,
+        "statement_extents": statement_extents,
+        "base_currency": base_currency or await _stored_base_currency(org_id),
+        "foreign_totals": None,
+        "base_state": None,
         "routing_plan": None,
         "reflection_scores": None,
         "memory_episode_ids": None,
@@ -560,7 +574,7 @@ async def run_cfo_pipeline(
                     "min_confidence": result.get("min_confidence"),
                 },
                 narrative=(pnl.get("narrative") or "")[:300],
-                confidence=result.get("min_confidence") or 1.0,
+                confidence=1.0 if result.get("min_confidence") is None else result["min_confidence"],
                 tags=["pipeline", file_type],
             )
             _memory.save(episode)

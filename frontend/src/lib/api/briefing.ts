@@ -40,3 +40,56 @@ export async function respondToMondayBriefing(
   });
   return res.data.data;
 }
+
+// The two delivery routes have no response model in the backend's OpenAPI schema (app/api/
+// monday_briefing.py returns plain dicts), so they are absent from pilot-schema.ts and their shape is
+// written here, from outbox.py / briefing_delivery.deliveries. Give them a response_model and
+// `npm run gen:api` replaces these.
+
+/** One e-mail of the briefing: `status` is the outbox's own (held, pending, sent, failed). */
+export interface BriefingDelivery {
+  recipient: string;
+  status: string;
+  reason: string | null;
+  attempts: number;
+  sent_at: string | null;
+}
+
+export async function getBriefingDeliveries(briefingId: string): Promise<BriefingDelivery[]> {
+  const res = await apiClient.get<Envelope<BriefingDelivery[]>>("/briefing/monday/deliveries", {
+    params: { briefing_id: briefingId },
+  });
+  return res.data.data;
+}
+
+export interface BriefingChange {
+  field: string;
+  label: string;
+  old: string;
+  new: string;
+}
+
+export interface BriefingReleaseResult {
+  released: number;
+  /** The figures moved since the e-mail was written: nothing was sent, `changes` says what changed. */
+  needs_confirmation?: boolean;
+  changes?: BriefingChange[];
+  fingerprint?: string;
+  refreshed?: boolean;
+}
+
+/**
+ * Only the company's accountant may; anyone else gets 403. When the figures changed since the
+ * e-mail was written nothing is sent: send the returned `fingerprint` back as `confirmFingerprint`
+ * to send the refreshed text.
+ */
+export async function releaseMondayBriefing(
+  briefingId: string,
+  confirmFingerprint?: string,
+): Promise<BriefingReleaseResult> {
+  const res = await apiClient.post<Envelope<BriefingReleaseResult>>("/briefing/monday/release", {
+    briefing_id: briefingId,
+    ...(confirmFingerprint ? { confirm_fingerprint: confirmFingerprint } : {}),
+  });
+  return res.data.data;
+}

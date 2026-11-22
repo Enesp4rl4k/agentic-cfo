@@ -2,12 +2,16 @@
 from __future__ import annotations
 
 import re
+from datetime import UTC, datetime
 
 from app.parsers.base import BankParser, ParsedStatement, ParsedTransaction
+from app.parsers.direction import signed_money
 
 
 class ZiraatParser(BankParser):
     bank_id = "ziraat"
+    # Printed as Borç/Alacak columns: whose book that is differs between banks, so it needs a balance to verify it.
+    debit_credit_layout = True
     bank_display_name = "Ziraat Bankası"
     _MARKERS = ["ZİRAAT BANKASI", "T.C. ZİRAAT", "Ziraat Bankası", "ZIRAAT"]
 
@@ -40,13 +44,13 @@ class ZiraatParser(BankParser):
 
         # Try two-column format (borç/alacak separate)
         two_col = re.compile(
-            r"(\d{2}\.\d{2}\.\d{4})\s+(.+?)\s+([\d.,]+|-)\s+([\d.,]+|-)\s+([\d.,]+)\s*$",
+            r"(\d{2}\.\d{2}\.\d{4})[ \t]+(.+?)[ \t]+((?=[\d.,]*[.,])[\d.,]+|-)[ \t]+((?=[\d.,]*[.,])[\d.,]+|-)[ \t]+([+\-−]?[\d.,]+)[ \t]*$",
             re.MULTILINE,
         )
         for m in two_col.finditer(text):
             date = self.parse_turkish_date(m.group(1))
-            if not date:
-                continue
+            estimated = date is None
+            date = date or datetime.now(UTC)
             description = m.group(2).strip()
             borç_raw, alacak_raw = m.group(3), m.group(4)
 
@@ -57,13 +61,13 @@ class ZiraatParser(BankParser):
                 amount = self.parse_turkish_amount(borç_raw)
                 tx_type = "expense"
             else:
-                continue
+                amount, tx_type = 0, ""
 
-            if not amount:
-                continue
+            amount = amount or 0
             transactions.append(ParsedTransaction(
                 date=date, description=description,
-                amount_cents=amount, tx_type=tx_type, raw_row=m.group(0),
+                amount_cents=amount, tx_type=tx_type, raw_row=m.group(0), date_estimated=estimated,
+                balance_cents=signed_money(m.group(5)),
             ))
 
         if transactions:
@@ -71,24 +75,27 @@ class ZiraatParser(BankParser):
 
         # Fallback: signed single-amount column
         one_col = re.compile(
-            r"(\d{2}\.\d{2}\.\d{4})\s+(.+?)\s+([+-]?[\d.,]+)\s+([\d.,]+)\s*$",
+            r"(\d{2}\.\d{2}\.\d{4})[ \t]+(.+?)[ \t]+([+\-−]?(?:\d{1,3}(?: \d{3})+[.,]\d{2}|(?=[\d.,]*[.,])[\d.,]+))(?:[ \t]*(?:TL|TRY|₺))?(?:[ \t]+([+\-−]?(?:\d{1,3}(?: \d{3})+[.,]\d{2}|(?=[\d.,]*[.,])[\d.,]+))(?:[ \t]*(?:TL|TRY|₺))?)?[ \t]*$",
             re.MULTILINE,
         )
-        for m in one_col.finditer(text):
+        found = list(one_col.finditer(text))
+        signed = bool(found)   # the sign is a reading marked `direction_basis="sign"`, not evidence (direction.settle_rows)
+        for m in found:
             date = self.parse_turkish_date(m.group(1))
-            if not date:
-                continue
+            estimated = date is None
+            date = date or datetime.now(UTC)
             description = m.group(2).strip()
             raw = m.group(3)
             negative = raw.startswith("-")
             amount = self.parse_turkish_amount(raw.lstrip("+-"))
-            if not amount:
-                continue
+            amount = amount or 0
             transactions.append(ParsedTransaction(
                 date=date, description=description,
                 amount_cents=amount,
-                tx_type="expense" if negative else "income",
-                raw_row=m.group(0),
+                tx_type=("expense" if negative else "income") if signed else "",
+                direction_basis="sign" if signed else "",
+                balance_cents=signed_money(m.group(4)),
+                raw_row=m.group(0), date_estimated=estimated,
             ))
 
         return transactions

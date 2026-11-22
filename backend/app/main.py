@@ -37,6 +37,17 @@ except ValueError as _sec_err:
     logger.critical("STARTUP ABORTED — production security check failed: %s", _sec_err)
     raise SystemExit(1) from _sec_err
 
+# ── Wider production preflight (app/core/preflight.py) ────────────────────────
+# Fatal findings (placeholder secrets, demo mode, wildcard CORS, localhost links, ...) stop startup in
+# production; degraded states (no mail sender, no LLM key, no error tracking) are logged as warnings.
+from app.core.preflight import PreflightError, enforce
+
+try:
+    enforce(settings)
+except PreflightError as _pre_err:
+    logger.critical("STARTUP ABORTED — %s", _pre_err)
+    raise SystemExit(1) from _pre_err
+
 
 # ── Lifespan ──────────────────────────────────────────────────────────────────
 
@@ -68,12 +79,14 @@ async def lifespan(app: FastAPI):
     import app.models.connector_connection
     import app.models.data_source
     import app.models.defensibility_packet
+    import app.models.email_verification
     import app.models.erp_integration
     import app.models.in_app_notification
     import app.models.institutionalization_snapshot
     import app.models.llm_call_log
     import app.models.organization
     import app.models.outbox_message
+    import app.models.password_reset
     import app.models.pilot
     import app.models.rag_chunk
     import app.models.related_party
@@ -87,6 +100,11 @@ async def lifespan(app: FastAPI):
     import app.models.user  # noqa: F401
     from app.database import Base, engine
     from app.scheduler import start_scheduler, stop_scheduler
+
+    if not (settings.whatsapp_verify_token and settings.whatsapp_app_secret):
+        logger.warning(
+            "WhatsApp webhook disabled: WHATSAPP_VERIFY_TOKEN and WHATSAPP_APP_SECRET must both be set."
+        )
 
     # SOLID-4: create_all only in SQLite dev mode
     if settings.use_sqlite:
@@ -168,6 +186,8 @@ app.add_middleware(
         # e-Defter: what was produced, and the fact that it cannot be filed.
         "X-EDefter-Entry-Count", "X-EDefter-Line-Count", "X-EDefter-SHA256",
         "X-EDefter-Filable", "X-EDefter-Unfilable-Code",
+        # Entries left out of a statutory export because they are in another currency (USD=3).
+        "X-Para-Birimi-Disi",
         # Berat preview: which defter it was derived from, and what it says.
         "X-EDefter-Berat-Of", "X-EDefter-Berat-Unique-ID", "X-EDefter-Berat-Size-MiB",
         "X-EDefter-KDV-Unverified",

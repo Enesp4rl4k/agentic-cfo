@@ -16,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.open_item import OpenItem
+from app.models.organization import Organization
 from app.models.payment_plan_change import (
     APPROVED,
     PENDING,
@@ -24,6 +25,8 @@ from app.models.payment_plan_change import (
     PaymentPlanChange,
 )
 from app.models.user import User
+from app.services import materiality
+from app.services.acting_role import acting_role
 
 DECIDER_ROLES = frozenset({"owner", "admin"})
 PROPOSER_ROLES = frozenset({"owner", "admin", "cfo", "analyst"})
@@ -39,12 +42,8 @@ class PlanChangeError(Exception):
         self.message = message
 
 
-def can_decide(user: User) -> bool:
-    return str(user.role.value if hasattr(user.role, "value") else user.role) in DECIDER_ROLES
-
-
-def _role(user: User) -> str:
-    return str(user.role.value if hasattr(user.role, "value") else user.role)
+def can_decide(role: str) -> bool:
+    return role in DECIDER_ROLES
 
 
 async def effective_dates(db: AsyncSession, org_id: str) -> dict[str, date]:
@@ -73,7 +72,7 @@ async def propose(
     note: str | None,
     today: date | None = None,
 ) -> PaymentPlanChange:
-    if _role(user) not in PROPOSER_ROLES:
+    if await acting_role(db, user) not in PROPOSER_ROLES:
         raise PlanChangeError(403, "Ödeme tarihi önermek için yazma yetkisi gerekir.")
     today = today or datetime.now(UTC).date()
     item = (
@@ -103,7 +102,10 @@ async def propose(
     if pending is not None:
         raise PlanChangeError(409, "Bu ödeme için karar bekleyen bir öneri zaten var.")
 
+    org = await db.get(Organization, org_id)
     change = PaymentPlanChange(
+        threshold_cents=materiality.threshold_cents(org),
+        threshold_currency=materiality.threshold_currency(org),
         org_id=org_id,
         open_item_id=item.id,
         from_date=effective,
@@ -121,9 +123,11 @@ def _ensure_pending(change: PaymentPlanChange) -> None:
         raise PlanChangeError(409, "Bu öneri için karar zaten verilmiş.")
 
 
-def decide(change: PaymentPlanChange, *, user: User, approve: bool, note: str | None) -> PaymentPlanChange:
+def decide(
+    change: PaymentPlanChange, *, user: User, role: str, approve: bool, note: str | None
+) -> PaymentPlanChange:
     """Approve or reject. Only an owner or an admin; a rejection keeps its reason."""
-    if _role(user) not in DECIDER_ROLES:
+    if role not in DECIDER_ROLES:
         raise PlanChangeError(403, "Ödeme planı değişikliğini yalnızca sahip ya da yönetici onaylayabilir.")
     _ensure_pending(change)
     change.status = APPROVED if approve else REJECTED
