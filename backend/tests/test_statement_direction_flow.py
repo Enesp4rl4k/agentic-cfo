@@ -246,13 +246,13 @@ async def test_the_generic_patch_cannot_change_the_company_currency(env):
 async def test_rows_assumed_under_the_old_currency_are_listed_not_rewritten(env, monkeypatch):
     client, tmp_path = env
     headers, org_id, _ = await kullanici(client, "p2@x.com")
-    content = NL.join(["Tarih;Açıklama;Tutar;Bakiye", "01.03.2026;Kira;-1.500,00;8.500,00", "02.03.2026;Satış;250,00;8.750,00"]) + NL
+    content = NL.join(["Tarih;Açıklama;Tutar;Bakiye", "01.03.2026;Kira;-1.500,00;8.500,00", "02.03.2026;Satış;250,00;8.750,00", "03.03.2026;Gaz;-50,00;8.700,00"]) + NL
     await client.post("/api/v1/org/base-currency", headers=headers, json={"currency": "TRY"})
     job_id, _ = await _upload(client, tmp_path, monkeypatch, [], org_id, content=content, name="a.csv")
     assert {(t.currency, t.currency_assumed) for t in await _transactions(client, job_id)} == {("TRY", True)}
     changed = await client.post("/api/v1/org/base-currency", headers=headers, json={"currency": "EUR"})
     review = changed.json()["data"]["assumed_for_review"]
-    assert review["count"] == 2 and review["by_currency"] == {"TRY": 2}
+    assert review["count"] == 3 and review["by_currency"] == {"TRY": 3}
     assert {(t.currency, t.currency_assumed) for t in await _transactions(client, job_id)} == {("TRY", True)}
 
 
@@ -261,7 +261,7 @@ async def test_confirmation_is_one_transaction(env, monkeypatch):
 
     client, tmp_path = env
     headers, org_id, _ = await kullanici(client, "t1@x.com")
-    content = NL.join(["Tarih;Açıklama;Tutar;Bakiye", "01.03.2026;Kira;-1.500,00;8.500,00", "02.03.2026;Satış;250,00;8.750,00"]) + NL
+    content = NL.join(["Tarih;Açıklama;Tutar;Bakiye", "01.03.2026;Kira;-1.500,00;8.500,00", "02.03.2026;Satış;250,00;8.750,00", "03.03.2026;Gaz;-50,00;8.700,00"]) + NL
     await _upload(client, tmp_path, monkeypatch, [], org_id, content=content, name="a.csv")
 
     async def boom(*a: Any, **k: Any):
@@ -274,7 +274,7 @@ async def test_confirmation_is_one_transaction(env, monkeypatch):
         org = await db.get(Organization, org_id)
         assert org.base_currency_confirmed_at is None                         # the confirmation did not survive
         pending = (await db.execute(select(HeldTransaction).where(HeldTransaction.status == "pending"))).scalars().all()
-        assert len(pending) == 2 and pending[0].payload.get("currency") is None   # and the row was not half-filled
+        assert len(pending) == 3 and pending[0].payload.get("currency") is None   # and the row was not half-filled
     assert await _decisions(client, DecisionKind.BASE_CURRENCY_CONFIRMATION) == []
 
 
