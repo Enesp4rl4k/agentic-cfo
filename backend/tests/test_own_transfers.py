@@ -54,6 +54,14 @@ def test_own_account_wording_is_evidence_too_and_the_date_window_is_three_days()
     assert propose([out, {**inc, "date": DAY + timedelta(days=4)}], ACCOUNTS) == []
 
 
+def test_wording_alone_never_pairs_accounts_without_a_stated_identifier() -> None:
+    out = _row("o1", "ja", "expense", "Hesaplar arası virman")
+    inc = _row("i1", "jb", "income", "Virman")
+    assert propose([out, inc], ACCOUNTS)
+    assert propose([out, inc], [ACCOUNTS[0], {**ACCOUNTS[1], "identity": None}]) == []
+    assert propose([out, inc], [{**ACCOUNTS[0], "identity": "bank:garanti"}, ACCOUNTS[1]]) == []
+
+
 def test_the_same_amount_on_two_accounts_with_no_evidence_is_not_a_transfer() -> None:
     assert propose([_row("o1", "ja", "expense", "Tedarikçi ödemesi"), _row("i1", "jb", "income", "Müşteri tahsilatı")], ACCOUNTS) == []
 
