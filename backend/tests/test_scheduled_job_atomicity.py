@@ -214,3 +214,82 @@ async def test_kri_scan_with_a_rolled_back_alert_is_not_marked_done(client, one_
 
     second = await scheduler._hourly_proactive_kri_scan(KRI_NOW)
     assert second.done == 1 and await kri_effects(client) == (1, 1, 1)
+
+
+def _kri(name: str, **extra) -> dict:
+    return {"name": name, "current_value": 1, "unit": "ay", **extra}
+
+
+@pytest.fixture
+def two_orgs_one_raises(monkeypatch):
+    """Org A's KRI computation raises (until `state["a_fails"]` is cleared); org B has one red KRI."""
+    state = {"a_fails": True}
+
+    async def orgs(self):
+        return ["org-a", "org-b"]
+
+    async def kris(self, org_id):
+        if org_id == "org-a" and state["a_fails"]:
+            raise RuntimeError("KRI computation failed for org-a")
+        return {"posture": {"red_kris": [_kri(f"Nakit {org_id}")]}}
+
+    async def channels(self, org_id, severity):
+        return ["in_app", "email"]
+
+    async def emails(self, org_id):
+        return ["sahip@example.com"]
+
+    for name, fn in (("_get_active_orgs", orgs), ("_compute_current_kris", kris),
+                     ("_get_alert_channels", channels), ("_get_alert_emails", emails)):
+        monkeypatch.setattr(ProactiveAlertOrchestrator, name, fn)
+    return state
+
+
+async def test_kri_scan_one_org_failing_fails_the_slot_and_the_retry_completes_it(client, two_orgs_one_raises):
+    b = (ProactiveAlert.org_id == "org-b",)
+    a = (ProactiveAlert.org_id == "org-a",)
+
+    first = await scheduler._hourly_proactive_kri_scan(KRI_NOW)
+    assert first.failed == 1 and first.done == 0
+    assert await ledger(client, "hourly_kri_scan") == [("2025-02-03T09", FAILED)], "not reported as cleanly done"
+    assert await count(client, ProactiveAlert, *b) == 1, "org B's alert committed despite A's failure"
+    assert await count(client, ProactiveAlert, *a) == 0
+
+    two_orgs_one_raises["a_fails"] = False
+    second = await scheduler._hourly_proactive_kri_scan(KRI_NOW)
+    assert second.done == 1
+    assert await count(client, ProactiveAlert, *b) == 1, "the retry did not duplicate B"
+    assert await count(client, ProactiveAlert, *a) == 1, "the retry completed A"
+    assert await count(client, InAppNotification, InAppNotification.source == "proactive_alert") == 2
+    assert await count(client, OutboxMessage, OutboxMessage.source == "proactive_alert") == 2
+    assert await ledger(client, "hourly_kri_scan") == [("2025-02-03T09", DONE)]
+
+
+async def test_a_failing_kri_computation_is_an_org_failure_not_no_data(monkeypatch):
+    from app.services import company_context
+
+    async def broken(*_a, **_k):
+        raise RuntimeError("context unreadable")
+
+    monkeypatch.setattr(company_context, "get_company_context", broken)
+    orchestrator = ProactiveAlertOrchestrator(db=None, slot="2025-02-03T09")
+    assert await orchestrator._compute_current_kris("org-x") is None
+    assert orchestrator.failed_orgs == ["org-x"]
+
+
+async def test_same_named_kris_in_one_slot_each_get_their_own_alert(client, monkeypatch):
+    async def orgs(self):
+        return ["org-kri"]
+
+    async def kris(self, org_id):
+        return {"posture": {"red_kris": [_kri("Nakit Rezervi"), _kri("Nakit Rezervi"), _kri("Nakit Rezervi", id="k-7")]}}
+
+    for name, fn in (("_get_active_orgs", orgs), ("_compute_current_kris", kris)):
+        monkeypatch.setattr(ProactiveAlertOrchestrator, name, fn)
+
+    first = await scheduler._hourly_proactive_kri_scan(KRI_NOW)
+    assert first.done == 1 and await count(client, ProactiveAlert) == 3, "no alert dropped by a name collision"
+    await scheduler._hourly_proactive_kri_scan(KRI_NOW)  # the same slot again: nothing new, keys are stable
+    assert await count(client, ProactiveAlert) == 3
+    await scheduler._hourly_proactive_kri_scan(KRI_NOW.replace(hour=10))
+    assert await count(client, ProactiveAlert) == 6

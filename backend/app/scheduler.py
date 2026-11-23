@@ -978,8 +978,13 @@ async def _hourly_proactive_kri_scan(now: datetime | None = None) -> RunReport:
 
         orchestrator = get_proactive_orchestrator(db=db, slot=slot)
         result = await orchestrator.run_scheduled_scan()
-        if orchestrator.save_failures:  # an alert was rolled back: the slot is not done, the retry is idempotent
-            raise RuntimeError(f"{orchestrator.save_failures} alert(s) could not be saved")
+        # An alert was rolled back or an org's scan raised: the slot is not done. The other orgs' alerts are
+        # committed already; the retry (ledger attempts, operator alert) repeats none of them (slot-derived ids).
+        if orchestrator.save_failures or orchestrator.failed_orgs:
+            raise RuntimeError(
+                f"{orchestrator.save_failures} alert(s) could not be saved; "
+                f"scan failed for {len(orchestrator.failed_orgs)} org(s)"
+            )
         if result.get("total_alerts", 0) > 0:
             logger.info(
                 "Proactive KRI scan: orgs=%d alerts=%d", result.get("scanned", 0), result.get("total_alerts", 0),

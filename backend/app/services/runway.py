@@ -39,6 +39,20 @@ RUNWAY_LONG_MONTHS = 36  # beyond this the figure is stated as "longer than", no
 # first thing said (briefing, radar, alert), known or assumed, because a low runway is important news even when it
 # rests on an old statement.
 RUNWAY_ATTENTION_MONTHS = RUNWAY_CRITICAL_MONTHS
+DAYS_PER_MONTH = 30
+
+
+def under_a_month(months: float) -> str | None:
+    """A runway shorter than one month, said as that (never "yaklaşık 0,0 ay", which reads like an unknown).
+
+    `months` is the runway at the precision it is shown at (one decimal), so a day count is as coarse as
+    that: 0.0 means under half a tenth of a month, i.e. under two days. None when it is a month or more."""
+    if months >= 1:
+        return None
+    days = round(months * DAYS_PER_MONTH)
+    return f"1 aydan az ({'yaklaşık ' + str(days) + ' gün' if days >= 1 else '2 günden az'})"
+
+
 UPLOAD_PROMPT = "Güncel durumu görmek için yeni ekstre yükleyin."
 UPLOAD_PATH = "/upload"
 
@@ -355,8 +369,11 @@ def compute_runway(
             avg_monthly_net_cents=avg_net,
         )
     balance = opening["balance_cents"]
-    runway = balance / -avg_net if balance > 0 else 0.0
-    beyond = runway > RUNWAY_LONG_MONTHS
+    exact = balance / -avg_net if balance > 0 else 0.0
+    beyond = exact > RUNWAY_LONG_MONTHS
+    # The class is decided by the figure AS PRINTED (one decimal): 3.04 months reads "3,0 ay" and is the
+    # critical/attention boundary, so the text never contradicts the class.
+    runway = round(exact, 1)
     level = (
         "critical" if runway <= RUNWAY_CRITICAL_MONTHS
         else "warning" if runway <= RUNWAY_WARNING_MONTHS
@@ -371,7 +388,7 @@ def compute_runway(
     elif beyond:
         verdict = f"Bu hızla nakit {RUNWAY_LONG_MONTHS} aydan uzun yeter."
     else:
-        verdict = "Bu hızla nakit yaklaşık " + f"{runway:.1f}".replace(".", ",") + " ay yeter."
+        verdict = f"Bu hızla nakit {under_a_month(runway) or 'yaklaşık ' + f'{runway:.1f}'.replace('.', ',') + ' ay'} yeter."
     return _block(
         COMPUTED,
         f"{basis}; {listing} → ortalama aylık net nakit çıkışı {money(-avg_net)}. {verdict}"
@@ -383,7 +400,7 @@ def compute_runway(
         assumptions=assumptions,
         avg_monthly_net_cents=avg_net,
         # Past the long horizon it is no figure: "longer than 36 months" is in the message.
-        runway_months=None if beyond else round(runway, 1),
+        runway_months=None if beyond else runway,
         beyond_horizon=beyond,
         level=level,
         attention=not beyond and runway <= RUNWAY_ATTENTION_MONTHS,
@@ -444,7 +461,8 @@ def runway_line(block: dict[str, Any]) -> str:
     elif not block["opening_cash_cents"] or block["opening_cash_cents"] <= 0:
         head = "Kasa bakiyesi sıfırın altında: nakit bitmiş"
     else:
-        head = "Nakit pisti yaklaşık " + f"{block['runway_months']:.1f}".replace(".", ",") + " ay"
+        m = block["runway_months"]
+        head = "Nakit pisti " + (under_a_month(m) or "yaklaşık " + f"{m:.1f}".replace(".", ",") + " ay")
     # Certainty decides the word, prominence the position: known and low -> "KRİTİK"; low on an assumption
     # -> "DİKKAT: Son ekstreye göre ..." (never "kritik", never "kanıtlı"); both are said first.
     if block.get("level") == "critical":

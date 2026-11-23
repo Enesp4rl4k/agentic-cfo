@@ -91,6 +91,38 @@ def test_the_boundary_is_three_months() -> None:
     assert _block(_opening(15_500_00, 25))["attention"] is False
 
 
+def test_the_class_follows_the_figure_as_printed() -> None:
+    # 3.04 months prints "3,0 ay": the class is decided by that figure, so text and class agree.
+    known = _block(_opening(15_200_00, 3))
+    assert known["runway_months"] == 3.0 and (known["level"], known["attention"]) == ("critical", True)
+    assert "yaklaşık 3,0 ay" in known["message"] and runway_line(known).startswith("KRİTİK: Nakit pisti yaklaşık 3,0 ay")
+    # 3.06 prints "3,1 ay": past the boundary, no attention, no critical.
+    over = _block(_opening(15_300_00, 3))
+    assert over["runway_months"] == 3.1 and (over["level"], over["attention"]) == ("warning", False)
+    # the standing rule: an assumed balance at the same figure is capped, worded DİKKAT, never kritik/kanıtlı
+    assumed = _block(_opening(15_200_00, 25))
+    assert (assumed["level"], assumed["attention"]) == ("warning", True)
+    line = runway_line(assumed)
+    assert line.startswith("DİKKAT: Son ekstreye göre nakit pisti yaklaşık 3,0 ay")
+    _clean(line)
+
+
+def test_a_runway_under_a_month_is_said_as_that_not_as_zero() -> None:
+    near_zero = _block(_opening(1_00, 3))                                     # ₺1 against a ₺5.000 burn
+    assert near_zero["runway_months"] == 0.0
+    for text in (near_zero["message"], runway_line(near_zero),
+                 runway_for_display({"scenarios": {"base": {"runway_months": 0.0}}, "runway": near_zero}).text()):
+        assert "1 aydan az (2 günden az)" in text and "yaklaşık 0,0 ay" not in text and " 0 ay" not in text, text
+    half = _block(_opening(2_500_00, 3))                                      # half a month of cash
+    assert "1 aydan az (yaklaşık 15 gün)" in half["message"]
+    assert runway_line(half).startswith("KRİTİK: Nakit pisti 1 aydan az (yaklaşık 15 gün)")
+    old = _block(_opening(2_500_00, 25))                                      # same on an old balance
+    line = runway_line(old)
+    assert line.startswith("DİKKAT: Son ekstreye göre nakit pisti 1 aydan az (yaklaşık 15 gün)") and old["level"] == "warning"
+    _clean(line)
+    assert "1,0 ay" in _block(_opening(5_000_00, 3))["message"]                # a full month is still a month
+
+
 def test_unknown_stays_unknown_with_no_number() -> None:
     block = compute_runway(None, {"monthly_series": _series()}, "TRY")
     assert block["attention"] is False and block["runway_months"] is None

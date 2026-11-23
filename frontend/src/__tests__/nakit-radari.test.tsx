@@ -288,6 +288,14 @@ describe("Nakit Radarı", () => {
     expect(card.textContent).not.toContain("Kritik");
   });
 
+  it("says a runway under a month as that, not as a zero that reads like unknown", async () => {
+    getCashRadar.mockResolvedValue(radar({
+      runway: runway({ level: "critical", runway_months: 0, message: "KRİTİK: Nakit pisti 1 aydan az (2 günden az)." }),
+    }));
+    show();
+    expect((await screen.findByTestId("runway-value")).textContent).toBe("1 aydan az");
+  });
+
   it("says unknown with no figure when there is no proven balance, and names the statement that failed", async () => {
     getCashRadar.mockResolvedValue(radar({
       starting_cash_cents: null,

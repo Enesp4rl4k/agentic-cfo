@@ -58,4 +58,4 @@ def test_a_forecast_with_no_runway_block_is_not_shown_as_proven() -> None:
 
 def test_a_zero_month_runway_is_a_figure_not_unknown() -> None:
     table = _table(_html(KNOWN, {**SCENARIOS, "base": {**SCENARIOS["base"], "runway_months": 0.0}}))
-    assert "0 ay (31 Mart 2026 ekstresine göre)" in table
+    assert "1 aydan az (2 günden az) (31 Mart 2026 ekstresine göre)" in table  # a figure (under a month), not unknown
