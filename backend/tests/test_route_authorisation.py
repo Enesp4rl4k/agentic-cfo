@@ -104,6 +104,7 @@ MEMBER_READ_ROUTES = [
     ("GET", "/api/v1/held-rows"),
     ("GET", "/api/v1/held-rows/file-questions"),
     ("GET", "/api/v1/held-rows/account-questions"),
+    ("GET", "/api/v1/held-rows/transfer-proposals"),
     ("GET", "/api/v1/held-rows/direction-mappings"),
     ("GET", "/api/v1/org/base-currency"),
 ]

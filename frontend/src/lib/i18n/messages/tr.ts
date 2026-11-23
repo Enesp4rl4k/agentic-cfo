@@ -3319,6 +3319,7 @@ export const tr: MessageTree = {
       held_row_resolution: "Bekleyen satır yanıtı",
       balance_reverification: "Bakiye zincirinin yeniden doğrulanması",
       account_identity: "Hesap kimliği",
+      own_transfer: "Hesaplar arası aktarım",
       base_currency_confirmation: "Şirket para birimi",
       file_direction_answer: "Dosya yönü yanıtı",
       direction_mapping: "Yön eşlemesi",

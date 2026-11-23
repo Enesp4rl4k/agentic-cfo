@@ -110,8 +110,9 @@ SIGNED = "signed"        # the source's contract: amounts are signed (negative =
 #
 # The table is EMPTY on purpose. A contract is safe only for a source that can emit nothing but that kind of item, and
 # that is a fact about the API object the pull asks for, not about a file that reaches the normaliser by name:
-#   - Stripe: `stripe.Invoice.list(status="paid")` (billing_stripe.py) lists paid invoices only (never refunds, disputes,
-#     payouts, fees or credit notes, which are other objects) - and it still writes `type=income` on every row itself;
+#   - Stripe: `stripe.Invoice.list(status="paid")` and `stripe.CreditNote.list(customer=...)` (billing_stripe.py) are
+#     two other objects (never payouts, fees, direct refunds or disputes) - and each row gets the type of ITS object
+#     (invoice: income, credit note: expense) written by the pull itself;
 #   - CRM and HR exports are CSV/URL files a customer supplies: a credit note or a reimbursement can sit in them with
 #     no field that tells it from a sale or a salary.
 # So each of our pulls writes an explicit `type` per row, and a row without one is HELD. A source may be added here only
