@@ -36,7 +36,7 @@ spec:
             memory: 512Mi
           limits:
             cpu: 1000m
-            memory: 2Gi
+            memory: 2560Mi   # 2 uvicorn processes x (about 350 MB + one 800 MB parser child): docs/ops/parser-sizing.md
         readinessProbe:
           httpGet:
             path: /health

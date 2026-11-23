@@ -7,7 +7,8 @@ page text, tables, OCR render and Tesseract, and the e-Belge attachment (`pdf_em
 
 * refuses a file over the upload size cap before starting anything;
 * starts the child in its own process group (session), with an environment that holds no secrets,
-  and bounded by `RLIMIT_AS` / `RLIMIT_CPU` set by the child on itself (Linux);
+  and bounded by `RLIMIT_AS` / `RLIMIT_CPU` set by the child on itself (Linux), which also makes itself the
+  preferred OOM victim; the parent enforces `PARSE_CHILD_RSS_MB` on the group's resident memory (`parser_guard`);
 * runs at most `PDF_PARSE_CONCURRENCY` children at a time PER PROCESS (a waiter is refused as "busy" after
   `PARSE_QUEUE_WAIT_SECONDS`; the real bound is that times the processes, docs/ops/parser-sizing.md);
 * reads the child's stdout and stderr with a cap while they arrive (fixed-size reads; over the cap: kill);
@@ -39,6 +40,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from app.services import parser_guard
+
 logger = logging.getLogger(__name__)
 
 # A page rendered for OCR may not exceed this many pixels (a 14400 x 14400 pt page at 300 dpi would be a
@@ -54,6 +57,7 @@ _STDERR_LINE_CAP = 4096          # a stderr line is held at most this long while
 _STDERR_TOTAL_LIMIT = 16 * 1024 * 1024
 _OCR_MARK = "@@OCR@@"
 _MEM_MARK = "@@MEM@@"      # the child hit its memory limit (a MemoryError reached the top)
+_RSS_POLL_SECONDS = 0.25
 _PEAK_MARK = "@@PEAK@@"    # "<VmPeak kB> <VmHWM kB> <largest descendant RSS kB>": the child's own peaks at exit
 NEWLINE = bytes([10])
 # The child parses attacker-controlled bytes: it gets no secrets (no CMAP_PATH, no keys), only what a parser needs.
@@ -314,6 +318,8 @@ def _run_child(file_path: str, force_ocr: bool) -> Any:
 
 def _supervise(argv: list[str], timeout_s: int, ocr_extra_s: int, stdin_data: bytes | None, stdout_limit: int,
                label: str, backend_dir: Path, kwargs: dict[str, Any]) -> ChildOutcome:
+    from app.config import get_settings
+
     proc = subprocess.Popen(
         argv, stdin=subprocess.PIPE if stdin_data is not None else subprocess.DEVNULL,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=str(backend_dir),
@@ -374,11 +380,19 @@ def _supervise(argv: list[str], timeout_s: int, ocr_extra_s: int, stdin_data: by
         t.start()
     started = time.monotonic()
     timed_out = False
+    rss_mb, next_look = get_settings().parse_child_rss_mb, started
     while True:
         try:
             proc.wait(timeout=0.1)
             break
         except subprocess.TimeoutExpired:
+            if time.monotonic() >= next_look:   # the child and its Tesseract, resident, a few times a second
+                next_look = time.monotonic() + _RSS_POLL_SECONDS
+                if (used := parser_guard.over_budget(proc.pid, rss_mb)) is not None:
+                    logger.warning("Parser child group used %d MB resident, over PARSE_CHILD_RSS_MB %d; killed: %s", used, rss_mb, label)
+                    state["memory"] = True
+                    _kill_group(proc)
+                    break
             budget = timeout_s + ocr_extra_s * state["ocr"]
             if state["overflow"] or time.monotonic() - started > budget:
                 timed_out = not state["overflow"]
@@ -486,30 +500,23 @@ def attachment_note(file_path: str) -> tuple[str, bool] | None:
     return f"{tr} ({why_tr}). {en} ({why_en}).", any(r.get("candidate") for r in unread)
 
 
-def pages_note(file_path: str) -> str | None:
-    """Turkish then English note naming the pages that yielded no text (always held: rows on them are missing)."""
+def pages_note(file_path: str) -> tuple[str, bool] | None:
+    """(Turkish then English note, hold) for pages that yielded no text; the hold rule is `page_gap.note`."""
+    from app.services import page_gap
+
     result = cached_result(file_path)
-    pages = (result.metadata or {}).get("pages_unread") if result is not None else None
-    if not pages:
-        return None
-    shown = ", ".join(str(p) for p in pages[:20]) + (f" (+{len(pages) - 20})" if len(pages) > 20 else "")
-    return (f"Sayfa {shown} okunamadı; bu sayfalardaki kayıtlar yok. "
-            f"Page(s) {shown} could not be read; the rows on them are missing.")
+    return page_gap.note((result.metadata or {}) if result is not None else {})
 
 
 def apply_pdf_notes(result: Any, file_path: str) -> None:
-    """Put what the PDF read did not get on an ingestion result (its detail, and held where data is missing):
-    an unread attachment, unread pages. Never a silent fallback."""
+    """Put what the PDF read did not get on an ingestion result: an unread attachment, text-less pages. Held only
+    where data is missing (an e-Belge candidate attachment, a page with evidence of lost rows). Never a silent fallback."""
     notes: list[str] = []
     hold = False
-    attachment = attachment_note(file_path)
-    if attachment:
-        notes.append(attachment[0])
-        hold = hold or attachment[1]
-    pages = pages_note(file_path)
-    if pages:
-        notes.append(pages)
-        hold = True
+    for found in (attachment_note(file_path), pages_note(file_path)):
+        if found:
+            notes.append(found[0])
+            hold = hold or found[1]
     if notes:
         result.detail = f"{result.detail or ''} [{' | '.join(notes)}]".strip()
         result.needs_review = bool(result.needs_review) or hold
@@ -550,6 +557,7 @@ def report_peak() -> None:
 
 
 def _apply_limits(mem_mb: int, cpu_s: int) -> None:
+    parser_guard.prefer_oom_victim()   # first, before any untrusted byte: the OOM killer takes the parser, not the API
     try:
         import resource
     except ImportError:  # Windows

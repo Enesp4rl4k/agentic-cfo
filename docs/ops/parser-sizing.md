@@ -16,6 +16,14 @@ and how the container is sized for that.
   counts **resident** memory. When it is hit the kernel's OOM killer picks the victim, and it may pick the API
   process itself. The container must therefore hold what the children actually use: `PARSE_CHILD_RSS_MB`.
 
+`PARSE_CHILD_RSS_MB` is **enforced**, not just a sizing assumption: the supervising parent polls the resident set
+(`VmRSS` in `/proc`, 4 times a second) of the child and every descendant (Tesseract) and, when the sum is over the
+budget, kills the child's process group and returns the same "dosya bellek sınırını aştı" refusal
+(`app/services/parser_guard.py`). A hostile child can no longer reach the ~1.5 GB that `RLIMIT_AS` alone would allow.
+In addition the child makes itself the preferred victim of the kernel's OOM killer (`oom_score_adj` 900, inherited by
+Tesseract): if a container still hits its wall, the parser dies, not an API worker. Both are Linux-only (elsewhere
+the watchdog finds no `/proc` and the score is not written).
+
 The preflight's sizing rule uses `PARSE_CHILD_RSS_MB`, never `RLIMIT_AS`.
 
 ## Measured (Linux, Python 3.12/3.14, PyMuPDF 1.28.2, pdfplumber 0.11.9)
@@ -66,24 +74,34 @@ worker or `--db` checks):
 
     PARSE_CHILD_RSS_MB x PDF_PARSE_CONCURRENCY x (API worker processes, 1 for an arq worker)  <  memory limit
 
-with room for the process itself (about 300 MB per API process). `PARSE_PROCESS_COUNT` is the number of API worker
+plus the processes themselves: the rule the preflight checks is
+`(PARSE_CHILD_RSS_MB x PDF_PARSE_CONCURRENCY + 350) x processes < limit` (350 MB is what one uvicorn or arq process
+holds, `PROCESS_BASE_MB`). `PARSE_PROCESS_COUNT` is the number of API worker
 processes (`uvicorn --workers`). Shipped limits:
 
 | Service | Limit | Why |
 |---|---|---|
-| `backend` (compose) | 2560m | 2 x 800 for children + 2 x about 350 for the API processes, rounded up. Was 1280m. |
-| `worker` (compose) | 2g | 800 for one child + the arq process and its jobs. Was 1280m. |
+| `backend` (compose) | 2560m (minimum) | 2 x (800 child + 350 process) = 2300, rounded up. Was 1280m. |
+| `worker` (compose) | 2g (minimum) | 800 for one child + 350 for the arq process, with room for its jobs. Was 1280m. |
 | `worker-maintenance` (compose) | 768m | parses no uploads: unchanged |
 | `migrate` (compose) | 512m | parses nothing: unchanged, and exempt from the rule |
-| Kubernetes / Helm | backend 2Gi, worker 4Gi, maintenance 1.5Gi | already hold the rule |
+| Kubernetes / Helm | backend **2560Mi**, worker 4Gi, maintenance 1.5Gi | backend was 2Gi: the old rule ignored the API processes' own memory, and 2 x (800 + 350) = 2300 MB does not fit 2048 MB. Fixed with the rule above; the matrix test now fails for a 2Gi backend |
+
+Host: the compose limits add up to about 8.8 GB (backend 2.5, worker 2, Postgres 2, Redis 0.6, maintenance 0.75,
+frontend 0.5, Caddy 0.25), so plan a 12 GB host (`staging.md`, the pilot checklist).
 
 ## What a limit looks like to the user
 
 A child that runs out of memory is never an empty page and never "damaged": a `MemoryError` anywhere in the parse
 (a page, Tesseract's failed allocation, opening the document), or the kernel ending the child, is the refusal
 "dosya bellek sınırını aştı; daha kısa dönemlere bölüp yükleyin" (English underneath), naming the pages that were
-not read. A page that yields no text although it has content is listed ("Sayfa N okunamadı") on the ingestion
-result and holds it for review.
+not read.
+
+A page that yields no text although it has an image or a few characters is always named on the result ("N. sayfada
+okunabilir metin yok (görsel/boş sayfa)"). It HOLDS the upload only when there is evidence that rows may be missing
+(`app/services/page_gap.py`): the page sits between pages that carry transaction rows and the balance does not chain
+across it (or cannot be checked), or the page before it says the statement continues and nothing with rows follows.
+A logo cover, a stamp page or a blank scanned back side is a note only.
 
 ## Preflight
 

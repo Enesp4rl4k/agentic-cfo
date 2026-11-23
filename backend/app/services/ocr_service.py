@@ -46,7 +46,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from app.services import pdf_isolation
+from app.services import page_gap, pdf_isolation
 
 logger = logging.getLogger(__name__)
 
@@ -418,8 +418,11 @@ def _extract_in_process(file_path: str, force_ocr: bool = False) -> OCRResult:
     dominant_strategy = Counter(strategies).most_common(1)[0][0] if strategies else "failed"
 
     unread_pages = [pr.page_num + 1 for pr in page_results if pr.warnings and pr.had_content]
-    if unread_pages:   # pages that yielded nothing: shown to the user as not read (pdf_isolation.apply_pdf_notes)
+    if unread_pages:   # text-less pages: always a note; a hold only where data may be missing (page_gap, pdf_isolation.apply_pdf_notes)
         doc_meta["pages_unread"] = unread_pages
+        held = page_gap.holding_pages([(pr.page_num + 1, pr.text) for pr in page_results], unread_pages)
+        if held:
+            doc_meta["pages_gap"] = {str(no): list(why) for no, why in held.items()}
 
     result = OCRResult(
         text=full_text,

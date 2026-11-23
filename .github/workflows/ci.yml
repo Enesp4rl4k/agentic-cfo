@@ -434,7 +434,7 @@ jobs:
           tests/test_pdf_ocr_end_to_end.py tests/test_pdf_upload_guard.py tests/test_parser_isolation_fitness.py
           tests/test_report_hostile_text.py tests/test_report_render_no_fetch.py
           tests/test_sheet_isolation.py tests/test_pdf_isolation_followups.py
-          tests/test_parser_memory_measure.py tests/test_parser_memory_deploy_matrix.py tests/test_xlsx_statement_fixtures.py
+          tests/test_parser_memory_measure.py tests/test_parser_memory_deploy_matrix.py tests/test_xlsx_statement_fixtures.py tests/test_parser_guard.py tests/test_page_gap.py
 
       # requirements.txt is exact pins, constraints.txt pins the rest, and what
       # pip just installed is exactly that set. A new transitive package or a

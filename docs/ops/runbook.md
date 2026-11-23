@@ -25,6 +25,7 @@ dc ps                                               # migrate "exited (0)", diğ
 curl -fsS https://<API_DOMAIN>/api/v1/ready         # "status": "ready" (ilk 5 dk "degraded" olabilir)
 ```
 
+- Bellek alt sınırı: `backend` en az **2560m**, `worker` en az **2g** (artı Postgres ve Redis); bunun altında yüklenen dosyaları ayrıştırırken `OOMKilled` görürsünüz ([staging.md §2](staging.md#2-sunucu), [parser-sizing.md](parser-sizing.md)).
 - backend, worker ve worker-maintenance her başlangıçta `python -m app.core.preflight --db` çalıştırır: `FATAL` bulgu (şablon gizli, localhost bağlantıları, demo modu...) ya da head'de olmayan şema konteyneri **başlatmaz**; `dc logs <servis>` nedeni söyler.
 - `migrate` sıfırdan farklı çıkarsa backend **başlamaz**, eski konteynerler çalışmaya devam eder: `dc logs migrate`.
 - Eski imajlar etikettiyle diskte kalır (geri alma bunlara dayanır). Ayda bir: son 5 etiket dışındakileri `docker image rm` ile silin.

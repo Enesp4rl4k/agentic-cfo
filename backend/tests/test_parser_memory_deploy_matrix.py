@@ -86,9 +86,10 @@ def test_the_migrate_service_is_small_and_parses_nothing(monkeypatch, tmp_path):
 def test_the_api_and_worker_containers_hold_the_children_the_defaults_allow():
     s = get_settings()
     services = compose_services()
-    api_need = s.parse_child_rss_mb * s.pdf_parse_concurrency * s.parse_process_count
-    assert megabytes(services["backend"]["mem_limit"]) > api_need, "the api container must hold its children"
-    assert megabytes(services["worker"]["mem_limit"]) > s.parse_child_rss_mb * s.pdf_parse_concurrency
+    base = preflight.PROCESS_BASE_MB
+    api_need = (s.parse_child_rss_mb * s.pdf_parse_concurrency + base) * s.parse_process_count
+    assert megabytes(services["backend"]["mem_limit"]) > api_need, "the api container must hold its processes AND their children"
+    assert megabytes(services["worker"]["mem_limit"]) > s.parse_child_rss_mb * s.pdf_parse_concurrency + base
 
 
 def k8s_workloads() -> list[tuple[str, int, str | None]]:

@@ -238,16 +238,16 @@ def test_the_cgroup_limit_is_read_from_v2_then_v1_and_unlimited_or_absent_is_non
 
 def test_children_that_fit_say_nothing_and_a_host_without_cgroup_files_is_quiet(tmp_path, monkeypatch):
     limit_files(monkeypatch, tmp_path, v2=str(2560 * MB))
-    assert preflight._parser_memory_findings(settings_for(), "api") == []   # 800 x 1 x 2 = 1600 <= 2560
+    assert preflight._parser_memory_findings(settings_for(), "api") == []   # (800 x 1 + 350) x 2 = 2300 <= 2560
     monkeypatch.setattr(preflight, "_CGROUP_LIMIT_FILES", (tmp_path / "absent",))
     assert preflight._parser_memory_findings(settings_for(rss=99999), "api") == []
 
 
 def test_children_that_can_exceed_the_container_warn(tmp_path, monkeypatch):
     limit_files(monkeypatch, tmp_path, v2=str(1280 * MB))
-    (finding,) = preflight._parser_memory_findings(settings_for(rss=800, slots=1, procs=2), "api")   # 1600 > 1280
+    (finding,) = preflight._parser_memory_findings(settings_for(rss=800, slots=1, procs=2), "api")   # 2300 > 1280
     assert finding.code == "parser_memory_exceeds_container" and finding.severity == preflight.WARN
-    assert "1600" in finding.message and "1280" in finding.message and "parser-sizing.md" in finding.message
+    assert "2300" in finding.message and "1280" in finding.message and "parser-sizing.md" in finding.message
 
 
 def test_one_child_as_big_as_the_container_is_fatal_but_only_where_children_run(tmp_path, monkeypatch):
@@ -258,8 +258,8 @@ def test_one_child_as_big_as_the_container_is_fatal_but_only_where_children_run(
         assert preflight._parser_memory_findings(settings_for(rss=800), process) == [], process
 
 
-def test_an_arq_worker_counts_as_one_process_whatever_the_api_process_count_is(tmp_path, monkeypatch):
-    limit_files(monkeypatch, tmp_path, v2=str(1000 * MB))
+def test_an_arq_worker_counts_as_one_process_whatever_the_api_process_count_is(tmp_path, monkeypatch):   # (800 + 350) = 1150 fits 1200
+    limit_files(monkeypatch, tmp_path, v2=str(1200 * MB))
     assert preflight._parser_memory_findings(settings_for(rss=800, procs=4), "worker") == []
     assert [f.code for f in preflight._parser_memory_findings(settings_for(rss=800, procs=4), "api")] == ["parser_memory_exceeds_container"]
 
@@ -355,7 +355,7 @@ def test_a_child_that_reports_a_memory_error_or_is_killed_is_the_memory_refusal(
         assert extract_text_from_pdf(path).metadata["refusal"]["code"] == "pdf_memory"
 
 
-def test_an_unreadable_page_with_content_is_listed_and_holds_the_result(tmp_path, monkeypatch):
+def test_an_unreadable_page_with_content_is_listed_as_a_note_and_holds_only_with_evidence(tmp_path, monkeypatch):
     import app.agents.data_ingestion as di
     from app.services import ocr_service
 
@@ -374,7 +374,8 @@ def test_an_unreadable_page_with_content_is_listed_and_holds_the_result(tmp_path
     monkeypatch.setattr(pdf_isolation, "cached_result", lambda file_path: result)
     sonuc = SkillResult(ok=True, patch={}, confidence=0.95, needs_review=False, detail="3 işlem")
     pdf_isolation.apply_pdf_notes(sonuc, path)
-    assert sonuc.needs_review is True and "Sayfa 2 okunamadı" in sonuc.detail and "could not be read" in sonuc.detail
+    # nothing on the pages around it says rows are missing (no transaction rows at all): a visible note, no hold
+    assert sonuc.needs_review is False and "2. sayfada okunabilir metin yok (görsel/boş sayfa)" in sonuc.detail and "No readable text" in sonuc.detail
     assert di.apply_pdf_notes is pdf_isolation.apply_pdf_notes
 
 
