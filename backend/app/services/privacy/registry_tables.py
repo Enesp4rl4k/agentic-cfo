@@ -24,7 +24,7 @@ TABLES: dict[str, Table] = {
     "org_memberships": Table("who belongs to which company, in which role", S.MEMBER, R.ACCOUNT, {"user_id": _PSE}),
     "org_invites": Table("invitation of a person to a company", S.MEMBER, R.OPERATIONAL,
                          {"email": _CT, "token": _CRED}, (Flow.SMTP,)),
-    "pilot_invites": Table("pilot access codes", S.MEMBER, R.OPERATIONAL, {"email": _CT, "note": _TXT, "used_by_user_id": _PSE}),
+    "pilot_invites": Table("pilot access codes", S.MEMBER, R.OPERATIONAL, {"email": _CT, "note": _TXT, "company_name": _ID, "token_hash": _CRED, "issued_by": _PSE, "used_by_user_id": _PSE}),
     "user_feedback": Table("in-product feedback", S.MEMBER, R.OPERATIONAL,
                            {"user_id": _PSE, "comment": _TXT, "biggest_benefit": _TXT, "biggest_gap": _TXT, "page_context": _TXT}),
     "organizations": Table("the customer company and its billing", S.COMPANY, R.ACCOUNT,
@@ -130,10 +130,13 @@ TABLES: dict[str, Table] = {
     "email_verification_tokens": Table("single-use verification links", S.MEMBER, R.OPERATIONAL, {"user_id": _PSE, "token_hash": _CRED}),
     "org_erasure_requests": Table("the erasure handshake", S.MEMBER, R.PROOF, {"requested_by_user_id": _PSE},
                                   note="raw ids are nulled when the erasure runs; hashes remain"),
+    "scheduled_job_runs": Table("one claim per scheduled job, company and period (idempotency ledger)", S.COMPANY, R.OPERATIONAL,
+                                {"last_error": _TXT}, note="a job name, a period and a short error code"),
     "org_erasure_records": Table("hash-chained proof that an erasure ran", S.COMPANY, R.PROOF, {}, note="hashes and counts only"),
 }
 
 NO_PERSONAL_DATA: dict[str, str] = {
+    "ops_state": "platform-wide operator facts (last backup report): no organisation, no person",
     "alert_rules": "threshold rules: a metric, an operator, a number and a label the user types",
     "donem_kilitleri": "closed accounting periods: a period and a date",
 }
