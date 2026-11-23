@@ -108,15 +108,22 @@ def balance_age(as_of: str, anchor: date, stale_after_days: int) -> tuple[int, b
     return age, age > stale_after_days
 
 
-BURN_WINDOW_DAYS = 3 * 31  # the runway's burn window (`runway.RUNWAY_MIN_MONTHS` months, pinned by a test)
+def aged_basis(
+    basis: str | None, note: str | None, age_days: int, as_of: str | None = None,
+) -> tuple[str, str | None]:
+    """(basis, note) of a balance that is `age_days` old.
 
+    A runway answers "how long does today's cash last": a balance older than the staleness limit
+    (`radar_balance_stale_after_days`, the same limit `balance_age` flags with `stale`) is a fact about a past
+    day, so it can only be `assumed`, and says so with its date. Within the limit it keeps its proof's basis.
+    Every surface (radar, runway, briefing, alerts) reads this one rule; a summed set of accounts is as old as
+    its oldest account (`bank_accounts._account` ages each account against the newest one)."""
+    from app.config import get_settings
 
-def aged_basis(basis: str | None, note: str | None, age_days: int) -> tuple[str, str | None]:
-    """(basis, note) of a balance that is `age_days` old: older than the burn window it is divided by, it can
-    only be `assumed`, and says so. Younger ones keep what their proof gave (a stale one is still dated)."""
-    if age_days <= BURN_WINDOW_DAYS:
+    if age_days <= get_settings().radar_balance_stale_after_days:
         return basis or "known", note
-    sentence = f"bakiye {age_days} gün önceki ekstreye ait"
+    when = f" ({as_of})" if as_of else ""
+    sentence = f"bakiye {age_days} gün önceki ekstreye ait{when}"
     return "assumed", f"{note}; {sentence}" if note else sentence
 
 

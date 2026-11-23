@@ -237,7 +237,7 @@ def _account(group: list[dict[str, Any]], newest: str, limit: int, names: dict[s
     behind = (date.fromisoformat(newest) - date.fromisoformat(last["date"])).days
     name = next((names[r["job_id"]] for r in group if r["job_id"] in names), None) or last["filename"]
     # An account whose newest balance is older than the burn window against the other accounts' is only assumed.
-    basis, note = aged_basis(last["basis"], last["reason"], behind)
+    basis, note = aged_basis(last["basis"], last["reason"], behind, last["date"])
     return {
         "name": name, "job_id": last["job_id"], "as_of": last["date"],
         "balance_cents": last["balance_cents"], "currency": last["currency"], "basis": basis,

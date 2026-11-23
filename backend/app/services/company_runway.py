@@ -69,7 +69,7 @@ def opening_of(balance: dict[str, Any] | None, anchor: date, excluded: list[dict
         return None
     limit = get_settings().radar_balance_stale_after_days
     age, stale = balance_age(str(balance["date"]), anchor, limit)
-    basis, note = aged_basis(balance.get("basis"), None, age)
+    basis, note = aged_basis(balance.get("basis"), None, age, str(balance["date"])[:10])
     return {
         "balance_cents": int(balance["balance_cents"]), "as_of": str(balance["date"])[:10],
         "age_days": age, "stale": stale, "stale_after_days": limit, "filename": balance.get("filename"),

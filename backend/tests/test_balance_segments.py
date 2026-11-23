@@ -27,7 +27,7 @@ from tests.api_helpers import bellek_istemcisi, kullanici
 from tests.test_sign_discriminating import _csv, _pairs
 
 NO_VERDICT: dict[str, Any] = {"balance_check": None, "unaccounted": 0}
-ANCHOR = date(2026, 3, 14)
+ANCHOR = date(2026, 3, 10)   # five days after the last printed balance: inside the staleness limit
 # (day, amount, type, balance): balances only on rows 0, 2, 4, 6. 1.000,00 opening.
 SPEC: list[tuple[str, int, str, int | None]] = [
     ("2026-03-02", 100_00, "expense", 900_00),

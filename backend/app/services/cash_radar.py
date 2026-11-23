@@ -186,7 +186,7 @@ def _opening_cash(balance: dict[str, Any] | None, anchor: date) -> OpeningCash |
     as_of = date.fromisoformat(str(balance["date"])[:10])
     limit = get_settings().radar_balance_stale_after_days
     age, stale = balance_age(as_of.isoformat(), anchor, limit)
-    basis, aged_note = aged_basis(balance.get("basis"), None, age)
+    basis, aged_note = aged_basis(balance.get("basis"), None, age, as_of.isoformat())
     notes = {a["basis_note"] for a in balance.get("accounts") or [] if a.get("basis_note")} | ({aged_note} if aged_note else set())
     return OpeningCash(
         balance_cents=balance["balance_cents"],

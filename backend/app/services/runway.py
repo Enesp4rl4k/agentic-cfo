@@ -73,7 +73,7 @@ def opening_cash_for(state: dict[str, Any], anchor: date | None = None) -> dict[
     today = anchor or datetime.now(UTC).date()
     limit = get_settings().radar_balance_stale_after_days
     age, stale = balance_age(str(chosen["date"]), today, limit)
-    basis, basis_note = aged_basis(chosen.get("basis"), chosen.get("basis_note"), age)
+    basis, basis_note = aged_basis(chosen.get("basis"), chosen.get("basis_note"), age, str(chosen["date"])[:10])
     return {
         "balance_cents": int(chosen["balance_cents"]),
         "as_of": str(chosen["date"])[:10],
@@ -320,6 +320,8 @@ def compute_runway(
     )
     if opening.get("uncertain") and level == "critical":
         level = "warning"  # the cash is the newest of statements that may be one account: not measured
+    if opening.get("basis") == "assumed" and level == "critical":
+        level = "warning"  # only a measured, current balance may raise a critical alert (stale and thin proofs are assumed)
     if balance <= 0:
         verdict = "Kasa bakiyesi sıfırın altında: nakit bitmiş."
     elif beyond:
