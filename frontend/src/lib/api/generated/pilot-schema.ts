@@ -745,6 +745,11 @@ export interface components {
             net_change_cents: number;
             /** Org Id */
             org_id: string;
+            /**
+             * Runway Attention
+             * @default false
+             */
+            runway_attention: boolean;
             /** Runway Basis */
             runway_basis?: string | null;
             /** Runway Level */
@@ -1043,6 +1048,11 @@ export interface components {
             assumptions: {
                 [key: string]: unknown;
             }[];
+            /**
+             * Attention
+             * @default false
+             */
+            attention: boolean;
             /** Avg Monthly Net Cents */
             avg_monthly_net_cents?: number | null;
             /** Balance Basis */
@@ -1083,6 +1093,13 @@ export interface components {
              * @default []
              */
             other_currencies: components["schemas"]["OtherCurrencyBalanceOut"][];
+            /**
+             * Reasons
+             * @default []
+             */
+            reasons: {
+                [key: string]: string;
+            }[];
             /** Runway Months */
             runway_months?: number | null;
             /** Source Filename */
@@ -1091,6 +1108,11 @@ export interface components {
             stale?: boolean | null;
             /** Status */
             status: string;
+            /**
+             * Upload Path
+             * @default /upload
+             */
+            upload_path: string;
         };
         /** ShortfallOut */
         ShortfallOut: {

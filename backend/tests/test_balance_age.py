@@ -55,7 +55,7 @@ def test_a_ninety_day_old_balance_is_assumed_not_critical_and_names_its_age() ->
     block = _block(90)
     assert (block["status"], block["runway_months"]) == ("computed", 2.0)
     assert block["balance_basis"] == "assumed" and block["basis"] == "assumed" and block["level"] == "warning"
-    assert "bakiye 90 gün önceki ekstreye ait (2026-02-01)" in block["message"]
+    assert "Bu bakiye 90 gün önceki ekstreden (1 Şubat 2026)" in block["message"]
     alert = runway_alert(block)
     assert alert is not None and alert["level"] == "warning"
 
@@ -76,7 +76,7 @@ def test_every_surface_reads_the_same_basis() -> None:
     block = _block(90)
     view = runway_for_display({"scenarios": {"base": {"runway_months": 2.0}}, "runway": block})
     assert view.basis == "assumed" and not view.proven and view.cap("critical") == "high"
-    assert "bakiye 90 gün önceki ekstreye ait" in view.text()
+    assert "Bu bakiye 90 gün önceki ekstreden" in view.text() and "zayıf kanıt" not in view.text()
     _, basis = baseline_from(block)
     assert basis.balance_basis == "assumed" and not basis.proven
 
@@ -114,4 +114,4 @@ async def test_one_statement_older_than_the_limit_is_assumed_with_its_date(clien
     assert (fresh.opening_cash.age_days, fresh.opening_cash.basis, fresh.runway["level"]) == (7, "known", "critical")
     old = await _radar(client, org_id, date(2026, 4, 8))                   # 8 days
     assert (old.opening_cash.basis, old.runway["balance_basis"]) == ("assumed", "assumed")
-    assert old.runway["level"] != "critical" and "bakiye 8 gün önceki ekstreye ait (2026-03-31)" in old.runway["message"]
+    assert old.runway["level"] != "critical" and "Bu bakiye 8 gün önceki ekstreden (31 Mart 2026)" in old.runway["message"]

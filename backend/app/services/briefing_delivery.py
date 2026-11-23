@@ -82,7 +82,7 @@ def _message(briefing: MondayBriefing, data_date: date) -> tuple[str, str]:
     subject = f"Pazartesi bülteni — {briefing.week_start}"
     link = f"{get_settings().frontend_url.rstrip('/')}/bulten"
     runway = [briefing.runway_line] if briefing.runway_line else []
-    critical = briefing.runway_level == "critical"
+    critical = briefing.runway_level == "critical" or briefing.runway_attention
     body = "\n\n".join(
         [
             f"Hafta: {briefing.week_start} – {briefing.week_end}",

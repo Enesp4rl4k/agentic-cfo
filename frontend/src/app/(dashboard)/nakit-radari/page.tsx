@@ -171,6 +171,8 @@ function Runway({ radar, copy, locale }: { radar: CashRadar; copy: Copy; locale:
       basis={runway.basis ?? null}
       months={runway.runway_months ?? null}
       text={runway.message}
+      attention={runway.attention}
+      uploadHref={runway.stale ? runway.upload_path : null}
       copy={copy}
       locale={locale}
     />
@@ -497,10 +499,10 @@ export default function NakitRadariPage() {
         {viewMode === "individual" && radar && (
           <>
             {/* Cash running out is said before anything else. */}
-            {radar.runway?.level === "critical" && <Runway radar={radar} copy={copy} locale={locale} />}
+            {(radar.runway?.level === "critical" || radar.runway?.attention) && <Runway radar={radar} copy={copy} locale={locale} />}
             {!isEmpty(radar) && <RadarAnswer radar={radar} copy={copy} fmt={fmt} locale={locale} />}
             <MondayBriefingSection copy={copy} />
-            {radar.runway?.level !== "critical" && <Runway radar={radar} copy={copy} locale={locale} />}
+            {!(radar.runway?.level === "critical" || radar.runway?.attention) && <Runway radar={radar} copy={copy} locale={locale} />}
             <StartingCash radar={radar} copy={copy} fmt={fmt} locale={locale} />
             <BalanceDetails radar={radar} copy={copy} fmt={fmt} locale={locale} />
             {isEmpty(radar) ? (

@@ -71,11 +71,12 @@ class MondayBriefing:
     balance_age_days: int = 0
     balance_stale: bool = False
     # The measured runway (`app.services.runway`, the forecast's own computation), or that there is none:
-    # `runway_line` is the sentence the briefing carries (a critical one is its first); `runway_months` is
+    # `runway_line` is the sentence the briefing carries (a critical or low (attention) one is its first); `runway_months` is
     # None unless the runway was measured; `runway_basis` is "assumed" when it rests on an assumption.
     runway_status: str = "no_balance"
     runway_months: float | None = None
     runway_level: str | None = None
+    runway_attention: bool = False   # low (<= RUNWAY_ATTENTION_MONTHS), known or assumed: said first
     runway_basis: str | None = None
     runway_line: str = ""
     # A digest of everything above. The owner answers the briefing they saw; the
@@ -353,7 +354,7 @@ async def assemble_monday_briefing(
 
     runway = radar.runway
     runway_text = runway_line(runway) if runway else ""
-    if runway_text and runway and runway["level"] == "critical":
+    if runway_text and runway and (runway["level"] == "critical" or runway.get("attention")):
         final_text = f"{runway_text} {final_text}"  # cash running out is the first thing said
     elif runway_text:
         final_text += f" {runway_text}"
@@ -394,6 +395,7 @@ async def assemble_monday_briefing(
         runway_status=runway["status"] if runway else "no_balance",
         runway_months=runway["runway_months"] if runway else None,
         runway_level=runway["level"] if runway else None,
+        runway_attention=bool(runway and runway.get("attention")),
         runway_basis=runway["basis"] if runway else None,
         runway_line=runway_text,
     )

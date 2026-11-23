@@ -192,6 +192,8 @@ export type MessageTree = {
     openingAssumed: string;
     accountQuestionLink: string;
     identityUncertainNote: string;
+    runwayAttention: string;
+    runwayUploadLink: string;
   };
   takvim: {
     title: string;
@@ -3555,6 +3557,8 @@ export const en: MessageTree = {
     openingAssumed: "The balance rests on weak evidence and is taken as an assumption:",
     accountQuestionLink: "Answer: are these the same account?",
     identityUncertainNote: "Statements that may be one account are not added together; only the newest balance is counted.",
+    runwayAttention: "Attention",
+    runwayUploadLink: "Upload a new statement",
   },
   takvim: {
     title: "Payment calendar",
