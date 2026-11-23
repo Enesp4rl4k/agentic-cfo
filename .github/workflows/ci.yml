@@ -230,14 +230,16 @@ jobs:
           export RT_PG_CONTAINER
           bash scripts/restore-roundtrip.sh
 
-  # ── Optional load baseline (non-blocking artifact) ────────────────────────
+  # ── Optional load baseline (INTENTIONALLY NON-BLOCKING artifact) ──────────
+  # continue-on-error: a P95 over 30 requests on a shared runner is noisy; the job
+  # records a number for ops and must never gate a merge. It is not a test.
   load-baseline:
-    name: Load Baseline (ops P95 artifact)
+    name: Load Baseline (NON-BLOCKING, ops P95 artifact)
     runs-on: ubuntu-latest
     needs: [proof-gate]
     continue-on-error: true
     timeout-minutes: 20
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/master'
 
     services:
       postgres:
@@ -425,7 +427,9 @@ jobs:
         working-directory: backend
         run: mypy --config-file mypy_strict.ini
 
-      - name: Mypy full tree (advisory, non-blocking)
+      # INTENTIONALLY NON-BLOCKING: `|| true` below means this step cannot fail. The
+      # blocking type gate is the strict allowlist above.
+      - name: Mypy full tree (ADVISORY, NON-BLOCKING - cannot fail)
         working-directory: backend
         run: |
           mypy app/ \
@@ -442,6 +446,10 @@ jobs:
       - name: Fetch GİB corpus
         run: python scripts/fetch_gib_corpus.py
 
+      # No pipe: `| tail` made this step exit 0 whatever pytest returned (the shell
+      # is `bash -e` without pipefail), so failing tests here were green for weeks.
+      # `-rfE` ends the log with one FAILED/ERROR line per test, so the cause is
+      # readable without scrolling a 30-minute log.
       - name: Run tests
         working-directory: backend
         env:
@@ -456,10 +464,10 @@ jobs:
             -q \
             --tb=short \
             --no-header \
+            -rfE \
             --cov=app \
-            --cov-report=term-missing \
-            --cov-report=xml \
-            2>&1 | tail -30
+            --cov-report=term:skip-covered \
+            --cov-report=xml
 
       - name: Golden-case eval gate
         working-directory: backend
@@ -475,7 +483,10 @@ jobs:
           USE_SQLITE:         "true"
         run: pytest -q --no-header -m connectors
 
-      - name: Upload coverage
+      # INTENTIONALLY NON-BLOCKING: coverage is reported, not gated; an upload failure
+      # (no token, Codecov outage) must not fail the build. `if: always()` only so a
+      # failed test run still uploads its coverage; it does not change the job result.
+      - name: Upload coverage (NON-BLOCKING)
         uses: codecov/codecov-action@v4
         if: always()
         with:
@@ -514,7 +525,7 @@ jobs:
 
       - name: TypeScript type check
         working-directory: frontend
-        run: npx tsc --noEmit 2>&1 | tail -30 || true  # Non-blocking (workspace tsconfig)
+        run: npx tsc --noEmit
 
       - name: Next.js build
         working-directory: frontend
@@ -523,72 +534,146 @@ jobs:
           NEXTAUTH_URL:        http://localhost:3000
         run: npm run build
 
-  # ── Docker build (push to GHCR on main only) ──────────────────────────────
-  docker-build:
-    name: Docker Build & Push
+  # ── Which images need building on this run ────────────────────────────────
+  # ci.yml runs on every pull request, so path filtering cannot live in the `on:`
+  # block (it would skip the required checks). This job decides for the image jobs:
+  # always on a push to the default branch, and on a pull request only when it
+  # touches the image's inputs (the Dockerfile, requirements*.txt/constraints.txt
+  # and the code live under backend/ or frontend/) or this workflow.
+  image-changes:
+    name: Which images to build
     runs-on: ubuntu-latest
-    needs: [proof-gate, backend-ci, frontend-ci]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    outputs:
+      backend:  ${{ steps.diff.outputs.backend }}
+      frontend: ${{ steps.diff.outputs.frontend }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compare with the base branch
+        id: diff
+        env:
+          EVENT:    ${{ github.event_name }}
+          REF:      ${{ github.ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "push" ]; then
+            # The default branch (master; main is kept for a future rename) builds both.
+            if [ "$REF" = "refs/heads/master" ] || [ "$REF" = "refs/heads/main" ]; then
+              echo "backend=true"  >> "$GITHUB_OUTPUT"
+              echo "frontend=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "backend=false"  >> "$GITHUB_OUTPUT"
+              echo "frontend=false" >> "$GITHUB_OUTPUT"
+            fi
+            exit 0
+          fi
+          changed="$(git diff --name-only "$BASE_SHA" HEAD)"
+          echo "$changed"
+          if echo "$changed" | grep -qE '^(backend/|\.github/workflows/ci\.yml$)'; then
+            echo "backend=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "backend=false" >> "$GITHUB_OUTPUT"
+          fi
+          if echo "$changed" | grep -qE '^(frontend/|\.github/workflows/ci\.yml$)'; then
+            echo "frontend=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "frontend=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ── Docker image build: BUILD ONLY, nothing is pushed ─────────────────────
+  # This job used to be gated on refs/heads/main while the default branch is
+  # master, so it never ran and the production image was never built by CI.
+  # It builds (push: false, load: true), then starts the image once with no
+  # network and no database to prove it imports. There is no registry login and no
+  # push step anywhere in this file; publishing an image needs a deliberate
+  # decision (see the PR that introduced this job).
+  docker-backend:
+    name: Docker image build - backend (build only, no push)
+    runs-on: ubuntu-latest
+    needs: [image-changes]
+    if: needs.image-changes.outputs.backend == 'true'
+    timeout-minutes: 30
     permissions:
       contents: read
-      packages: write
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Extract Docker metadata (backend)
-        id: meta-backend
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend
-          tags: |
-            type=ref,event=branch
-            type=sha,prefix=sha-
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-
-      - name: Build and push backend image
+      - name: Build backend image (not pushed)
         uses: docker/build-push-action@v5
         with:
           context: ./backend
           file:    ./backend/Dockerfile
-          push:    true
-          tags:    ${{ steps.meta-backend.outputs.tags }}
-          labels:  ${{ steps.meta-backend.outputs.labels }}
-          cache-from: type=gha
-          cache-to:   type=gha,mode=max
+          push:    false
+          load:    true
+          tags:    agentic-cfo-backend:ci
+          cache-from: type=gha,scope=backend
+          cache-to:   type=gha,scope=backend,mode=max
 
-      - name: Extract Docker metadata (frontend)
-        id: meta-frontend
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend
-          tags: |
-            type=ref,event=branch
-            type=sha,prefix=sha-
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+      # No network, no database: the app, its PDF/OCR libraries and the migrations
+      # must import and be where the entrypoint expects them.
+      - name: Smoke test - the built image starts importing
+        run: |
+          docker run --rm --network none \
+            -e USE_SQLITE=true -e APP_ENV=ci -e LOG_FORMAT=plain \
+            -e BACKEND_SECRET_KEY="$(openssl rand -hex 32)" \
+            agentic-cfo-backend:ci \
+            sh -ec '
+              python -c "import app.main, weasyprint, fitz, pytesseract, pdfplumber, lxml; print(\"imports ok\")"
+              tesseract --list-langs | grep -qx tur
+              test -f alembic.ini && test -d alembic
+              python -m app.core.preflight
+            '
 
-      - name: Build and push frontend image
+  docker-frontend:
+    name: Docker image build - frontend (build only, no push)
+    runs-on: ubuntu-latest
+    needs: [image-changes]
+    if: needs.image-changes.outputs.frontend == 'true'
+    timeout-minutes: 30
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build frontend image (not pushed)
         uses: docker/build-push-action@v5
         with:
           context: ./frontend
           file:    ./frontend/Dockerfile
-          push:    true
-          tags:    ${{ steps.meta-frontend.outputs.tags }}
-          labels:  ${{ steps.meta-frontend.outputs.labels }}
-          cache-from: type=gha
-          cache-to:   type=gha,mode=max
+          push:    false
+          load:    true
+          tags:    agentic-cfo-frontend:ci
+          cache-from: type=gha,scope=frontend
+          cache-to:   type=gha,scope=frontend,mode=max
+
+      - name: Smoke test - the built image holds the standalone server
+        run: |
+          docker run --rm --network none --entrypoint node agentic-cfo-frontend:ci \
+            -e 'require("fs").accessSync("server.js"); require("fs").accessSync(".next/static"); console.log("server.js and .next/static present")'
 
   # ── Security scan ─────────────────────────────────────────────────────────
+  # BLOCKING on a fixable HIGH or CRITICAL vulnerability in the pinned Python set.
+  # Trivy's filesystem scan reads `requirements.txt` files; it does not read
+  # constraints.txt, so scanning ./backend alone covered only the direct pins and
+  # none of the transitive packages. The full pinned set (constraints.txt) is
+  # copied to a scratch requirements.txt and scanned too. `ignore-unfixed` keeps a
+  # red result meaningful: it fails only where an upgrade exists.
   security:
-    name: Security Scan
+    name: Security Scan (blocking on fixable HIGH/CRITICAL)
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
 
@@ -596,13 +681,31 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Run Trivy vulnerability scanner (backend)
-        uses: aquasecurity/trivy-action@master
+      - name: Prepare the full pinned set for scanning
+        run: |
+          mkdir -p .trivy-scan
+          cp backend/constraints.txt .trivy-scan/requirements.txt
+
+      - name: Run Trivy vulnerability scanner (direct pins, backend/)
+        uses: aquasecurity/trivy-action@0.28.0
         with:
           scan-type:   fs
           scan-ref:    ./backend
+          scanners:    vuln
           format:      table
-          exit-code:   0    # Non-blocking
+          exit-code:   1
+          ignore-unfixed: true
+          severity:    CRITICAL,HIGH
+
+      - name: Run Trivy vulnerability scanner (full pinned set incl. transitive)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type:   fs
+          scan-ref:    ./.trivy-scan
+          scanners:    vuln
+          format:      table
+          exit-code:   1
+          ignore-unfixed: true
           severity:    CRITICAL,HIGH
 
       - name: Check for .env files accidentally committed

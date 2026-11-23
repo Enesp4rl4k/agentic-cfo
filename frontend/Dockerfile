@@ -38,6 +38,10 @@ ENV NEXT_PUBLIC_LEGACY_DASHBOARDS=$NEXT_PUBLIC_LEGACY_DASHBOARDS
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 
+# The repository has no frontend/public directory, and the runner stage copies it:
+# without this the image build fails at that COPY.
+RUN mkdir -p public
+
 # Build — output is standalone (set in next.config.mjs: output: 'standalone')
 RUN npm run build
 
