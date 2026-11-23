@@ -133,8 +133,10 @@ class RecurringProjection:
     evidence_count: int = 0
 
 
-async def detect_recurring_obligations(db: AsyncSession, org_id: str) -> list[RecurringObligation]:
-    """Detect recurring payments from historical cash transactions in the ledger."""
+async def detect_recurring_obligations(
+    db: AsyncSession, org_id: str, currency: str = "TRY"
+) -> list[RecurringObligation]:
+    """Detect recurring payments from historical cash transactions in the ledger, in `currency` only."""
     rows = (
         (
             await db.execute(
@@ -146,7 +148,7 @@ async def detect_recurring_obligations(db: AsyncSession, org_id: str) -> list[Re
                     CanonicalTransaction.direction == "expense",
                     CanonicalTransaction.amount_cents > 0,
                     money_rows(),
-                    CanonicalTransaction.currency == "TRY",
+                    CanonicalTransaction.currency == currency,
                 )
                 .order_by(CanonicalTransaction.transaction_date)
             )

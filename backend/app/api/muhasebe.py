@@ -158,7 +158,9 @@ async def muhasebe_analiz(
         }
         for tx in txs
     ]
-    currency_of_tx = {tx.id: (tx.currency or "").upper() for tx in txs}
+    # The currency is stated on every row, and a blank one is said to be unknown ("?"), not counted as the
+    # journal's currency: `groups_by_currency` no longer assumes the primary for a row that names none.
+    currency_of_tx = {tx.id: (tx.currency or "").strip().upper() or "?" for tx in txs}
 
     # Muhasebe analizi — CoA adapter follows org regional packs
     packs: list[str] = []

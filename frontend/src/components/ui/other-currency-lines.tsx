@@ -16,6 +16,10 @@ export interface OtherCurrency {
   assumed_rows?: number;
 }
 
+/** A currency code for display: an unknown one ("?", empty) is said to be unknown, never printed as a code. */
+export const shownCode = (code: string | null | undefined, unknown: string) =>
+  /^[A-Za-z]{3}$/.test((code ?? "").trim()) ? (code as string) : unknown;
+
 /**
  * What is not in the headline figure: every other currency, as its own line.
  *
@@ -41,7 +45,7 @@ export function OtherCurrencyLines({
   const locale = org?.locale || "tr-TR";
   if (!items?.length) return null;
 
-  const money = (cents: number, code: string) => formatCurrency(cents / 100, code, locale);
+  const money = (cents: number, code: string) => formatCurrency(cents / 100, code, locale, copy.unknown);
   return (
     <div className="space-y-0.5 text-xs text-muted-foreground" data-testid="other-currency-lines">
       {items.map((item) => {
@@ -55,7 +59,7 @@ export function OtherCurrencyLines({
                 item.revenue_cents ? copy.revenueOf.replace("{amount}", money(item.revenue_cents, item.currency)) : null,
                 item.expense_cents ? copy.expenseOf.replace("{amount}", money(item.expense_cents, item.currency)) : null,
               ];
-        const amounts = parts.filter(Boolean).join(", ") || item.currency;
+        const amounts = parts.filter(Boolean).join(", ") || shownCode(item.currency, copy.unknown);
         return (
           <p key={item.currency}>
             {base ? copy.notConverted.replace("{amounts}", amounts).replace("{base}", base) : `${item.currency}: ${amounts}`}
