@@ -3,7 +3,7 @@
 WeasyPrint resolves `<img src>`, `<link>`, `@import` and CSS `url()` by fetching. The four report
 builders put strings a person typed (company name, titles, messages) into the HTML, so
 `<img src="http://169.254.169.254/...">` as a company name was a server-side request. Every render now
-passes `app.services.pdf_fetch.deny_fetch`. Real-WeasyPrint tests skip where Pango is not installed (a
+passes the fetcher of `app.services.pdf_fetch.deny_fetcher()`. Real-WeasyPrint tests skip where Pango is not installed (a
 Windows dev box); CI has it. The server below is on localhost: no test reaches outside.
 """
 from __future__ import annotations
@@ -15,7 +15,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
-from app.services.pdf_fetch import deny_fetch
+from app.services.pdf_fetch import deny_fetcher
 
 
 class _Hits:
@@ -28,7 +28,7 @@ def local_server():
     hits = _Hits()
 
     class Handler(BaseHTTPRequestHandler):
-        def do_GET(self):  # noqa: N802
+        def do_GET(self):
             hits.paths.append(self.path)
             self.send_response(404)
             self.end_headers()
@@ -55,11 +55,15 @@ def _weasyprint_or_skip():
     return HTML
 
 
-def test_deny_fetch_refuses_every_scheme():
+def test_the_denying_fetcher_refuses_every_scheme():
+    _weasyprint_or_skip()
+    fetcher = deny_fetcher()
     for url in ("http://169.254.169.254/latest/meta-data/", "https://example.com/a.css", "file:///etc/passwd",
                 "data:image/png;base64,AAAA", "ftp://host/x"):
         with pytest.raises(ValueError):
-            deny_fetch(url)
+            fetcher(url)  # how WeasyPrint calls it
+        with pytest.raises(ValueError):
+            fetcher.fetch(url)
 
 
 # ── Every builder passes the fetcher (runs everywhere, WeasyPrint stubbed) ────────────────────
@@ -67,6 +71,13 @@ def test_deny_fetch_refuses_every_scheme():
 @pytest.fixture
 def fake_weasyprint(monkeypatch):
     calls: list[dict] = []
+
+    class FakeURLFetcher:
+        def __init__(self, *a, **kw):
+            pass
+
+        def fetch(self, url, headers=None):
+            return b"fetched"
 
     class FakeHTML:
         def __init__(self, *a, **kw):
@@ -77,6 +88,7 @@ def fake_weasyprint(monkeypatch):
 
     mod = types.ModuleType("weasyprint")
     mod.HTML = FakeHTML  # type: ignore[attr-defined]
+    mod.URLFetcher = FakeURLFetcher  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "weasyprint", mod)
     return calls
 
@@ -92,7 +104,11 @@ def test_all_four_renderers_pass_the_denying_fetcher(fake_weasyprint):
     generate_unified_pdf({}, company_name="Firma")
     generate_executive_report({}, company_name="Firma")
     assert len(fake_weasyprint) == 4
-    assert all(kw.get("url_fetcher") is deny_fetch for kw in fake_weasyprint)
+    for kw in fake_weasyprint:
+        fetcher = kw.get("url_fetcher")
+        assert isinstance(fetcher, sys.modules["weasyprint"].URLFetcher)  # a URLFetcher subclass, not the default
+        with pytest.raises(ValueError):
+            fetcher.fetch("http://169.254.169.254/")
 
 
 def test_the_executive_report_margin_cannot_break_out_of_its_css_string(fake_weasyprint):
@@ -148,7 +164,5 @@ def test_css_url_and_import_make_no_request(local_server):
     base, hits = local_server
     html = (f'<style>@import url("{base}/imp.css"); body {{ background: url({base}/bg.png) }}'
             f'@font-face {{ font-family: x; src: url({base}/f.woff) }}</style><p>x</p>')
-    from app.services.pdf_fetch import deny_fetch as fetcher
-
-    assert HTML(string=html, url_fetcher=fetcher).write_pdf().startswith(b"%PDF")
+    assert HTML(string=html, url_fetcher=deny_fetcher()).write_pdf().startswith(b"%PDF")
     assert hits.paths == []

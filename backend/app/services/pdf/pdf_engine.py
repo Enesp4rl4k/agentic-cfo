@@ -290,7 +290,7 @@ class PDFEngine:
         try:
             from weasyprint import HTML
 
-            from app.services.pdf_fetch import deny_fetch
+            from app.services.pdf_fetch import deny_fetcher
         except (ImportError, OSError) as exc:
             # OSError: the package is there but its system libraries (Pango,
             # GObject) are not — importing it fails before any rendering.
@@ -298,7 +298,7 @@ class PDFEngine:
                 "PDF motoru (WeasyPrint) bu sunucuda çalışmıyor: paket ya da sistem kütüphaneleri eksik."
             ) from exc
         try:
-            return HTML(string=html, url_fetcher=deny_fetch).write_pdf()  # type: ignore[no-any-return]
+            return HTML(string=html, url_fetcher=deny_fetcher()).write_pdf()  # type: ignore[no-any-return]
         except Exception as exc:
             logger.error("WeasyPrint render failed: %s", exc)
             raise PDFRenderError(f"PDF oluşturulamadı: {exc}") from exc

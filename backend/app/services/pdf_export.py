@@ -436,7 +436,7 @@ def board_deck_to_pdf(
     try:
         from weasyprint import HTML  # type: ignore[import]
 
-        from app.services.pdf_fetch import deny_fetch
+        from app.services.pdf_fetch import deny_fetcher
     except ImportError as exc:
         raise ImportError(
             "weasyprint is required for PDF export. "
@@ -446,7 +446,7 @@ def board_deck_to_pdf(
     html_content = render_board_deck_html(board_deck, okr_status)
 
     try:
-        pdf_bytes: bytes = HTML(string=html_content, url_fetcher=deny_fetch).write_pdf()
+        pdf_bytes: bytes = HTML(string=html_content, url_fetcher=deny_fetcher()).write_pdf()
         logger.info(
             "PDF generated: %d bytes, slides=%d",
             len(pdf_bytes),

@@ -15,9 +15,10 @@ from types import ModuleType, SimpleNamespace
 import pytest
 
 from app.config import get_settings
-from app.services import ocr_service
+from app.services import ocr_service, pdf_isolation
 from app.services.ingest.readers import _read_pdf
-from app.services.ocr_service import PdfOkunamadi, extract_text_from_pdf
+from app.services.ocr_service import extract_text_from_pdf
+from app.services.pdf_isolation import PdfOkunamadi
 
 pymupdf = pytest.importorskip("pymupdf")
 
@@ -42,7 +43,7 @@ def make_pdf(path, pages: int = 1) -> str:
 
 
 def worker(monkeypatch, code: str) -> None:
-    monkeypatch.setattr(ocr_service, "_WORKER_COMMAND", [sys.executable, "-c", code])
+    monkeypatch.setattr(pdf_isolation, "_WORKER_COMMAND", [sys.executable, "-c", code])
 
 
 def assert_visible_failure(result) -> None:
@@ -65,17 +66,16 @@ def test_isolated_parse_equals_in_process_parse(tmp_path):
 def test_a_file_over_the_size_cap_is_refused_before_parsing(tmp_path, monkeypatch):
     path = make_pdf(tmp_path / "a.pdf")
     monkeypatch.setattr(get_settings(), "max_upload_size_mb", 0)
-    monkeypatch.setattr(ocr_service, "_extract_isolated", lambda *a: pytest.fail("parser was reached"))
+    monkeypatch.setattr(pdf_isolation, "_run_child", lambda *a: pytest.fail("parser was reached"))
     monkeypatch.setattr(ocr_service, "_extract_in_process", lambda *a, **k: pytest.fail("parser was reached"))
     assert_visible_failure(extract_text_from_pdf(path))
 
 
 def test_a_file_over_the_page_cap_is_refused(tmp_path, monkeypatch):
     path = make_pdf(tmp_path / "uzun.pdf", pages=3)
-    monkeypatch.setattr(ocr_service, "MAX_PDF_PAGES", 2)
-    # The cap is read by the child process too, so it is passed through the environment-free path
-    # by running the same function in process; the isolated path is covered by the worker tests.
-    monkeypatch.setattr(ocr_service, "ISOLATE_PARSER", False)
+    monkeypatch.setattr(pdf_isolation, "MAX_PDF_PAGES", 2)
+    # In process: a child process would read its own copy of the constant. The child path is covered below.
+    monkeypatch.setattr(pdf_isolation, "ISOLATE_PARSER", False)
     result = extract_text_from_pdf(path)
     assert_visible_failure(result)
     assert "3 sayfa" in result.warnings[0]
@@ -85,7 +85,7 @@ def test_a_file_over_the_page_cap_is_refused(tmp_path, monkeypatch):
 
 def test_a_hanging_parser_is_killed_at_the_timeout(tmp_path, monkeypatch):
     worker(monkeypatch, "import time; time.sleep(60)")
-    monkeypatch.setattr(ocr_service, "PARSE_TIMEOUT_SECONDS", 1)
+    monkeypatch.setattr(pdf_isolation, "PARSE_TIMEOUT_SECONDS", 1)
     result = extract_text_from_pdf(make_pdf(tmp_path / "a.pdf"))
     assert_visible_failure(result)
     assert "saniyede bitmedi" in result.warnings[0]
@@ -117,8 +117,8 @@ def test_the_worker_gets_no_secrets(tmp_path, monkeypatch):
 # ── What the ingest reader does with a refusal ──────────────────────────────────────────────
 
 def test_the_reader_raises_with_the_reason_instead_of_returning_empty_text(tmp_path, monkeypatch):
-    monkeypatch.setattr(ocr_service, "MAX_PDF_PAGES", 1)
-    monkeypatch.setattr(ocr_service, "ISOLATE_PARSER", False)
+    monkeypatch.setattr(pdf_isolation, "MAX_PDF_PAGES", 1)
+    monkeypatch.setattr(pdf_isolation, "ISOLATE_PARSER", False)
     with pytest.raises(PdfOkunamadi, match="PDF okunamadı"):
         _read_pdf(make_pdf(tmp_path / "uzun.pdf", pages=2))
 
@@ -189,7 +189,7 @@ def test_the_decompression_bomb_ceiling_is_set_by_the_ocr_path(fake_tesseract, m
 
     monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", None)
     ocr_service._try_tesseract_ocr(_FakePage(_image_bytes("PNG")))
-    assert Image.MAX_IMAGE_PIXELS == ocr_service.MAX_RENDER_PIXELS
+    assert Image.MAX_IMAGE_PIXELS == pdf_isolation.MAX_RENDER_PIXELS
 
 
 # ── pdfminer: a fixed release, and no pickle in its CMap loader ─────────────────────────────
@@ -215,4 +215,4 @@ def test_the_worker_payload_round_trips_every_field():
         page_results=[ocr_service.PageResult(0, "x", 0.5, "native", 1, 1)], file_path="p",
         has_tables=True, warnings=["w"], metadata={"title": "t"},
     )
-    assert ocr_service._from_payload(json.loads(json.dumps(asdict(result)))) == result
+    assert pdf_isolation._from_payload(json.loads(json.dumps(asdict(result)))) == result

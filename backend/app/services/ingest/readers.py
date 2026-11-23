@@ -24,7 +24,8 @@ def _read_pdf(file_path: str) -> str:
     Returns the best-quality text available, with a warning comment
     prepended if confidence is low (for LLM fallback awareness).
     """
-    from app.services.ocr_service import PdfOkunamadi, extract_text_from_pdf
+    from app.services.ocr_service import extract_text_from_pdf
+    from app.services.pdf_isolation import PdfOkunamadi
 
     try:
         result = extract_text_from_pdf(file_path)

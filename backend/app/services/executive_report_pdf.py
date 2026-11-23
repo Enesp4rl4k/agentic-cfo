@@ -467,7 +467,7 @@ def generate_executive_report(
     try:
         from weasyprint import HTML
 
-        from app.services.pdf_fetch import deny_fetch
+        from app.services.pdf_fetch import deny_fetcher
     except (ImportError, OSError) as exc:
         # OSError, not ImportError, is what a missing Pango/GObject raises —
         # it slipped past and became an unhandled 500 (plan v7 §P0 / W3).
@@ -493,7 +493,7 @@ def generate_executive_report(
     )
 
     try:
-        pdf_bytes = HTML(string=html_content, url_fetcher=deny_fetch).write_pdf()
+        pdf_bytes = HTML(string=html_content, url_fetcher=deny_fetcher()).write_pdf()
         logger.info("Executive report PDF generated: %d bytes", len(pdf_bytes))
         return pdf_bytes
     except Exception as exc:

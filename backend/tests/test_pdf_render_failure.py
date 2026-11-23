@@ -32,7 +32,10 @@ def test_a_weasyprint_failure_raises_instead_of_a_stand_in(monkeypatch):
         def write_pdf(self):
             raise ValueError("font yok")
 
-    _sahte_modul(monkeypatch, "weasyprint", HTML=Patlayan)
+    class SahteGetirici:  # the renderers hand WeasyPrint a URLFetcher subclass that fetches nothing
+        def __init__(self, *a, **k): ...
+
+    _sahte_modul(monkeypatch, "weasyprint", HTML=Patlayan, URLFetcher=SahteGetirici)
     with pytest.raises(PDFRenderError, match="font yok"):
         PDFEngine()._html_to_pdf("<html><body>x</body></html>")
 
