@@ -22,6 +22,7 @@ def test_worker_settings_partitioned() -> None:
         # What an approval releases; on the maintenance queue so a burst of
         # approvals never delays anyone's analysis.
         "run_review_continuation",
+        "run_data_export",
     }
 
     assert WorkerSettings.queue_name != MaintenanceWorkerSettings.queue_name

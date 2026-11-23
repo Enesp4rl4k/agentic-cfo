@@ -65,7 +65,7 @@ async def _schedule_member(
     if is_tombstone(target.email):
         raise HTTPException(status_code=404, detail=NOT_FOUND)
     if normalize_email(confirmation) != normalize_email(target.email):
-        raise HTTPException(status_code=422, detail="Onay, silinecek kişinin e-posta adresi olmalı.")
+        raise HTTPException(status_code=422, detail="wrong_email: Onay, silinecek kişinin e-posta adresi olmalı.")
     if await blockers(db, str(target.id)):
         raise HTTPException(
             status_code=409,

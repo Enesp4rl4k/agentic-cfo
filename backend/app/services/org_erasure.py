@@ -74,7 +74,7 @@ ERASED = "[erased]"
 GENESIS_HASH = "0" * 64
 
 # Evidence of erasure must survive erasure, so it carries no org_id and is skipped.
-BOOKKEEPING_TABLES = frozenset({"org_erasure_requests", "org_erasure_records"})
+BOOKKEEPING_TABLES = frozenset({"org_erasure_requests", "org_erasure_records", "retention_runs"})
 
 # Tables whose link to an organisation is not an `org_id` column or a declared FK
 # chain, each handled by dedicated code below.
@@ -86,6 +86,7 @@ SPECIAL_TABLES: dict[str, str] = {
     "ops_state": "platform-wide operator facts (last backup report); no organisation, no personal data",
     PasswordResetToken.__tablename__: "no org column; linked through the erased users' ids",
     EmailVerificationToken.__tablename__: "no org column; linked through the erased users' ids",
+    "terms_acceptances": "no org column; which notice version a person accepted; linked through the erased users' ids",
     "smmm_muhasebeci": "an accountant's profile; linked through the erased users' ids",
     "smmm_musteri_kayit": "an accountant's client list; linked through client_org_id",
 }
@@ -171,7 +172,7 @@ RETAINED: dict[str, Retained] = {
         scrub=("name", "slug", "logo_url", "description", "vkn", "legal_title",
                "stripe_customer_id", "stripe_subscription_id", "size_profile_set_by", "materiality_applied",
                "base_currency_confirmed_by", "ip_whitelist"),
-        keep=("country_code", "base_currency", "locale", "regional_packs", "plan",
+        keep=("country_code", "base_currency", "locale", "regional_packs", "plan", "retention_policy",
               "subscription_plan", "subscription_status",
               "size_profile", "monthly_outflow_band", "headcount_band", "size_profile_source"),
     ),
@@ -433,16 +434,18 @@ async def _erase(
 
     # The files the rows name are only LISTED here (the plan); they are unlinked after the commit.
     jobs, reports, sources = tables["analysis_jobs"], tables["reports"], tables["data_sources"]
+    exports = tables["data_exports"]
     job_rows = (await db.execute(
         select(jobs.c.id, jobs.c.file_path).where(_clause(jobs, org_id, scope, tables))
     )).all()
     paths = [r.file_path for r in job_rows]
-    for t in (reports, sources):
+    export_ids = (await db.execute(select(exports.c.id).where(_clause(exports, org_id, scope, tables)))).scalars().all()
+    for t in (reports, sources, exports):
         paths += (await db.execute(
             select(t.c.file_path).where(_clause(t, org_id, scope, tables))
         )).scalars().all()
     job_ids = [r.id for r in job_rows]
-    plan = build_plan(root, org_id, erase_users, job_ids, [], paths)
+    plan = build_plan(root, org_id, erase_users, job_ids, export_ids, paths)
 
     # Members who also belong to another organisation keep their account; they
     # lose only this membership, and are moved off it if it was their active one.
@@ -498,6 +501,7 @@ async def _erase(
         await drop(PasswordResetToken.__tablename__, reset_tokens.c.user_id.in_(chunk))
         verify_tokens = tables[EmailVerificationToken.__tablename__]
         await drop(EmailVerificationToken.__tablename__, verify_tokens.c.user_id.in_(chunk))
+        await drop("terms_acceptances", tables["terms_acceptances"].c.user_id.in_(chunk))
     for chunk in _chunks(erase_users):
         await drop("users", users.c.id.in_(chunk))
 
