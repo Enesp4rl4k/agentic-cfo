@@ -12,6 +12,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from app.services.pdf_escape import escape_tree
+
 logger = logging.getLogger(__name__)
 
 
@@ -373,6 +375,10 @@ def render_board_deck_html(
     Build a complete HTML document from board_deck (and optional OKR status).
     Suitable for WeasyPrint rendering.
     """
+    # Every string of the deck and the OKR data came from a person (titles, narratives, KR names): escaped
+    # once here, before any f-string below interpolates it.
+    board_deck = escape_tree(board_deck)
+    okr_status = escape_tree(okr_status) if okr_status else okr_status
     title = board_deck.get("title", "Board Deck")
     period = board_deck.get("period", "")
     generated_at = board_deck.get("generated_at", "")

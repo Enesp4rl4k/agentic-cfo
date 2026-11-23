@@ -46,9 +46,13 @@ which makes one of them reachable is noticed in review.
 | `ecdsa` 0.19.2 | GHSA-wj6h-64fc-37mp (CVE-2024-23342, HIGH, Minerva timing side channel; no fixed release) | **Not reachable**: pulled in by python-jose only; nothing here signs with ECDSA. |
 | `langchain` 0.2.17, `langchain-core` 0.2.43, `langchain-openai` 0.1.25, `langchain-text-splitters` 0.2.4, `langgraph` 0.1.19, `langsmith` 0.1.147 | 17 distinct advisories, e.g. GHSA-c67j-w6g6-q2cm (CRITICAL, serialization injection in `dumps/load`), GHSA-6qv9-48xg-fc7f, GHSA-pjwx-r37v-7724, GHSA-qh6h-p6c9-ff54 (`load_prompt`), GHSA-m42m-m8cr-8m58 (XXE in text splitters), GHSA-g48c-2wqr-h844 (msgpack checkpoint loading), GHSA-f4xh-w4cj-qxq8 (LangSmith TracingMiddleware file read) | **Mostly not reachable**: the code uses LangGraph `StateGraph` with Memory/SQLite/Postgres checkpointers, `ChatOpenAI` only inside `app/platform/model_gateway.py`, `OpenAIEmbeddings` in `rag_service`, and none of `langchain_core.load`, `load_prompt`, prompt templates built from user text, HTML/XML splitters, `TracingMiddleware` or LangSmith prompt pull. Reachable only if (a) an attacker can write checkpoint rows (langgraph msgpack) or (b) any of the listed APIs is adopted. The 0.3 upgrade is a follow-up. |
 
-Defence in depth for uploaded PDFs, independent of any parser version: the upload cap (`MAX_UPLOAD_SIZE_MB`), a page cap, and a
-child process with a timeout and no secrets in its environment (`app/services/ocr_service.py`, `pdf_isolation.py`); a refusal,
-crash or timeout is a visible "PDF okunamadi", never an empty success.
+Defence in depth for uploaded PDFs, independent of any parser version. Every parser of an uploaded PDF's bytes (PyMuPDF text, pdfplumber
+tables, the OCR render with Pillow, Tesseract, the e-Belge attachment) runs in a child process (`app/services/pdf_isolation.py`; its code is
+`ocr_service.py` and `pdf_embedded.py`, and `tests/test_parser_isolation_fitness.py` fails if any other module imports a parser). The child gets no
+secrets, its own process group (killed whole on timeout), `RLIMIT_AS` and `RLIMIT_CPU`, a capped stdout, and a semaphore bounds how many run at once.
+Limits are settings: `MAX_UPLOAD_SIZE_MB`, `PDF_MAX_PAGES` (500), `PDF_PARSE_TIMEOUT_SECONDS` (180), `PDF_OCR_SECONDS_PER_PAGE` (30, added per OCR page),
+`PDF_CHILD_MEMORY_MB`, `PDF_PARSE_CONCURRENCY`. A refusal, crash or timeout is a visible "PDF okunamadi" that names the limit and what to do, never an empty
+success. The XML of an e-Belge is parsed by `app.core.xml_safety` (stdlib parser, DTD and ENTITY refused before parsing; refused again inside the child).
 
 ## Frontend
 

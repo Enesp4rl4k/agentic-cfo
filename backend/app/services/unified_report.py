@@ -25,6 +25,7 @@ from typing import Any
 
 from app.core.branding import get_brand
 from app.core.currency_totals import fmt_compact
+from app.services.pdf_escape import escape_tree
 from app.services.runway_display import runway_for_display
 
 logger = logging.getLogger(__name__)
@@ -279,6 +280,7 @@ def build_unified_report(
 
 def _build_unified_html(report: dict[str, Any]) -> str:
     """Convert unified report to HTML for WeasyPrint."""
+    report   = escape_tree(report)  # company, section names, metric values, risks, wins: all typed or derived from typed text
     summary  = report["executive_summary"]
     sections = report["sections"]
 
