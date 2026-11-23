@@ -88,9 +88,14 @@ class ProactiveAlertOrchestrator:
     ALERT_COOLDOWN_SECONDS = 3600   # 1 saat: ayni KRI icin tekrar alert yok
     MAX_CASCADES_PER_SCAN  = 3      # Performans: scan basina max cascade sim
 
-    def __init__(self, db: Any = None, redis: Any = None) -> None:
+    def __init__(self, db: Any = None, redis: Any = None, slot: str | None = None) -> None:
         self.db    = db
         self.redis = redis
+        # The scheduled slot (ledger period): alert ids derive from it, so a repeated slot repeats no alert.
+        self.slot, self.save_failures = slot, 0
+
+    def _alert_id(self, *key: str) -> str:
+        return str(uuid.uuid5(uuid.NAMESPACE_URL, "|".join((self.slot, *key)))) if self.slot else str(uuid.uuid4())
 
     # ── Ana tarama dongusu ─────────────────────────────────────────────────────
 
@@ -254,7 +259,7 @@ class ProactiveAlertOrchestrator:
                 body += f"{i}. {m}\n"
 
         return AlertEvent(
-            alert_id   = str(uuid.uuid4()),
+            alert_id   = self._alert_id(org_id, "kri_breach", name),
             org_id     = org_id,
             trigger    = "kri_breach",
             severity   = severity,
@@ -321,7 +326,7 @@ class ProactiveAlertOrchestrator:
             body, severity = cascade_alert_text(cascade, basis, base_sc.overall_risk_score)
 
             return AlertEvent(
-                alert_id   = str(uuid.uuid4()),
+                alert_id   = self._alert_id(org_id, "cascade_risk", str(kri.get("name", ""))),
                 org_id     = org_id,
                 trigger    = "cascade_risk",
                 severity   = severity,
@@ -361,7 +366,7 @@ class ProactiveAlertOrchestrator:
         )
 
         return AlertEvent(
-            alert_id   = str(uuid.uuid4()),
+            alert_id   = self._alert_id(org_id, "kri_upcoming", name),
             org_id     = org_id,
             trigger    = "kri_upcoming",
             severity   = "medium",
@@ -582,6 +587,7 @@ class ProactiveAlertOrchestrator:
             await self.db.commit()
         except Exception as exc:
             await self.db.rollback()
+            self.save_failures += 1
             logger.warning("Proactive alert not saved (alert_id=%s): %s", alert.alert_id, exc)
 
 
@@ -589,6 +595,6 @@ class ProactiveAlertOrchestrator:
 
 def get_proactive_orchestrator(
     db:    Any = None,
-    redis: Any = None,
+    redis: Any = None, slot: str | None = None,
 ) -> ProactiveAlertOrchestrator:
-    return ProactiveAlertOrchestrator(db=db, redis=redis)
+    return ProactiveAlertOrchestrator(db=db, redis=redis, slot=slot)
