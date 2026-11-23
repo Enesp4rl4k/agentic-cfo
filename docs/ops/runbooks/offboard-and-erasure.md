@@ -41,7 +41,7 @@ the cooling-off; it then becomes a tombstone under a stable pseudonym and the co
 5. Verify: the confirm call answers with the proof record; the company's users cannot sign in; the files
    directory for its jobs is gone from the volume (`ls /app/uploads/uploads/<job id>` inside a backend container).
 6. If a restore is later needed from a backup older than an erasure, the erased company comes back: before restoring run
-   `python scripts/reapply_erasures.py --export > erased.json`, after it `--apply erased.json` (hashes only, idempotent).
+   `python scripts/reapply_erasures.py --export > erased.json`, after it `--apply < erased.json` (hashes only, idempotent).
 7. **Copies at third parties.** The proof record's counts say how many remain: `_external_followup.stripe_customer` (delete
    or anonymise the customer in Stripe), `erp_integrations` / `connector_connections` (the grants are gone here but still
    valid at the provider: revoke them there), and the LLM provider keeps prompts under its own terms (Q1).
