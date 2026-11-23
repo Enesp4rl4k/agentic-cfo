@@ -33,5 +33,5 @@ def register_privacy_jobs(
 ) -> None:
     scheduler.add_job(
         exclusive(run_due_erasures, "erasure_executor"), CronTrigger(minute=40),
-        id="erasure_executor", replace_existing=True, max_instances=1,
+        id="erasure_executor", replace_existing=True, max_instances=1, coalesce=True, misfire_grace_time=1800,
     )
