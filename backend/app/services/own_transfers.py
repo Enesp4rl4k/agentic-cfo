@@ -5,7 +5,7 @@ statements, but not an outflow and not an inflow of the company. Left in, they i
 and the materiality basis. A transfer is NEVER taken from the amounts alone (two payments of the same size on two
 accounts are common). The matcher PROPOSES a pair only when all of these hold:
 
-- both legs come from statements of two KNOWN, distinct accounts of the company (`bank_accounts.account_groups`:
+- both legs come from statements of two KNOWN, distinct accounts of the company, each with a stated IBAN / account number (`bank_accounts.account_groups`:
   an account nothing separates from another is not a counterpart);
 - same currency and exact amount, opposite direction, dates at most `WINDOW_DAYS` apart;
 - the pairing is unique: no other candidate on either side for the same money;
@@ -78,7 +78,12 @@ def propose(rows: list[dict[str, Any]], accounts: list[dict[str, Any]], window_d
     `rows`: {id, date (a date), amount_cents, currency, direction, description, job_id}. `accounts`: as
     `bank_accounts.account_groups` returns them. Each row is in at most one proposal.
     """
-    index = {job: i for i, a in enumerate(accounts) if a["known"] for job in a["job_ids"]}
+    # Both sides need a stated account identifier (IBAN / account number): two accounts with no identifier cannot be
+    # told apart from one account by a description, so wording alone never pairs them.
+    index = {
+        job: i for i, a in enumerate(accounts)
+        if a["known"] and str(a.get("identity") or "").startswith(("iban:", "acct:")) for job in a["job_ids"]
+    }
     legs = [{**r, "account": index[r["job_id"]]} for r in rows if r.get("job_id") in index and r["amount_cents"] > 0]
     outs = [r for r in legs if r["direction"] == "expense"]
     ins = [r for r in legs if r["direction"] == "income"]

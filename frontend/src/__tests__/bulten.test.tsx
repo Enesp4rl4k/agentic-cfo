@@ -71,6 +71,7 @@ const briefing = (over: Record<string, unknown> = {}) => ({
   runway_months: 4,
   runway_level: "warning",
   runway_basis: "known",
+  runway_attention: false,
   runway_line: "Uyarı: Nakit pisti yaklaşık 4,0 ay (31 Mart 2026 ekstresindeki kasa ₺120.000,00).",
   fingerprint: "fp-seen",
   ...over,

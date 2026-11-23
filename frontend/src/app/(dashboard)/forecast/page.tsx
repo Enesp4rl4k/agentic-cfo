@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
   ComposedChart,
@@ -42,6 +43,11 @@ function RunwayNote({ runway }: { runway: RunwayBlock }) {
     >
       <h2 className="text-xs font-medium text-muted-foreground">{t.forecast.runway.heading}</h2>
       <p className="mt-0.5 leading-snug">{runway.message}</p>
+      {runway.stale && (
+        <Link href="/upload" className="mt-1 inline-block text-sm underline" data-testid="forecast-runway-upload">
+          {t.forecast.runway.uploadLink}
+        </Link>
+      )}
     </section>
   );
 }
@@ -321,7 +327,9 @@ function ScenarioTable({
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums text-sm text-muted-foreground">
                     {s.runway_months != null
-                      ? table.monthsShort.replace("{count}", String(s.runway_months))
+                      ? s.runway_months < 1
+                        ? t.forecast.runway.underMonth
+                        : table.monthsShort.replace("{count}", String(s.runway_months))
                       : runwayKnown(s.runway_basis)
                         ? table.stable
                         : table.unknown}
@@ -510,8 +518,10 @@ export default function ForecastPage() {
               label={kpi.baseNet}
               value={fmt(base.twelve_month_net)}
               sub={
-                base.runway_months
-                  ? kpi.runway.replace("{count}", String(base.runway_months))
+                base.runway_months != null
+                  ? base.runway_months < 1
+                    ? t.forecast.runway.underMonth
+                    : kpi.runway.replace("{count}", String(base.runway_months))
                   : runwayKnown(forecast.runway?.status)
                     ? kpi.runwayStable
                     : kpi.runwayUnknown

@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 # MGA is stated zero-decimal by Stripe and has two decimals in ISO 4217: the two disagree, so it is held, not scaled.
 STRIPE_EXPONENT = {"ISK": 2, "UGX": 2}
 STRIPE_UNSURE = frozenset({"MGA"})
-CREDIT_NOTE_RULES = {"void": "credit_note_void", "balance": "credit_note_to_customer_balance"}
+CREDIT_NOTE_RULES = {"void": "credit_note_void", "balance": "credit_note_to_customer_balance", "zero": "credit_note_zero_amount"}
 
 
 def stripe_amount(minor: Any, currency: Any) -> str | None:
@@ -64,6 +64,9 @@ def _credit_note_rows(feed: Feed, notes: list[Any]) -> None:
             continue
         # `out_of_band_amount` is null when nothing was refunded outside Stripe: that is a stated "none", not a default.
         out = None if refund is None else (refund if out_of_band is None else refund + out_of_band)
+        if out == 0:
+            feed.ignore(CREDIT_NOTE_RULES["zero"])         # a stated zero moved no money: counted, not held
+            continue
         number = getattr(cn, "number", None) or getattr(cn, "id", "") or ""
         date = _when(getattr(cn, "created", None))
         feed.each([cn])

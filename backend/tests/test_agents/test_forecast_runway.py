@@ -297,7 +297,11 @@ class TestPipelineHolds:
         assert result["forecast"]["runway"]["opening_cash_cents"] == 9_000_000
         assert result["forecast"]["runway"]["source_filename"] == "onceki.csv"
 
-    async def test_a_genuinely_cash_short_company_is_told_so_and_is_not_held(self, tmp_path: Path) -> None:
+    async def test_a_genuinely_cash_short_company_is_told_so_and_is_not_held(self, tmp_path: Path, monkeypatch) -> None:
+        # The statement's dates are fixed; a critical alert needs a CURRENT balance, so the clock is taken out of it.
+        from app.config import get_settings
+
+        monkeypatch.setattr(get_settings(), "radar_balance_stale_after_days", 10_000)
         path = _statement(tmp_path / "kisa.csv", CASH_SHORT, opening=550_000)
         result = await run_cfo_pipeline(job_id="short", file_path=path, file_type="csv", run_config=CFG)
         runway = result["forecast"]["runway"]
@@ -438,5 +442,5 @@ class TestTheJourneysFixtures:
         assert runway["level"] == "critical" and runway["opening_cash_cents"] == 900_000
         assert runway["avg_monthly_net_cents"] == -3_000_000 and runway["runway_months"] == 0.3
         (alert,) = [a for a in result["forecast"]["alerts"] if a["level"] == "critical"]
-        for fact in ("₺9.000,00", "ortalama aylık net nakit çıkışı ₺30.000,00", "yaklaşık 0,3 ay", "(varsayım)"):
+        for fact in ("₺9.000,00", "ortalama aylık net nakit çıkışı ₺30.000,00", "1 aydan az (yaklaşık 9 gün)", "(varsayım)"):
             assert fact in alert["message"]

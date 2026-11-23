@@ -10,6 +10,7 @@ os.environ.setdefault("USE_SQLITE", "true")
 
 from app.agents.orchestrator import run_cfo_pipeline
 from app.agents.state import AgentRunConfig
+from app.config import get_settings
 from app.services.stated_period import stated_period
 
 CORPUS = Path(__file__).resolve().parent / "fixtures" / "tr_corpus"
@@ -72,7 +73,8 @@ class TestReadingTheHeader:
 
 
 class TestThroughThePipeline:
-    async def test_a_three_month_statement_without_a_header_has_a_runway_on_the_stated_assumption(self) -> None:
+    async def test_a_three_month_statement_without_a_header_has_a_runway_on_the_stated_assumption(self, monkeypatch) -> None:
+        monkeypatch.setattr(get_settings(), "radar_balance_stale_after_days", 10_000)   # the corpus statement ends in March
         result = await run_cfo_pipeline(
             job_id="sample-plain", file_path=str(CORPUS / "banka_ekstresi_ocak_mart_2026.csv"),
             file_type="csv", run_config=CFG,
@@ -85,7 +87,9 @@ class TestThroughThePipeline:
         critical = [a for a in result["forecast"]["alerts"] if a["level"] == "critical"]
         assert len(critical) == 1 and "varsayım" in critical[0]["message"] and "₺90.000,00" in critical[0]["message"]
 
-    async def test_the_same_statement_with_its_period_stated_has_no_assumption(self) -> None:
+    async def test_the_same_statement_with_its_period_stated_has_no_assumption(self, monkeypatch) -> None:
+        # The corpus statement ends in March 2026; the age rule (`aged_basis`) is about the clock, not the period.
+        monkeypatch.setattr(get_settings(), "radar_balance_stale_after_days", 10_000)
         result = await run_cfo_pipeline(
             job_id="sample-stated", file_path=str(CORPUS / "banka_ekstresi_donemli_2026.csv"),
             file_type="csv", run_config=CFG,

@@ -97,7 +97,9 @@ async def test_different_ibans_in_the_headers_are_two_accounts_and_add_up(client
     first = _file(f"IBAN: {OWN}", "02.03.2026;Kira;-100,00;900,00")
     second = _file(f"IBAN: {OTHER}", "02.04.2026;Kira;-100,00;800,00")
     found = await _pair(client, first, second, "s3")
-    assert found["opening"]["balance_cents"] == 150_000_00 and found["opening"]["basis"] == "known" and found["questions"] == []
+    assert found["opening"]["balance_cents"] == 150_000_00 and found["questions"] == []
+    # The two statements end a month apart: the sum is as old as its oldest account, so only assumed (and says so).
+    assert found["opening"]["basis"] == "assumed"
     assert sorted(a["identity_hint"] for a in found["accounts"]) == ["IBAN ****1326", "IBAN ****3456"]
     assert all("identity" not in a for a in found["accounts"])  # the raw number never leaves the service
 

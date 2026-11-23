@@ -85,10 +85,14 @@ class NotificationService:
         org_id: str,
         org_name: str = "",
         db: Any = None,
+        commit: bool = True,
     ) -> dict[str, int]:
         """
         Deliver actionable alert decisions to all configured channels.
         Returns a dict of {channel: count_delivered}.
+
+        `commit=False` leaves the transaction to the caller: the scheduler's ledger run commits the
+        queued rows (outbox, in-app) and its `done` mark together (`services/schedule_runner.py`).
         """
         actionable = [d for d in decisions if d.is_actionable]
         if not actionable:
@@ -125,7 +129,7 @@ class NotificationService:
 
         # In-app (always deliver dashboard notifications)
         if db is not None:
-            saved = await self._save_in_app(actionable, org_id, db)
+            saved = await self._save_in_app(actionable, org_id, db, commit=commit)
             results["dashboard"] = saved
 
         logger.info(
@@ -263,6 +267,7 @@ class NotificationService:
         decisions: list[AlertDecision],
         org_id: str,
         db: Any,
+        commit: bool = True,
     ) -> int:
         """Save actionable alerts as InAppNotification rows."""
         try:
@@ -281,7 +286,10 @@ class NotificationService:
                 )
                 db.add(notif)
                 count += 1
-            await db.commit()
+            if commit:
+                await db.commit()
+            else:
+                await db.flush()
             return count
         except Exception as exc:
             logger.warning("In-app notification save failed: %s", exc)

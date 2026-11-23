@@ -12,6 +12,8 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
+from app.services.balance_segments import SegmentChain, placed, segment_chain, signed
+
 MIN_STEPS = 3  # reconciling balance steps a text statement needs to be believed outright (parsers/direction)
 
 
@@ -53,11 +55,20 @@ def _chain_order(transactions: list[dict[str, Any]]) -> list[dict[str, Any]] | N
     return None
 
 
+def _segments(transactions: list[dict[str, Any]]) -> SegmentChain | None:
+    """The segment chain of a statement that prints its balance on some rows only, when it reconciles."""
+    found = segment_chain(transactions)
+    return found if found is not None and found.reason is None and found.discriminating >= 1 else None
+
+
 def closing_balance(transactions: list[dict[str, Any]]) -> dict[str, Any] | None:
     """{"date", "balance_cents"} the statement ends on, or None if it does not prove one."""
     ordered = _chain_order(transactions)
     if ordered is None:
-        return None
+        found = _segments(transactions)
+        if found is None:
+            return None
+        ordered = found.ordered
     last = ordered[-1]
     return {"date": str(last["transaction_date"])[:10], "balance_cents": int(last["balance_cents"])}
 
@@ -71,16 +82,20 @@ def statement_extent(transactions: list[dict[str, Any]]) -> dict[str, Any] | Non
     consecutive statements (`app.services.coverage`).
     """
     ordered = _chain_order(transactions)
+    opening_known = True
     if ordered is None:
-        return None
+        found = _segments(transactions)
+        if found is None:
+            return None
+        ordered = found.ordered
+        # A money row before the first printed balance moved the balance that row shows: the opening is unknown.
+        opening_known = not found.before_first and (placed(ordered[0]) or not ordered[0].get("amount_cents"))
     dates = sorted(str(t["transaction_date"])[:10] for t in ordered)
     first, last = ordered[0], ordered[-1]
-    return {
-        "start": dates[0],
-        "end": dates[-1],
-        "opening_cents": int(first["balance_cents"]) - _signed(first),
-        "closing_cents": int(last["balance_cents"]),
-    }
+    out: dict[str, Any] = {"start": dates[0], "end": dates[-1], "closing_cents": int(last["balance_cents"])}
+    if opening_known:
+        out["opening_cents"] = int(first["balance_cents"]) - signed(first)
+    return out
 
 
 def balance_age(as_of: str, anchor: date, stale_after_days: int) -> tuple[int, bool]:
@@ -91,6 +106,25 @@ def balance_age(as_of: str, anchor: date, stale_after_days: int) -> tuple[int, b
     """
     age = max(0, (anchor - date.fromisoformat(str(as_of)[:10])).days)
     return age, age > stale_after_days
+
+
+def aged_basis(
+    basis: str | None, note: str | None, age_days: int, as_of: str | None = None,
+) -> tuple[str, str | None]:
+    """(basis, note) of a balance that is `age_days` old.
+
+    A runway answers "how long does today's cash last": a balance older than the staleness limit
+    (`radar_balance_stale_after_days`, the same limit `balance_age` flags with `stale`) is a fact about a past
+    day, so it can only be `assumed`, and says so with its date. Within the limit it keeps its proof's basis.
+    Every surface (radar, runway, briefing, alerts) reads this one rule; a summed set of accounts is as old as
+    its oldest account (`bank_accounts._account` ages each account against the newest one)."""
+    from app.config import get_settings
+
+    if age_days <= get_settings().radar_balance_stale_after_days:
+        return basis or "known", note
+    when = f" ({as_of})" if as_of else ""
+    sentence = f"bakiye {age_days} gün önceki ekstreye ait{when}"
+    return "assumed", f"{note}; {sentence}" if note else sentence
 
 
 def latest_balance(*candidates: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -132,7 +166,10 @@ def assess(
         return {**out, "reason": f"{lost} satır hesaba katılamadı"}
     ordered = _chain_order(rows)
     if ordered is None:
-        return {**out, "reason": "satır bakiyeleri birbirini tutmuyor" if out["has_balances"] else None}
+        part = segment_chain(rows)
+        if part is None:
+            return {**out, "reason": "satır bakiyeleri birbirini tutmuyor" if out["has_balances"] else None}
+        return _assess_segments(out, part, c, recheck)
     steps = len(ordered) - 1
     out["steps"] = steps
     days = [str(r["transaction_date"])[:10] for r in ordered]
@@ -160,6 +197,34 @@ def assess(
     }
 
 
+def _assess_segments(out: dict[str, Any], part: SegmentChain, c: dict[str, Any], recheck: bool) -> dict[str, Any]:
+    """The same verdict for a statement that prints its balance on some rows only (`balance_segments`).
+
+    known: every segment from the first to the last printed balance reconciles, in one row order, at least
+    two of them tell the sign convention apart, and no row with money lies outside the chain. A file with
+    rows outside the chain (before the first or after the last printed balance, a footer between rows) or
+    with a single discriminating segment is `assumed`, with the reason; with none, unproven.
+    """
+    out = {**out, "steps": part.segments, "segments": part.segments, "discriminating": part.discriminating,
+           "outside": part.outside}
+    if part.reason:
+        return {**out, "reason": part.reason}
+    out.update(_evidence(part.ordered))
+    if c.get("balance_check") == "unverified" and not recheck and part.segments >= MIN_STEPS:
+        return {**out, "reason": "okuyucu bakiye zincirini doğrulayamadı"}
+    if not recheck and any(r.get("direction_from_balance") for r in part.ordered):
+        return {**out, "reason": "satırların yönü yalnızca bakiyeden çıkarıldı; bağımsız bir kanıt yok"}
+    if part.discriminating == 0:
+        return {**out, "reason": "bakiye aralıklarının toplamı sıfır; satır yönleri bakiyeyle ayırt edilemiyor"}
+    if part.outside:
+        return {**out, "state": "weak", "basis": "assumed",
+                "reason": f"{part.outside} satır bakiye zincirinin dışında kaldı; bakiye bu satırları doğrulamıyor"}
+    if part.discriminating >= 2:
+        return {**out, "state": "verified", "basis": "known"}
+    return {**out, "state": "weak", "basis": "assumed",
+            "reason": "yalnızca 1 bakiye aralığı satır yönlerini bakiyeyle ayırt ediyor"}
+
+
 MAX_POINTS = 400
 
 
@@ -174,17 +239,18 @@ def _evidence(ordered: list[dict[str, Any]]) -> dict[str, Any]:
 
     digest = hashlib.sha256(
         "|".join(sorted(
-            f"{str(r['transaction_date'])[:10]};{r.get('amount_cents')};{r.get('type')};{r['balance_cents']}"
+            f"{str(r['transaction_date'])[:10]};{r.get('amount_cents')};{r.get('type')};{r.get('balance_cents')}"
             for r in ordered
         )).encode()
     ).hexdigest()[:32]
     points: dict[str, int] = {}
     for r in ordered:  # oldest first: the last row of a day is that day's closing balance
-        points[str(r["transaction_date"])[:10]] = int(r["balance_cents"])
+        if r.get("balance_cents") is not None:
+            points[str(r["transaction_date"])[:10]] = int(r["balance_cents"])
     keep = sorted(points)[-MAX_POINTS:]
     per_day: dict[str, list[str]] = {}
     for r in ordered:
-        per_day.setdefault(str(r["transaction_date"])[:10], []).append(f"{r.get('amount_cents')};{r.get('type')};{r['balance_cents']}")
+        per_day.setdefault(str(r["transaction_date"])[:10], []).append(f"{r.get('amount_cents')};{r.get('type')};{r.get('balance_cents')}")
     days = {d: hashlib.sha256("|".join(sorted(per_day[d])).encode()).hexdigest()[:16] for d in keep}
     return {"content_sha": digest, "points": {d: points[d] for d in keep}, "day_sha": days}
 

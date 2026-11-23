@@ -36,7 +36,7 @@ from app.core.currency_totals import (
 )
 from app.models.open_item import OpenItem
 from app.services.bank_accounts import proven_balances
-from app.services.bank_balance import balance_age
+from app.services.bank_balance import aged_basis, balance_age
 from app.services.briefing_held import held_line as _held_line
 from app.services.company_runway import company_runway
 from app.services.payment_plan import effective_dates
@@ -186,6 +186,8 @@ def _opening_cash(balance: dict[str, Any] | None, anchor: date) -> OpeningCash |
     as_of = date.fromisoformat(str(balance["date"])[:10])
     limit = get_settings().radar_balance_stale_after_days
     age, stale = balance_age(as_of.isoformat(), anchor, limit)
+    basis, aged_note = aged_basis(balance.get("basis"), None, age, as_of.isoformat())
+    notes = {a["basis_note"] for a in balance.get("accounts") or [] if a.get("basis_note")} | ({aged_note} if aged_note else set())
     return OpeningCash(
         balance_cents=balance["balance_cents"],
         as_of=as_of.isoformat(),
@@ -194,8 +196,8 @@ def _opening_cash(balance: dict[str, Any] | None, anchor: date) -> OpeningCash |
         stale_after_days=limit,
         source_job_id=balance.get("job_id"),
         source_filename=balance.get("filename"),
-        basis=balance.get("basis") or "known",
-        basis_note="; ".join(sorted({a["basis_note"] for a in balance.get("accounts") or [] if a.get("basis_note")})) or None,
+        basis=basis,
+        basis_note="; ".join(sorted(notes)) or None,
         accounts=[dict(a) for a in balance.get("accounts") or []],
         identity_uncertain=bool(balance.get("uncertain")),
         identity_note=balance.get("identity_note"),
