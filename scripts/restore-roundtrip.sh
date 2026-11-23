@@ -64,6 +64,9 @@ app_env() {
   export FRONTEND_URL="https://app.roundtrip.test" BRAND_APP_URL="https://app.roundtrip.test"
   export BACKEND_URL="https://api.roundtrip.test" BACKEND_CORS_ORIGINS="https://app.roundtrip.test"
   export OPENAI_API_KEY="llm-placeholder-ci" LANGGRAPH_CHECKPOINT=memory
+  # APP_ENV is required with Postgres, and invite-only registration needs a mail sender (never used here).
+  export APP_ENV=production SMTP_USER=roundtrip
+  SMTP_PASSWORD="$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' ')"; export SMTP_PASSWORD
 }
 in_backend() { (cd "$REPO_ROOT/backend" && "$@"); }
 count_rows() {
@@ -151,8 +154,9 @@ stop_api() { kill "$API_PID" 2>/dev/null || true; wait "$API_PID" 2>/dev/null ||
 start_api
 ready_code="$(curl -s --max-time 10 -o "$WORK/ready.json" -w '%{http_code}' "http://127.0.0.1:${RT_API_PORT}/api/v1/ready")"
 [[ "$ready_code" == 503 ]] || { cat "$WORK/ready.json"; die "/ready answered $ready_code on a database behind the code (want 503)"; }
-grep -q '"code": *"behind"' "$WORK/ready.json" || { cat "$WORK/ready.json"; die "/ready did not report migrations 'behind'"; }
-log "/api/v1/ready answers 503 'behind'"
+# Anonymous callers see verdicts only (the revision is for operators): migrations must be "fail".
+grep -q '"migrations": *"fail"' "$WORK/ready.json" || { cat "$WORK/ready.json"; die "/ready did not report migrations 'fail'"; }
+log "/api/v1/ready answers 503 with migrations 'fail'"
 stop_api
 
 in_backend alembic upgrade head >/dev/null

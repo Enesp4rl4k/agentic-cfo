@@ -84,6 +84,9 @@ class DecisionKind(StrEnum):
     COMPLIANCE_FILING = "compliance_filing"
     # A person confirms how the columns of an uploaded file are read (which one is the amount, the date).
     COLUMN_MAPPING_ACCEPTANCE = "column_mapping_acceptance"
+    # A person says whether two movements on two of the company's own accounts are one transfer between them
+    # (confirmed: neither counts as outflow or inflow) or not (rejected: both stay as they are).
+    OWN_TRANSFER = "own_transfer"
     # An owner/admin changes a fact about the company that decides how its documents are read:
     # tax number, country, regional packs, legal title.
     ORG_IDENTITY_CHANGE = "org_identity_change"
@@ -124,6 +127,7 @@ DECISION_READ: dict[DecisionKind, ReadClass] = {
     _K.HELD_ROW_RESOLUTION: _R.MEMBER,
     _K.BALANCE_REVERIFICATION: _R.MEMBER,
     _K.ACCOUNT_IDENTITY: _R.MEMBER,
+    _K.OWN_TRANSFER: _R.MEMBER,
     _K.BASE_CURRENCY_CONFIRMATION: _R.MEMBER,
     _K.FILE_DIRECTION_ANSWER: _R.MEMBER,
     _K.DIRECTION_MAPPING: _R.MEMBER,

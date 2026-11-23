@@ -39,6 +39,10 @@ if not os.environ.get("DATABASE_URL_OVERRIDE"):
     os.environ["DATABASE_URL_OVERRIDE"] = f"sqlite+aiosqlite:///{_TEST_DB}"
     os.environ.setdefault("USE_SQLITE", "true")
 
+# The product's default is `invite_only`; the many tests that sign people up through /auth/register run in
+# `open`, and the tests of the other modes set `registration_mode` on the settings explicitly.
+os.environ.setdefault("REGISTRATION_MODE", "open")
+
 # Hermetic checkpoints: get_checkpointer() now derives sqlite from USE_SQLITE,
 # which would have every test writing ./langgraph_checkpoints.sqlite. Pin the
 # in-memory backend here; the durability tests switch to sqlite explicitly.

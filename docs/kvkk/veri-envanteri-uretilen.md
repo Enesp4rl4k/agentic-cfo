@@ -8,7 +8,7 @@
 
 ## Tables
 
-65 tables hold or may hold personal data (67 tables exist).
+66 tables hold or may hold personal data (69 tables exist).
 
 | Table | Whose | Purpose | Columns (category) | Retention class | On organisation erasure | Third parties |
 |---|---|---|---|---|---|---|
@@ -59,12 +59,13 @@
 | `outbox_messages` | anyone | every outward message: recipient, subject, body | `body` (free_text), `last_error` (free_text), `recipient` (contact), `subject` (free_text) | operational | deleted | smtp_provider, slack_webhook, whatsapp_twilio |
 | `password_reset_tokens` | member | single-use reset links | `token_hash` (credential), `user_id` (pseudonym) | operational | deleted | - |
 | `payment_plan_changes` | member | proposed changes to a payment plan | `decided_by` (pseudonym), `decision_note` (free_text), `request_note` (free_text), `requested_by` (pseudonym) | books | deleted | - |
-| `pilot_invites` | member | pilot access codes | `email` (contact), `note` (free_text), `used_by_user_id` (pseudonym) | operational | deleted | - |
+| `pilot_invites` | member | pilot access codes | `company_name` (identity), `email` (contact), `issued_by` (pseudonym), `note` (free_text), `token_hash` (credential), `used_by_user_id` (pseudonym) | operational | deleted | - |
 | `proactive_alerts` | anyone | proactive KRI alerts | `body` (free_text), `metadata` (free_text), `title` (free_text) | operational | deleted | - |
 | `rag_chunks` | anyone | document text chunks and their embeddings for chat evidence | `chunk_text` (document), `embedding` (document) | books | deleted | llm_provider |
 | `related_parties` | counterparty | related parties of the company | `created_by` (pseudonym), `name` (identity), `normalized_name` (identity), `note` (free_text), `tax_id` (tax_id) | account | deleted | - |
 | `reports` | counterparty | generated reports (files and JSON) | `data` (free_text), `file_path` (free_text) | books | deleted | - |
 | `retention_runs` | company | one row per run of the retention job: counts only | - | proof | kept (proof, no personal data) | - |
+| `scheduled_job_runs` | company | one claim per scheduled job, company and period (idempotency ledger) | `last_error` (free_text) | operational | deleted | - |
 | `smmm_hesap_kurallari` | counterparty | an accountant's account-code rules | `anahtar` (identity) | books | deleted | - |
 | `smmm_muhasebeci` | accountant | an accountant's portal profile | `firma_adi` (identity), `il` (free_text), `oda_no` (tax_id), `telefon` (contact), `unvan` (identity), `vergi_no` (tax_id) | account | deleted | - |
 | `smmm_musteri_kayit` | counterparty | an accountant's client list | `firma_adi` (identity), `il` (free_text), `notlar` (free_text), `vergi_no` (tax_id) | account | deleted | - |

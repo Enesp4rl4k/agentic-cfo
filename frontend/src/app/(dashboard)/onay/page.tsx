@@ -10,6 +10,7 @@ import { PageHead } from "@/components/brand-app/PageHead";
 import { OodaFooter } from "@/components/brand-app/OodaFooter";
 import Link from "next/link";
 import { AccountQuestions } from "@/components/approvals/AccountQuestions";
+import { DecisionHistoryToggle } from "@/components/decisions/DecisionHistoryToggle";
 import { HeldAnalysesSection } from "@/components/held-analyses/HeldAnalysesSection";
 import { WaitingSummary } from "@/components/approvals/WaitingSummary";
 import { ReviewQueueCard } from "@/components/command-center/ReviewQueueCard";
@@ -259,6 +260,9 @@ export default function OnayPage() {
                       {ledger.settleNo}
                     </Button>
                   </div>
+                  <div className="sm:col-span-2">
+                    <DecisionHistoryToggle targetType="open_item_match" targetId={s.id} />
+                  </div>
                 </Card>
               </li>
             ))}
@@ -391,6 +395,7 @@ export default function OnayPage() {
                       )}
                     </div>
                   )}
+                  <DecisionHistoryToggle targetType="payment_plan_change" targetId={change.id} />
                 </Card>
               </li>
             ))}

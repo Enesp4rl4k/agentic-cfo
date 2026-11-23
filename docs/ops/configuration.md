@@ -14,14 +14,17 @@ Where a variable is read:
 * **Frontend and compose** (section 3): not read by the backend.
 
 Production means `USE_SQLITE=false`, or `APP_ENV` set to `production` or `staging`
-(`backend/app/core/preflight.py`). Outside production a FATAL finding is logged as a warning, so a laptop
+(`backend/app/core/preflight.py`). **`APP_ENV` is required whenever the database is Postgres** (FATAL
+`app_env_missing` / `app_env_unknown` otherwise): `production`, `prod`, `staging`, `demo`, `development`, `dev`,
+`ci` or `test`. A host that forgot it would otherwise run in "warnings only" mode. Outside production a FATAL finding is logged as a warning, so a laptop
 is never blocked. WARN findings are logged in every mode.
 
 ## What startup does
 
 1. `Settings.validate_production_security()` (existing): insecure default secret, field encryption on
    without a key, inline job fallback on Postgres.
-2. `app.core.preflight.enforce()` (new, `backend/app/main.py`): the rules in the "Caught at startup"
+2. `app.core.preflight.enforce_or_exit()` (`backend/app/main.py` for the API, `backend/app/worker.py` for the
+   ARQ worker: both process types run the same preflight): the rules in the "Caught at startup"
    column. In production any FATAL finding exits with status 1 and names every cause; WARN findings are
    logged at WARNING and returned.
 3. `python -m app.core.preflight --db` runs the same checks and compares the database's Alembic revision
@@ -104,9 +107,9 @@ is never blocked. WARN findings are logged in every mode.
 | `SMTP_USER` | (empty) | recommended | WARN if no sender (ERROR log with verification required) | without it no invite, reset, verification or briefing mail leaves |
 | `SMTP_PASSWORD` | (empty) | recommended | WARN if no sender | see SMTP_USER |
 | `NOTIFICATION_FROM` | `noreply@aicfo.app` | recommended | - | From address; its domain needs SPF and DKIM (docs/ops/mail.md) |
-| `OUTBOX_TRANSPORT` | `auto` | optional | WARN if `noop` |  |
+| `OUTBOX_TRANSPORT` | `auto` | optional | WARN if `noop`; FATAL with APP_ENV production/staging when REGISTRATION_MODE=invite_only or verification is required | `noop` means no mail leaves the process |
 | `OUTBOX_KICK_ON_ENQUEUE` | True | optional | - |  |
-| `EMAIL_VERIFICATION_REQUIRED` | True | recommended | ERROR log if on without a sender | true needs a working mail sender |
+| `EMAIL_VERIFICATION_REQUIRED` | True | recommended | FATAL with APP_ENV production/staging when no mail sender is configured (else WARN) | true needs a working mail sender |
 | `EMAIL_VERIFICATION_EXPIRE_HOURS` | 48 | optional | - |  |
 | `TRUSTED_PROXY_COUNT` | 0 | recommended | WARN if neither it nor the CIDRs are set | 1 behind Caddy; or use TRUSTED_PROXY_CIDRS |
 | `TRUSTED_PROXY_CIDRS` | (empty) | recommended | WARN if neither it nor the count is set | the proxy's network, instead of the count |
@@ -151,7 +154,14 @@ is never blocked. WARN findings are logged in every mode.
 | `LLM_MAX_TOKENS` | 16384 | optional | - |  |
 | `LLM_BASE_URL` | `https://api.deepseek.com` | optional | - |  |
 | `PLATFORM_OPERATOR_EMAILS` | (empty) | recommended | WARN if empty | who can mint pilot invites and break-glass an IP allow-list |
-| `SUPPORT_CONTACT` | (empty) | recommended | WARN if empty | named in the lock-out message |
+| `SUPPORT_CONTACT` | (empty) | recommended | WARN if empty | named in the lock-out message and on the invite-only sign-up page ("ask here for an invitation") |
+| `REGISTRATION_MODE` | `invite_only` | REQUIRED to decide | FATAL with APP_ENV production/staging when `invite_only` and no mail sender | `open` anyone, `invite_only` a pilot or organisation invite, `closed` as invite_only but a pilot invite no longer creates a company. Governs `/auth/register`, SSO sign-up and `/org/create` |
+| `PILOT_INVITE_EXPIRE_DAYS` | 14 | optional | - | lifetime of a pilot invitation link |
+| `OPERATOR_ALERT_COOLDOWN_MINUTES` | 360 | optional | - | one alert code and subject goes to the operators once per this window |
+| `JOB_FAILURE_ALERT_AFTER` | 3 | optional | - | a scheduled job (company and period) that failed this many times alerts the operators; retries stop after 5 |
+| `OUTBOX_FAILURE_ALERT_THRESHOLD` | 5 | optional | - | failed outbox rows to one destination in 24 hours that alert the operators |
+| `OPS_REPORT_TOKEN` | (empty) | recommended | - | shared secret of `POST /platform/ops/backup-report` (header `X-Ops-Token`); empty = the endpoint answers 404 and backups are not monitored |
+| `BACKUP_MAX_AGE_HOURS` | 30 | optional | - | with `OPS_REPORT_TOKEN` set: no successful backup report for this long alerts the operators |
 | `MAX_UPLOAD_SIZE_MB` | 10 | optional | - |  |
 | `AUTO_ENQUEUE_ANALYSIS_ON_UPLOAD` | True | optional | - |  |
 | `ALLOW_INLINE_JOB_FALLBACK` | (unset) | optional | FATAL on Postgres |  |
@@ -191,10 +201,10 @@ is never blocked. WARN findings are logged in every mode.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `APP_ENV` | (empty = development) | `production` or `staging` turns production rules on even with SQLite; also labels telemetry and Sentry. The compose stack sets it for every backend container: `${APP_ENV:-production}`, so put `APP_ENV=staging` in `.env` on a staging box |
+| `APP_ENV` | (empty = development on SQLite) | REQUIRED with Postgres: `production`, `prod`, `staging`, `demo`, `development`, `dev`, `ci` or `test`. `production` or `staging` turns production rules on even with SQLite; also labels telemetry and Sentry. The compose stack sets it for every backend container: `${APP_ENV:-production}`, so put `APP_ENV=staging` in `.env` on a staging box |
 | `LOG_LEVEL` | `INFO` | `DEBUG` in production is a WARN finding |
 | `LOG_FORMAT` | `json` | `json` or anything else for plain text. Both mask e-mail addresses, IBANs and credentials |
-| `SENTRY_DSN` | (unset) | error tracking; unset = errors only in the container log (WARN finding) |
+| `SENTRY_DSN` | (unset) | error tracking, **off unless set** (a third-party transfer: decide with the KVKK documents first). When on: no default PII, no request bodies, no cookies or credential headers, no local variables; e-mails, IBANs and bearer tokens in messages are masked before anything leaves (`services/sentry_monitoring.py`). Unset = errors only in the container log (WARN finding) |
 | `SENTRY_ENVIRONMENT` | `APP_ENV`, else `production` | Sentry environment tag |
 | `SENTRY_TRACES_SAMPLE_RATE` | `0.05` | performance tracing sample rate |
 | `GIT_SHA` | (unset) | commit of the image; shown on `/api/v1/version`, used as the Sentry release |
@@ -243,13 +253,12 @@ The frontend gets exactly `NEXT_PUBLIC_API_URL`, `NEXTAUTH_URL` and `NEXTAUTH_SE
 
 ## 4. Read by nothing
 
-Earlier `.env.example` files documented variables no code reads. They are gone from `.env.example`; the
-Kubernetes and Helm config maps still set some. Setting them changes nothing:
+Earlier `.env.example` files documented variables no code reads. They are gone from `.env.example`.
+Setting them changes nothing:
 
 | Variable | What it implied | Reality |
 |---|---|---|
-| `PILOT_REQUIRE_INVITE`, `PILOT_MODE` | registration needs an invite code | **Registration is open.** `/auth/register` never consults a pilot invite (`backend/app/api/auth.py`). See the readiness audit, item 8 |
-| `PILOT_MAX_USERS` | cap on users | `pilot.py` reads `getattr(settings, "pilot_max_users", 5)`: there is no such setting, so it is always 5 and enforced nowhere |
+| `PILOT_REQUIRE_INVITE`, `PILOT_MODE`, `PILOT_MAX_USERS` | an invite requirement and a user cap | **Removed (PR #139).** They were read by nothing and registration was open. `REGISTRATION_MODE` replaces them and is enforced by `/auth/register`, SSO and `/org/create`; there is no user cap (the number of companies is the number of pilot invites an operator issues). The Kubernetes and Helm config maps no longer set them |
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_S3_BUCKET`, `AWS_S3_REGION` | S3 storage | `STORAGE_BACKEND` is read by nothing; files go to `STORAGE_LOCAL_PATH` |
 | `DEFAULT_COUNTRY_CODE`, `DEFAULT_BASE_CURRENCY`, `DEFAULT_LOCALE` | organisation defaults | not read |
 | `EMAIL_INGEST_API_KEY`, `EMAIL_ALLOWED_DOMAINS`, `EMAIL_MAX_ATTACHMENT_MB` | inbound mail guard | the inbound webhook uses `EMAIL_INBOUND_SECRET`; the others are not read |

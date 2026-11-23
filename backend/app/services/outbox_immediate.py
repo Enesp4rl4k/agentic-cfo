@@ -59,6 +59,10 @@ IMMEDIATE_KINDS: dict[str, Kind] = {
     "account_exists": Kind(frozenset({"email"}), scrub=False),
     "connection_test": Kind(frozenset({"email", "slack", "webhook"}), scrub=False),
     "bot_reply": Kind(frozenset({"whatsapp", "slack_bot"}), scrub=False),
+    # A platform operator's invitation to register a new company (carries the one-time token).
+    "pilot_invite": Kind(frozenset({"email"}), scrub=True),
+    # Fixed text to the platform operators (services/operator_alerts.py): identifiers only, no business data.
+    "operator_alert": Kind(frozenset({"email"}), scrub=False),
 }
 
 
@@ -106,6 +110,43 @@ async def enqueue_org_invite(
         db, kind="org_invite", key=f"org_invite:{invite_id}", org_id=org_id, channel="email",
         recipient=normalize_email(email), subject=f"Davet / Invitation: {name}", body=body,
         source_ref=invite_id,
+    )
+
+
+async def enqueue_pilot_invite(
+    db: AsyncSession, *, invite_id: str, email: str, company_name: str, register_url: str,
+    expires_at: datetime,
+) -> OutboxMessage:
+    """The pilot invitation, to the address invited: whoever follows the link becomes the owner of a new company."""
+    name = _line(company_name)
+    body = (
+        f"{name} şirketi için Tiphys'e davet edildiniz. Bağlantıdan hesabınızı oluşturun; "
+        "şirketin sahibi (owner) siz olacaksınız ve ekibinizi sonra davet edebilirsiniz.\n"
+        f"You have been invited to Tiphys for {name}. Create your account from the link: you become the "
+        "owner of the company and can invite your team afterwards.\n\n"
+        f"Hesap oluştur / Create account: {register_url}\n\n"
+        f"Bağlantı {expires_at.date().isoformat()} tarihine kadar geçerlidir ve yalnızca bir kez kullanılabilir. "
+        f"This invitation expires on {expires_at.date().isoformat()} and works once."
+    )
+    return await _write(
+        db, kind="pilot_invite", key=f"pilot_invite:{invite_id}", org_id=SYSTEM_ORG, channel="email",
+        recipient=normalize_email(email), subject=f"Davet / Invitation: {name}", body=body,
+        source_ref=invite_id,
+    )
+
+
+async def enqueue_operator_alert(
+    db: AsyncSession, *, key: str, email: str, subject: str, body: str,
+) -> OutboxMessage:
+    """A fixed-text alert to one platform operator address (and only to one: see `operator_alerts.operators`)."""
+    from app.services.operator_alerts import operators
+
+    address = normalize_email(email)
+    if address not in operators():
+        raise ImmediateKindRefused("recipient_not_an_operator")
+    return await _write(
+        db, kind="operator_alert", key=key, org_id=SYSTEM_ORG, channel="email", recipient=address,
+        subject=f"[Tiphys] {_line(subject, 100)}", body=body, source_ref=key[:100],
     )
 
 

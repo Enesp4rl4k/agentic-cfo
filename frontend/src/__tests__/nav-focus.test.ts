@@ -57,9 +57,10 @@ describe("visibleNavGroups", () => {
 });
 
 const PROFILES: SizeProfile[] = ["micro", "small", "medium"];
-const FULL = { hasTrPack: true, focusMode: false } as const;
+// The owner sees every entry: some (the decision log) are drawn only for the roles that may read them.
+const FULL = { hasTrPack: true, focusMode: false, role: "owner" } as const;
 const menu = (opts: { focusMode: boolean; sizeProfile?: SizeProfile | null }) =>
-  new Set(hrefs(visibleNavGroups(NAV_GROUPS, { hasTrPack: true, ...opts })));
+  new Set(hrefs(visibleNavGroups(NAV_GROUPS, { hasTrPack: true, role: "owner", ...opts })));
 
 describe("PROFILE_NAV: the menu by company-size profile", () => {
   it("states each profile once, with the focus default the server mirrors", () => {

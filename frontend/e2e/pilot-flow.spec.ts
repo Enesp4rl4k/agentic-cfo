@@ -595,6 +595,15 @@ test.describe("Pilot flow", () => {
     await expect(page.getByText("Yalnızca görüntüler; hiçbir şeyi değiştirmez.")).toBeVisible();
   });
 
+  test("17b. the owner finds the IP allow-list on the workspace screen, switched off, with the address the server sees for them", async ({ page }) => {
+    await loginInBrowser(page, OWNER);
+    await page.goto("/settings/workspace");
+    await expect(page.getByRole("heading", { name: "IP izin listesi" })).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByText(/Durum: kapalı/)).toBeVisible();
+    await expect(page.getByText(/Sunucunun sizin için gördüğü adres: \S+/)).toBeVisible();
+    await expect(page.getByRole("switch", { name: "IP izin listesini etkinleştir" })).not.toBeChecked();
+  });
+
   test("18. an accountant who already has a company of their own is added to a client through the link, lands in it, and switches between both", async ({ browser, request }) => {
     // Registering through the screen always creates a company, so an accountant normally has one;
     // accepting an invitation used to answer 400 "Zaten başka bir organizasyona üyesiniz".
@@ -630,6 +639,19 @@ test.describe("Pilot flow", () => {
       await expect(page.getByRole("button", { name: "Şirket değiştir" })).toContainText(ownFirm, { timeout: 60_000 });
     } finally {
       await close();
+    }
+  });
+
+  test("with registration invite-only a stranger is refused", async ({ request }) => {
+    // The second API runs REGISTRATION_MODE=invite_only on the journey's database. Nobody without an
+    // invitation can sign up there, whether or not the address exists, and nothing is created.
+    const policy = await request.get(`${API_WITH_MODEL}/auth/registration`);
+    expect((await policy.json()).data).toMatchObject({ mode: "invite_only", open: false });
+    const stranger = `yabanci-${Date.now()}@example.com`;
+    for (const email of [stranger, OWNER]) {
+      const res = await request.post(`${API_WITH_MODEL}/auth/register`, { data: { email, password: PASSWORD } });
+      expect(res.status(), await res.text()).toBe(403);
+      expect((await res.json()).error).toContain("yalnızca davetle");
     }
   });
 });

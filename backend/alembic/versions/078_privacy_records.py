@@ -1,7 +1,7 @@
 """Data exports, notice acceptances, retention runs, and the organisation's retention choices.
 
-Revision ID: 077_privacy_records
-Revises: 076_erasure_cooling_off
+Revision ID: 078_privacy_records
+Revises: 077_erasure_cooling_off
 """
 from __future__ import annotations
 
@@ -9,8 +9,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "077_privacy_records"
-down_revision = "076_erasure_cooling_off"
+revision = "078_privacy_records"
+down_revision = "077_erasure_cooling_off"
 branch_labels = None
 depends_on = None
 

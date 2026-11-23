@@ -48,6 +48,10 @@ services:
       - .env.demo.example
     environment:
       USE_SQLITE: "false"
+      # Required with Postgres (preflight). `demo` is not a declared production: findings stay warnings.
+      APP_ENV: demo
+      # The demo has no mail sender and guests sign in without an invitation.
+      REGISTRATION_MODE: open
       POSTGRES_HOST: postgres
       POSTGRES_DB: aicfo_demo
       POSTGRES_USER: aicfo
@@ -79,6 +83,10 @@ services:
       - .env.demo.example
     environment:
       USE_SQLITE: "false"
+      # Required with Postgres (preflight). `demo` is not a declared production: findings stay warnings.
+      APP_ENV: demo
+      # The demo has no mail sender and guests sign in without an invitation.
+      REGISTRATION_MODE: open
       POSTGRES_HOST: postgres
       POSTGRES_DB: aicfo_demo
       POSTGRES_USER: aicfo

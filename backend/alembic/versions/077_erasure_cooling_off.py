@@ -3,8 +3,8 @@
 A confirmed erasure no longer destroys at once: it is scheduled (`execute_after`) and can be cancelled until then.
 The same table now carries a member-scope request (one person's account) and records who set it going.
 
-Revision ID: 076_erasure_cooling_off
-Revises: 075_org_demo_guest_flag
+Revision ID: 077_erasure_cooling_off
+Revises: 076_pilot_invite_job_runs
 """
 from __future__ import annotations
 
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "076_erasure_cooling_off"
-down_revision = "075_org_demo_guest_flag"
+revision = "077_erasure_cooling_off"
+down_revision = "076_pilot_invite_job_runs"
 branch_labels = None
 depends_on = None
 

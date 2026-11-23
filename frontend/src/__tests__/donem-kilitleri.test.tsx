@@ -55,6 +55,13 @@ describe("DonemKilitleri", () => {
     expect(options).not.toContain("2026-04");
   });
 
+  it("offers the decision history of each closed month, closed until asked for", async () => {
+    serve(["2026-01"]);
+    renderWithQuery(<DonemKilitleri now={NOW} />);
+    await screen.findByText("Kapalı: 2026-01");
+    expect(screen.getByRole("button", { name: "Karar geçmişi" })).toHaveAttribute("aria-expanded", "false");
+  });
+
   it("asks first, closes, and reloads", async () => {
     serve([]);
     post.mockResolvedValue({ data: {} });

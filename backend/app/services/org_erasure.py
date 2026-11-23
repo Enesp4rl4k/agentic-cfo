@@ -73,6 +73,7 @@ SPECIAL_TABLES: dict[str, str] = {
     "users": "members; deleted unless they belong to another organisation too",
     "audit_logs": "no org column; linked through the erased users' ids",
     "pilot_invites": "global table; linked through the erased users' ids / emails",
+    "ops_state": "platform-wide operator facts (last backup report); no organisation, no personal data",
     PasswordResetToken.__tablename__: "no org column; linked through the erased users' ids",
     EmailVerificationToken.__tablename__: "no org column; linked through the erased users' ids",
     "terms_acceptances": "no org column; which notice version a person accepted; linked through the erased users' ids",
