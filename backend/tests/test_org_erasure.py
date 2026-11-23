@@ -325,10 +325,10 @@ async def test_a_failure_rolls_everything_back(maker, tmp_path: Path, monkeypatc
     async with maker() as db:
         a, _, _ = await _two_orgs(db)
 
-        def boom(*_a: Any, **_k: Any) -> int:
+        async def boom(*_a: Any, **_k: Any) -> int:
             raise OSError("disk")
 
-        monkeypatch.setattr(svc, "remove_org_files", boom)
+        monkeypatch.setattr("app.services.privacy.ephemeral._agent_memory_delete", boom)  # a transactional step fails
         with pytest.raises(OSError):
             await svc.erase_org(db, a["org"], storage_root=tmp_path)
         t = Base.metadata.tables["transactions"]

@@ -194,8 +194,8 @@ async def confirm_org_erasure(
 
 
 def _cannot_cancel(status: str) -> str:
-    if status == erasure_flow.EXECUTING:
-        return "Silme işlemi şu anda çalışıyor; iptal edilemez."
+    if status in (erasure_flow.EXECUTING, erasure_flow.CLEANUP_PENDING):
+        return "Silme işlemi çalıştı veya çalışıyor (veriler silindi, kalan temizlik sürüyor); iptal edilemez."
     return f"Talep durumu: {status}; iptal edilemez."
 
 

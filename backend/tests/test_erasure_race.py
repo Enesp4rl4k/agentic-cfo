@@ -67,7 +67,7 @@ async def test_cancel_after_the_claim_is_refused_and_the_erasure_completes(clien
     monkeypatch.setattr(erasure_flow, "erase_org", erase_while_owner_cancels)
     async with client._maker() as executor:
         assert (await erasure_flow.execute_due(executor))["executed"] == 1
-    assert seen["status"] == 409 and "çalışıyor" in seen["detail"]  # cancel reports failure, never success
+    assert seen["status"] == 409 and "çalış" in seen["detail"]  # cancel reports failure, never success
     assert await _intact(client, org) == 0  # the company really is erased
     async with client._maker() as db:
         req = await db.get(OrgErasureRequest, rid)
@@ -146,7 +146,7 @@ async def test_the_redis_sweep_runs_after_the_commit(client, monkeypatch) -> Non
     async with client._maker() as db:
         await erasure_flow.execute_due(db)
         req = await db.get(OrgErasureRequest, rid)
-        assert req.post_commit_counts["redis_deleted"] == 3
+        assert req.post_commit_counts["_ephemeral"]["redis_deleted"] == 3
     assert seen["intact_when_swept"] == 0  # the erasure was already committed when Redis was touched
     async with client._maker() as db:
         assert await org_svc.verify_chain(db) == []

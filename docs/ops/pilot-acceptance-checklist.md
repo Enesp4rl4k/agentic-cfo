@@ -22,7 +22,7 @@ explains the reasons and ratings. "Blocker" lines are the ones the audit rated G
 - [ ] `.env` is mode 600, not in git, and passes the preflight: `dc run --rm --no-deps backend python -m app.core.preflight --db`
       exits 0 with no `FATAL`. Evidence: output ([configuration.md](configuration.md)).
 - [ ] No `WARN` left that you have not decided to accept: mail sender, LLM key, `SENTRY_DSN`, `TRUSTED_PROXY_COUNT=1`,
-      `FIELD_ENCRYPTION_KEY`, `PLATFORM_OPERATOR_EMAILS` (two operators), `SUPPORT_CONTACT`. Evidence: the same output.
+      `FIELD_ENCRYPTION_KEY`, `ERASURE_PSEUDONYM_SECRET` (own random value, never rotated), `PLATFORM_OPERATOR_EMAILS` (two operators), `SUPPORT_CONTACT`. Evidence: the same output.
 - [ ] `APP_ENV=production`, `DEMO_MODE` unset, `NEXT_PUBLIC_DEMO_MODE=false`, `NEXT_PUBLIC_LEGACY_DASHBOARDS=false` (built, not just set). Evidence: `.env`; `/cto` shows "not found" when signed in.
 - [ ] Only ports 22, 80, 443 are reachable from outside; Postgres and Redis are not (`nmap` from another host). Evidence: scan output.
 - [ ] `./scripts/smoke-test.sh --api ... --app ... --expect-commit <sha> --strict` ends `SMOKE TEST PASSED`. Evidence: output.

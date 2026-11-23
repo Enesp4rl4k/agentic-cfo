@@ -9,14 +9,16 @@
 * the agent's episodic memory, which keeps a narrative per organisation in a table the ORM does not know
   (`agent_memory_episodes` on PostgreSQL, `agent_memory` on SQLite, a list in memory otherwise).
 
-Two different failure policies, on purpose:
+Where each part runs (see `privacy.erasure_cleanup` for the order of an erasure):
 
-* Redis and the in-process caches are derived data: they are swept AFTER the database commit (one SCAN pass), tried
-  twice, and a failure is reported in the counts (`redis_failed`, kept on the request row) instead of blocking the
-  erasure. Whatever Redis could not delete expires by its own time-to-live (at most the 7 days of the chat history).
-* The agent memory holds a narrative per organisation, so it is erased INSIDE the erase transaction and a failure
-  aborts the whole erasure (`AgentMemoryDeleteError`): nothing partial is reported as done, the request is marked
-  `failed` with a fixed code an operator can see, and the executor retries it.
+* The Postgres agent memory is erased INSIDE the erase transaction, and a failure aborts the whole erasure
+  (`AgentMemoryDeleteError`): nothing is committed, no file is touched, the request is left `failed` with a fixed
+  code an operator can see, and the executor retries it.
+* Everything that is not transactional runs AFTER the commit from the durable cleanup plan (`cleanup_ephemeral`): the
+  in-process caches, agent memory on SQLite / in memory, and one Redis SCAN pass (tried twice). A failure there
+  leaves the plan to be run again (`redis_failed`, `agent_memory_failed`); Redis keys expire by themselves anyway.
+* Every id used as a search needle must be a UUID (`erasure_cleanup.require_ids`); anything else raises before a single
+  key is looked at, so a missing id can never become the substring "None" swept across other tenants.
 """
 from __future__ import annotations
 
@@ -27,17 +29,22 @@ from typing import Any
 from sqlalchemy import column, create_engine, delete, inspect, table
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.privacy.erasure_cleanup import InvalidTargetError, require_ids, valid_id
+
 logger = logging.getLogger(__name__)
 
 # The agent memory tables are created by `agent_memory` with its own DDL, not by the ORM metadata: a Core handle.
 _PG_TABLE = table("agent_memory_episodes", column("org_id"))
 _SQLITE_TABLE = table("agent_memory", column("org_id"))
 
+
 def _matcher(org_id: str, user_ids: Iterable[str], job_ids: Iterable[str]) -> Callable[[str], bool]:
     """One predicate for every key of the organisation: a single SCAN pass instead of one full-keyspace SCAN per
-    pattern. The ids are UUIDs from the request's own rows, so a substring test cannot match another tenant."""
-    needles = tuple(dict.fromkeys([org_id, *job_ids]))
-    prefixes = tuple(f"conv:{uid}:" for uid in user_ids)
+    pattern. HARD GUARD: every id must be a UUID, otherwise this raises and nothing is ever matched."""
+    users, jobs = list(user_ids), list(job_ids)
+    require_ids(org_id, users, jobs)
+    needles = tuple(dict.fromkeys([org_id, *jobs]))
+    prefixes = tuple(f"conv:{uid}:" for uid in users)
 
     def matches(key: str) -> bool:
         return (bool(prefixes) and key.startswith(prefixes)) or any(n in key for n in needles)
@@ -85,6 +92,7 @@ def _memory_delete(org_id: str, user_ids: list[str], job_ids: list[str]) -> int:
     from app.services import conversation_memory as conv
     from app.services.cache_service import get_cache_service
 
+    require_ids(org_id, user_ids, job_ids)
     dropped = 0
     prefixes = tuple(f"conv:{uid}:" for uid in user_ids)
     for key in [k for k in conv._fallback_store if k.startswith(prefixes)]:
@@ -104,29 +112,17 @@ class AgentMemoryDeleteError(RuntimeError):
 
 
 async def _agent_memory_delete(db: AsyncSession, org_id: str) -> int:
-    """Remove one organisation's episodes from whichever backend the store uses (Core statements, no SQL text).
-
-    Raises `AgentMemoryDeleteError` when the statement fails; a missing table is not a failure (nothing to erase).
-    """
+    """The IN-TRANSACTION part: one organisation's PostgreSQL episodes (Core statement, no SQL text), in the erasure's
+    own transaction so a failure rolls everything back. Other backends are not transactional: they run after the
+    commit (`_agent_memory_delete_local`). Raises `AgentMemoryDeleteError`; a missing table is not a failure."""
     from app.services import agent_memory as am
 
+    require_ids(org_id)
     backend: Any = am.get_memory_store()._backend
+    if isinstance(backend, am._InMemoryBackend | am._SQLiteBackend):
+        return 0
     try:
-        if isinstance(backend, am._InMemoryBackend):
-            before = len(backend._store)
-            backend._store[:] = [e for e in backend._store if e.org_id != org_id]
-            return before - len(backend._store)
-        if isinstance(backend, am._SQLiteBackend):
-            engine = create_engine(f"sqlite:///{backend._db_path}")
-            try:
-                with engine.begin() as conn:
-                    if not inspect(conn).has_table(_SQLITE_TABLE.name):
-                        return 0
-                    return int(conn.execute(delete(_SQLITE_TABLE).where(_SQLITE_TABLE.c.org_id == org_id)).rowcount)
-            finally:
-                engine.dispose()
-        # PostgreSQL: the same database as the application, so it runs in the erasure's own transaction. The
-        # table is created lazily by the store: no table, nothing to erase (and no failed statement in the transaction).
+        # The table is created lazily by the store: no table, nothing to erase (and no failed statement in the transaction).
         exists = await db.run_sync(lambda sync: inspect(sync.connection()).has_table(_PG_TABLE.name))
         if not exists:
             return 0
@@ -137,19 +133,51 @@ async def _agent_memory_delete(db: AsyncSession, org_id: str) -> int:
         raise AgentMemoryDeleteError("agent memory delete failed") from exc
 
 
-async def erase_org_ephemeral(
-    db: AsyncSession, org_id: str, user_ids: list[str], job_ids: list[str]
-) -> dict[str, int]:
-    """The in-transaction part: in-process caches and agent memory; counts only. Redis is swept after the commit
-    (`sweep_org_redis`). Raises `AgentMemoryDeleteError` (see there)."""
-    counts: dict[str, int] = {}
-    counts["memory_dropped"] = _memory_delete(org_id, user_ids, job_ids)
-    counts["agent_memory_deleted"] = await _agent_memory_delete(db, org_id)
+def _agent_memory_delete_local(org_id: str) -> int:
+    """The AFTER-COMMIT part: the in-memory list and the SQLite file (not part of any transaction)."""
+    from app.services import agent_memory as am
+
+    require_ids(org_id)
+    backend: Any = am.get_memory_store()._backend
+    if isinstance(backend, am._InMemoryBackend):
+        before = len(backend._store)
+        backend._store[:] = [e for e in backend._store if e.org_id != org_id]
+        return before - len(backend._store)
+    if isinstance(backend, am._SQLiteBackend):
+        engine = create_engine(f"sqlite:///{backend._db_path}")
+        try:
+            with engine.begin() as conn:
+                if not inspect(conn).has_table(_SQLITE_TABLE.name):
+                    return 0
+                return int(conn.execute(delete(_SQLITE_TABLE).where(_SQLITE_TABLE.c.org_id == org_id)).rowcount)
+        finally:
+            engine.dispose()
+    return 0
+
+
+async def erase_org_in_transaction(db: AsyncSession, org_id: str) -> dict[str, int]:
+    """What may run inside the erase transaction: the Postgres agent memory. Raises `AgentMemoryDeleteError`."""
+    return {"agent_memory_deleted": await _agent_memory_delete(db, org_id)}
+
+
+async def cleanup_ephemeral(org_id: str, user_ids: list[str], job_ids: list[str]) -> dict[str, int]:
+    """The after-commit part: in-process caches, non-transactional agent memory, Redis. Counts only. Raises only
+    `InvalidTargetError` (before doing anything); other failures are counted (`*_failed`) and the plan runs again."""
+    require_ids(org_id, user_ids, job_ids)
+    counts: dict[str, int] = {"memory_dropped": _memory_delete(org_id, user_ids, job_ids)}
+    try:
+        counts["agent_memory_deleted"] = _agent_memory_delete_local(org_id)
+    except Exception as exc:
+        logger.warning("ephemeral erasure: local agent memory failed (%s)", type(exc).__name__)
+        counts["agent_memory_failed"] = 1
+    counts.update(await sweep_org_redis(org_id, user_ids, job_ids))
     return counts
 
 
 async def erase_user_ephemeral(user_id: str) -> dict[str, int]:
     """Erase one person's chat history (Redis and the in-process fallback)."""
+    if not valid_id(user_id):
+        raise InvalidTargetError("user id is not a UUID")
     prefix = f"conv:{user_id}:"
     counts = await _redis_sweep(lambda key: key.startswith(prefix))
     from app.services import conversation_memory as conv

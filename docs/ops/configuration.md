@@ -146,7 +146,7 @@ is never blocked. WARN findings are logged in every mode.
 | `TERMS_VERSION` | `taslak-1` | optional | - | Version of the terms of use a person must have accepted |
 | `PRIVACY_NOTICE_URL` | (empty) | optional | - | Where the privacy notice text lives (a link; the product does not hold legal text) |
 | `TERMS_URL` | (empty) | optional | - | Where the terms of use live (a link) |
-| `ERASURE_PSEUDONYM_SECRET` | (unset) | optional | - | KVKK member erasure: key of the HMAC behind the stable `member-<hex>` pseudonym; empty falls back to `BACKEND_SECRET_KEY`. Set once and keep it: a new value only changes the pseudonym of people erased afterwards |
+| `ERASURE_PSEUDONYM_SECRET` | (unset) | REQUIRED in production | FATAL when `APP_ENV` is production/staging and unset (warning elsewhere) | KVKK member erasure: key of the HMAC behind the stable `member-<hex>` pseudonym. Its own random value (`openssl rand -hex 32`), set once and never rotated (rotating changes the handle of people erased afterwards); empty falls back to `BACKEND_SECRET_KEY`, which does rotate |
 | `LLM_MODEL` | `deepseek-chat` | optional | - |  |
 | `LLM_MODEL_CHEAP` | (unset) | optional | - |  |
 | `LLM_MODEL_STRONG` | (unset) | optional | - |  |

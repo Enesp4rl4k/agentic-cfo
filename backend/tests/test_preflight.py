@@ -50,6 +50,7 @@ def production_settings(**overrides: Any) -> Settings:
         "openai_api_key": "sk-real",
         "trusted_proxy_count": 1,
         "field_encryption_key": "k" * 44,
+        "erasure_pseudonym_secret": "e" * 40,
         "platform_operator_emails": "ops@example.test",
         "support_contact": "ops@example.test",
     }
@@ -253,3 +254,10 @@ async def test_a_branched_chain_is_unknown(monkeypatch: pytest.MonkeyPatch) -> N
 
 def test_the_real_migrations_have_one_head() -> None:
     assert len(preflight.code_heads()) == 1
+
+
+def test_the_pseudonym_secret_is_required_in_production_and_only_warned_about_elsewhere() -> None:
+    s = production_settings(erasure_pseudonym_secret="")
+    assert "no_pseudonym_secret" in codes(check_settings(s, CLEAN_ENV), FATAL)
+    assert "no_pseudonym_secret" in codes(check_settings(s, {**CLEAN_ENV, "APP_ENV": "ci"}), WARN)
+    assert "no_pseudonym_secret" not in codes(check_settings(production_settings(), CLEAN_ENV))

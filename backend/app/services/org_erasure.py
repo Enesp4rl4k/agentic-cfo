@@ -42,7 +42,6 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
-import shutil
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -55,8 +54,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.email_address import normalize_email
 from app.database import Base
 from app.models.email_verification import EmailVerificationToken
-from app.models.erasure_record import OrgErasureRecord
+from app.models.erasure_record import OrgErasureRecord, OrgErasureRequest
 from app.models.password_reset import PasswordResetToken
+from app.services.privacy.erasure_cleanup import (
+    CLEANUP_PENDING,
+    EXECUTING,
+    build_plan,
+    delete_paths,
+    is_incomplete,
+    org_file_paths,
+    require_ids,
+    run_cleanup,
+)
 
 ANONYMISE = "anonymise"
 HARD_DELETE = "hard_delete"
@@ -265,43 +274,9 @@ def _chunks(items: Sequence[str]) -> Iterator[list[str]]:
 
 # ── Files ────────────────────────────────────────────────────────────────────
 
-def remove_org_files(root: Path, job_ids: Iterable[str], recorded_paths: Iterable[str],
-                     export_ids: Iterable[str] = ()) -> int:
-    """Delete the organisation's files under the local storage root; return how many.
-
-    The storage layout is `<root>/uploads/<job>/`, `<root>/reports/<job>/`,
-    `<root>/board_decks/<job>.pdf` and `<root>/<job>_<name>` (demo upload), plus
-    whatever path the rows recorded. Nothing outside `root` is ever touched.
-    There is no storage abstraction in the codebase (`storage_backend` is read
-    nowhere); an object-store backend must add its own deletion here.
-    """
-    root = root.resolve()
-    candidates: list[Path] = []
-    for jid in job_ids:
-        candidates += [root / "uploads" / jid, root / "reports" / jid,
-                       root / "board_decks" / f"{jid}.pdf"]
-        if root.is_dir():
-            candidates += list(root.glob(f"{jid}_*"))
-    for eid in export_ids:  # built from the stored id, whether or not a row recorded the path (a running export)
-        candidates += [root / "exports" / f"{eid}.zip", root / "exports" / f"{eid}.zip.part"]
-    for raw in recorded_paths:
-        if raw:
-            candidates.append(Path(raw) if Path(raw).is_absolute() else Path.cwd() / raw)
-    removed = 0
-    for path in candidates:
-        try:
-            resolved = path.resolve()
-            resolved.relative_to(root)
-        except (ValueError, OSError):
-            continue  # outside the storage root: not ours to delete
-        if resolved == root or not resolved.exists():
-            continue
-        if resolved.is_dir():
-            shutil.rmtree(resolved)
-        else:
-            resolved.unlink()
-        removed += 1
-    return removed
+def remove_org_files(root: Path, job_ids: Iterable[str], recorded_paths: Iterable[str]) -> int:
+    """Delete the organisation's files under the local storage root; return how many (see `erasure_cleanup`)."""
+    return delete_paths(root, org_file_paths(root, job_ids, recorded_paths))
 
 
 # ── The operation ────────────────────────────────────────────────────────────
@@ -311,6 +286,8 @@ class ErasureResult:
     record: OrgErasureRecord
     already_erased: bool = False
     counts: dict[str, Any] = field(default_factory=dict)
+    plan: dict[str, Any] | None = None  # the durable cleanup plan, when a request owns it
+    cleanup_incomplete: bool = False
 
 
 def _canonical(payload: dict[str, Any]) -> str:
@@ -356,46 +333,85 @@ async def _user_ids(db: AsyncSession, org_id: str, tables: dict[str, Table]) -> 
     return erase, emails, keep
 
 
+def org_lock_key(org_id: str) -> int:
+    """The 64-bit key of the per-organisation advisory lock: two erasures of one company cannot run at once."""
+    return int.from_bytes(hashlib.sha256(f"org-erasure:{org_id}".encode()).digest()[:8], "big", signed=True)
+
+
+async def _lock_org(db: AsyncSession, org_id: str) -> None:
+    """Postgres: hold a transaction-scoped advisory lock first, so a concurrent erasure of the same company waits,
+    then finds the committed proof record and returns `already_erased`. (SQLite has a single writer already.)"""
+    if db.get_bind().dialect.name == "postgresql":
+        await db.execute(select(func.pg_advisory_xact_lock(org_lock_key(org_id))))
+
+
+async def _hand_over(db: AsyncSession, request_id: str, record_id: str, plan: dict[str, Any]) -> None:
+    """In the erase transaction: the request leaves `executing` for `cleanup_pending` carrying the durable plan, so
+    the rows are gone and the plan exists, or neither. Raises (rolling back) if the request is not `executing`."""
+    result: Any = await db.execute(
+        update(OrgErasureRequest).where(OrgErasureRequest.id == request_id, OrgErasureRequest.status == EXECUTING)
+        .values(status=CLEANUP_PENDING, record_id=record_id, cleanup_plan=plan, target_org_id=None,
+                requested_by_user_id=None, claimed_at=None, failure_code=None)
+        .execution_options(synchronize_session="fetch")
+    )
+    if result.rowcount != 1:
+        raise RuntimeError("erasure request is not executing")
+
+
 async def erase_org(
     db: AsyncSession, org_id: str, *, mode: str = ANONYMISE, storage_root: Path | None = None,
-    requested_by_hash: str | None = None, confirmed_by_hash: str | None = None,
+    requested_by_hash: str | None = None, confirmed_by_hash: str | None = None, request_id: str | None = None,
 ) -> ErasureResult:
-    """Erase `org_id` in one transaction and commit. Idempotent per mode.
+    """Erase `org_id`: one transaction for everything transactional, then the irreversible cleanup. Idempotent per mode.
 
-    Rolls back and re-raises on any failure, files included (see module docstring).
+    The transaction deletes/scrubs the rows, erases the Postgres agent memory, writes the proof record and, when
+    `request_id` is given, hands the request a durable cleanup plan (status `cleanup_pending`, no longer cancellable).
+    It rolls back whole and re-raises on any failure, and then NO file has been touched. After the commit:
+    with `request_id` the caller (`erasure_flow`) runs the plan, retried by the executor until it is done; without
+    one (restore re-application, direct calls) the plan runs here, once.
     """
     if mode not in MODES:
         raise ValueError(f"unknown erasure mode: {mode!r}")
+    require_ids(org_id)  # a missing or malformed id never reaches a delete, a path or a Redis pattern
     org_hash = hash_id("org", org_id)
+    root = storage_root
+    if root is None:
+        from app.config import get_settings
 
-    prior = (await db.execute(
-        select(OrgErasureRecord).where(OrgErasureRecord.org_hash == org_hash)
-        .order_by(OrgErasureRecord.seq.desc())
-    )).scalars().all()
-    if any(r.mode == HARD_DELETE or r.mode == mode for r in prior):
-        return ErasureResult(record=prior[0], already_erased=True, counts=prior[0].counts)
-
+        root = Path(get_settings().storage_local_path)
     try:
-        counts, sweep = await _erase(db, org_id, org_hash, mode, storage_root)
+        await _lock_org(db, org_id)
+        prior = (await db.execute(
+            select(OrgErasureRecord).where(OrgErasureRecord.org_hash == org_hash)
+            .order_by(OrgErasureRecord.seq.desc())
+        )).scalars().all()
+        if any(r.mode == HARD_DELETE or r.mode == mode for r in prior):
+            await db.commit()  # nothing was written; ends the transaction and releases the lock
+            return ErasureResult(record=prior[0], already_erased=True, counts=prior[0].counts)
+        counts, plan = await _erase(db, org_id, org_hash, mode, root)
         record = await _write_record(db, org_hash, mode, counts, requested_by_hash, confirmed_by_hash)
+        if request_id is not None:
+            await _hand_over(db, request_id, record.id, plan)
         await db.commit()
         await db.refresh(record)
     except BaseException:
         await db.rollback()
         raise
-    # After the commit: derived data in Redis (a SCAN pass must not hold the erase transaction open). The counts
-    # cannot go into the hash-chained record any more, so they are returned and kept on the request row.
-    from app.services.privacy.ephemeral import sweep_org_redis
-
     shown = copy.deepcopy(counts)
-    shown.setdefault("_ephemeral", {}).update(await sweep_org_redis(org_id, *sweep))
-    return ErasureResult(record=record, counts=shown)
+    if request_id is not None:
+        return ErasureResult(record=record, counts=shown, plan=plan)
+    done = await run_cleanup(plan, root)  # not durable: a failure here is only reported
+    shown["_files"] = done["_files"]
+    eph = shown.setdefault("_ephemeral", {})
+    for key, n in done["_ephemeral"].items():
+        eph[key] = eph.get(key, 0) + n
+    return ErasureResult(record=record, counts=shown, cleanup_incomplete=is_incomplete(done))
 
 
 async def _erase(
-    db: AsyncSession, org_id: str, org_hash: str, mode: str, storage_root: Path | None
-) -> tuple[dict[str, Any], tuple[list[str], list[str]]]:
-    """Returns (the counts for the proof record, (user ids, job ids) for the Redis sweep after the commit)."""
+    db: AsyncSession, org_id: str, org_hash: str, mode: str, root: Path
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Returns (the counts for the proof record, the cleanup plan). Touches no file, no cache, no Redis."""
     tables = _tables(Base.metadata)
     scope = derive_scope()
     keep_rows = mode == ANONYMISE
@@ -416,7 +432,7 @@ async def _erase(
 
     erase_users, erase_emails, kept_users = await _user_ids(db, org_id, tables)
 
-    # Files first (rows still name them); removed before commit so a failure rolls back.
+    # The files the rows name are only LISTED here (the plan); they are unlinked after the commit.
     jobs, reports, sources = tables["analysis_jobs"], tables["reports"], tables["data_sources"]
     exports = tables["data_exports"]
     job_rows = (await db.execute(
@@ -428,12 +444,8 @@ async def _erase(
         paths += (await db.execute(
             select(t.c.file_path).where(_clause(t, org_id, scope, tables))
         )).scalars().all()
-    root = storage_root
-    if root is None:
-        from app.config import get_settings
-
-        root = Path(get_settings().storage_local_path)
-    removed = remove_org_files(root, [r.id for r in job_rows], paths, export_ids)
+    job_ids = [r.id for r in job_rows]
+    plan = build_plan(root, org_id, erase_users, job_ids, export_ids, paths)
 
     # Members who also belong to another organisation keep their account; they
     # lose only this membership, and are moved off it if it was their active one.
@@ -509,13 +521,13 @@ async def _erase(
         update(reqs).where(reqs.c.target_org_id == org_id)
         .values(target_org_id=None, requested_by_user_id=None)
     )
-    counts["_files"] = {"deleted": removed}
-    # In-process caches and agent memory live outside the tables (see `privacy.ephemeral`); a failure aborts.
-    from app.services.privacy.ephemeral import erase_org_ephemeral
+    counts["_files"] = {"deleted": len(plan["paths"])}  # what the plan will remove
+    # The Postgres agent memory is transactional: it goes with the rows, and a failure aborts everything (see
+    # `privacy.ephemeral`). In-process caches, other backends and Redis are in the plan, after the commit.
+    from app.services.privacy.ephemeral import erase_org_in_transaction
 
-    job_ids = [r.id for r in job_rows]
-    counts["_ephemeral"] = await erase_org_ephemeral(db, org_id, erase_users, job_ids)
-    return counts, (list(erase_users), job_ids)
+    counts["_ephemeral"] = await erase_org_in_transaction(db, org_id)
+    return counts, plan
 
 
 async def _external_followup(

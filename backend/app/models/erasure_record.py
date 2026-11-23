@@ -66,6 +66,11 @@ class OrgErasureRequest(Base):
     claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     failure_code: Mapped[str | None] = mapped_column(String(40), nullable=True)
     post_commit_counts: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    # Executions and cleanups attempted (capped by the executor, then `blocked: retries_exhausted` + operator alert).
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    # Written in the SAME transaction that deletes the rows: the files, ids and caches still to clear (UUIDs and
+    # storage-relative paths of the erased company only). Cleared when the cleanup is done. See `erasure_cleanup`.
+    cleanup_plan: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
 
 class OrgErasureRecord(Base):
