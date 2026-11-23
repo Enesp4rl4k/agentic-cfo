@@ -3,7 +3,7 @@
   POST /privacy/member-erasure                         a member, for their own account
   POST /privacy/org/members/{user_id}/erasure          owner | admin, for a member who has left (see below)
   POST /privacy/member-erasure/{request_id}/cancel     the person, the one who asked, or a platform operator
-  GET  /privacy/erasure-requests                       the caller's own request; owner/admin also the company's
+  GET  /privacy/erasure-requests                       the caller's own request; the owner also the company's
 
 One call with the person's e-mail address typed back as confirmation: the account stays usable and the
 destructive step is SCHEDULED after the cooling-off window (ERASURE_COOLING_OFF_DAYS), cancellable until then.
@@ -42,8 +42,11 @@ logger = logging.getLogger(__name__)
 NOT_FOUND = "Kayıt bulunamadı."
 # What the person or the owner is shown: waiting, running, failed (with its fixed code) or cleaning up. `failed` and
 # `cleanup_pending` used to be invisible; only the stoppable ones can be cancelled (`erasure_flow.STOPPABLE`).
+# LIVE is also the duplicate guard of a new request: a request that ended `blocked` (the window passed but it may not
+# run; a fixed `blocked_reason`) is NOT live, so the person can file again. It is still LISTED, so they are told.
 LIVE = (erasure_flow.SCHEDULED, erasure_flow.PENDING, erasure_flow.FAILED, erasure_flow.EXECUTING,
         erasure_flow.CLEANUP_PENDING)
+LISTED = (*LIVE, erasure_flow.BLOCKED)
 
 
 class MemberErasureBody(BaseModel):
@@ -51,9 +54,9 @@ class MemberErasureBody(BaseModel):
     confirmation: str = Field(min_length=3, max_length=255)
 
 
-async def _live_requests(db: AsyncSession, **where: Any) -> list[OrgErasureRequest]:
+async def _live_requests(db: AsyncSession, statuses: tuple[str, ...] = LIVE, **where: Any) -> list[OrgErasureRequest]:
     stmt = select(OrgErasureRequest).where(
-        OrgErasureRequest.scope == "member", OrgErasureRequest.status.in_(LIVE))
+        OrgErasureRequest.scope == "member", OrgErasureRequest.status.in_(statuses))
     for col, value in where.items():
         stmt = stmt.where(getattr(OrgErasureRequest, col) == value)
     return list((await db.execute(stmt)).scalars())
@@ -172,15 +175,15 @@ async def cancel_member_erasure(
 async def list_erasure_requests(
     current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> dict[str, Any]:
-    """Live erasure requests the caller may see: about their own account; owner/admin also the company's."""
+    """Erasure requests the caller may see: about their own account; the owner also the company's."""
     uid = str(current_user.id)
-    mine = await _live_requests(db, target_user_id=uid) + await _live_requests(db, requested_by_user_id=uid)
+    mine = await _live_requests(db, LISTED, target_user_id=uid) + await _live_requests(db, LISTED, requested_by_user_id=uid)
     out = {r.id: r for r in mine}
     role = await acting_role(db, current_user) if current_user.org_id else None
-    if role in ("owner", "admin"):
+    if role == "owner":  # the company's requests carry internal codes and are the owner's to see and cancel
         org = (await db.execute(select(OrgErasureRequest).where(
             OrgErasureRequest.scope == "org", OrgErasureRequest.target_org_id == str(current_user.org_id),
-            OrgErasureRequest.status.in_(LIVE)))).scalars()
+            OrgErasureRequest.status.in_(LISTED)))).scalars()
         out.update({r.id: r for r in org})
     rows = [{
         "request_id": r.id, "scope": r.scope, "status": r.status, "initiated_by": r.initiated_by,

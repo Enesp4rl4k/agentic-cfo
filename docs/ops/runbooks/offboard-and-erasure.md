@@ -13,8 +13,10 @@ re-checks role, company and phrase and **schedules** the erasure: it runs when t
 after 7 days if nobody confirms. When it runs, a proof record (hash-chained, no personal data) is written.
 
 **The operator** can schedule an erasure on a verified request: `POST /compliance/operator/org-erasure`
-`{"org_id", "verification_ref": "<ticket id>"}` (platform operator only). The cooling-off is never skipped (at least a day),
-the company gets an in-app notice, and the owner can cancel. Record the ticket number, never a name.
+`{"org_id", "verification_ref": "<ticket id>", "confirmation_phrase": "ERASE <company slug>"}` (platform operator only; the
+phrase is required, as for the owner). The cooling-off is never skipped (the owner flow's window, at least a day), the company
+gets an in-app notice, the `erasure` decision record names the operator, and the owner can cancel. It is still one person
+acting: there is no second-person approval. Record the ticket number, never a name.
 
 **One person** (a member leaves or asks): `POST /privacy/member-erasure` (the person, with their e-mail typed back) or
 `POST /privacy/org/members/{user_id}/erasure` (owner/admin, for a member of no other company). The account stays usable during

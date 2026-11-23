@@ -1,5 +1,5 @@
 import { expect, test, type APIRequestContext, type Browser, type Page } from "@playwright/test";
-import { API, API_WITH_MODEL, PASSWORD, acceptInvite, noteSignIns, bearer, login, loginInBrowser, probe, register, type OutboxRow } from "./support/api";
+import { API, API_WITH_MODEL, PASSWORD, acceptInvite, acceptNoticePrompt, noteSignIns, bearer, login, loginInBrowser, probe, register, type OutboxRow } from "./support/api";
 import { OPENING_BALANCE_TL, bankStatement, bankStatementWithoutCurrency, cashShortStatement, invoiceList, iso, tr } from "./support/fixtures";
 
 /**
@@ -97,6 +97,10 @@ test.describe("Pilot flow", () => {
     await page.getByRole("button", { name: /workspace oluştur/i }).click();
     await page.waitForURL(/\/baslangic/, { timeout: 60_000 });
     noteSignIns(3); // the screen signs in, asks for a token, and signs in again
+    // The app stays closed until the current privacy notice is accepted: the prompt names the version and links the text.
+    await expect(page.getByRole("dialog").getByText(/^Sürüm /).first()).toBeVisible({ timeout: 60_000 });
+    await expect(screen(page).getByRole("heading", { name: "Başlangıç" })).toHaveCount(0);
+    await acceptNoticePrompt(page, OWNER);
     await expect(screen(page).getByRole("heading", { name: "Başlangıç" })).toBeVisible();
   });
 
@@ -384,6 +388,7 @@ test.describe("Pilot flow", () => {
       await page.getByRole("button", { name: "Hesap oluştur ve katıl" }).click();
       await page.waitForURL(/\/command-center/, { timeout: 60_000 });
       noteSignIns(1);
+      await acceptNoticePrompt(page, ACCOUNTANT);
     } finally {
       await close();
     }
@@ -629,6 +634,7 @@ test.describe("Pilot flow", () => {
       await page.getByRole("button", { name: "Şirkete katıl" }).click();
       await page.waitForURL(/\/command-center/, { timeout: 60_000 });
       noteSignIns(1);
+      await acceptNoticePrompt(page, email);
 
       // They land in the client, with the switcher that two companies give them.
       const switcher = page.getByRole("button", { name: "Şirket değiştir" });

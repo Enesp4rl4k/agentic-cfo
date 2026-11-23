@@ -3372,6 +3372,12 @@ export type MessageTree = {
   };
   liveRefusal: { title: string; generic: string; recovery: string };
   notFound: { title: string; body: string; home: string };
+  /** The blocking prompt after sign-in while a current notice version is not accepted. */
+  noticeGate: {
+    title: string; intro: string; version: string; open: string; noLink: string; consequence: string;
+    accept: string; accepting: string; signOut: string; acceptFailed: string; stale: string;
+    loading: string; loadFailed: string; retry: string;
+  };
   /** Settings > Veri ve gizlilik: notices, own data, company export and erasure, third parties, retention. */
   settingsPrivacy: {
     title: string;
@@ -3429,6 +3435,10 @@ export type MessageTree = {
       pendingTitle: string;
       kindOrg: string;
       kindMember: string;
+      states: {
+        pending: string; scheduled: string; executing: string; cleanupPending: string; failed: string; blocked: string;
+        contactWith: string; contactNone: string; reference: string;
+      };
     };
     thirdParties: { title: string; intro: string; masked: string; notMasked: string; reaches: string };
     retention: {
@@ -7268,6 +7278,22 @@ export const en: MessageTree = {
     body: "The address is wrong, or this screen is not part of your workspace.",
     home: "Back to the app",
   },
+  noticeGate: {
+    title: "Please read before you continue",
+    intro: "The current version of the privacy notice and the terms of use has not been accepted on your account yet. The version you accept and the date are recorded.",
+    version: "Version {v}",
+    open: "Open the full text (new tab)",
+    noLink: "The link to this text has not been set up yet. Ask your company administrator or support.",
+    consequence: "If you do not accept, the app stays closed to you. You can sign out at any time.",
+    accept: "I have read it, I accept",
+    accepting: "Saving…",
+    signOut: "Sign out",
+    acceptFailed: "Your acceptance could not be saved. Try again in a moment.",
+    stale: "The text was updated while this page was open. The new version is shown now; please read it again.",
+    loading: "Loading…",
+    loadFailed: "Your notice status could not be loaded just now.",
+    retry: "Try again",
+  },
   settingsPrivacy: {
     title: "Data and privacy",
     subtitle: "See which personal data is kept, who receives it, how long it is kept and how to have it erased.",
@@ -7324,6 +7350,17 @@ export const en: MessageTree = {
       pendingTitle: "Pending erasure requests",
       kindOrg: "Company data",
       kindMember: "Member account",
+      states: {
+        pending: "The request is open and waiting for your confirmation. It expires if it is not confirmed.",
+        scheduled: "Scheduled: the erasure will run on {date}. You can cancel until then.",
+        executing: "The erasure is running now. It can no longer be cancelled.",
+        cleanupPending: "The records have been erased; files and caches are still being cleared. It cannot be cancelled and finishes on its own.",
+        failed: "The erasure did not complete this time. The system retries automatically. If it goes on, contact support.",
+        blocked: "The erasure could not be run and was stopped. Contact support.",
+        contactWith: "Support: {contact}",
+        contactNone: "No support address is set up; ask your platform administrator.",
+        reference: "Reference: {id}",
+      },
     },
     thirdParties: {
       title: "Third parties the data goes to",

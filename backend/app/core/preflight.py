@@ -75,6 +75,27 @@ def _looks_like_placeholder(value: str) -> bool:
     return not lowered or any(marker in lowered for marker in _PLACEHOLDER_MARKERS)
 
 
+def _notice_url_problem(url: str, *, https_only: bool) -> str | None:
+    """Why a notice link cannot be opened by a person, or None. Absolute, a real host, `https` (`http` only outside production)."""
+    from urllib.parse import urlsplit
+
+    if not url.strip():
+        return "is unset"
+    try:
+        parts = urlsplit(url)
+        host = parts.hostname
+    except ValueError:
+        return "is not a valid URL"
+    if url != url.strip() or any(c.isspace() for c in url):
+        return "contains whitespace"
+    allowed = ("https",) if https_only else ("https", "http")
+    if parts.scheme not in allowed:
+        return "must be an absolute " + ("https" if https_only else "http(s)") + " URL"
+    if not host:
+        return "has no host"
+    return None
+
+
 def _is_localhost(url: str) -> bool:
     lowered = url.strip().lower()
     return "localhost" in lowered or "127.0.0.1" in lowered or "[::1]" in lowered
@@ -136,6 +157,14 @@ def _exposure_findings(settings: Settings, env: Mapping[str, str]) -> list[Findi
             "ERASURE_PSEUDONYM_SECRET is unset: erased members' pseudonyms would be derived from BACKEND_SECRET_KEY, which the "
             "rotate-secret runbook rotates, so the same person would get a different handle afterwards. Set it once "
             "to its own random value (docs/ops/runbooks/rotate-secret.md) and never rotate it."))
+    for var, url in (("PRIVACY_NOTICE_URL", settings.privacy_notice_url), ("TERMS_URL", settings.terms_url)):
+        problem = _notice_url_problem(url, https_only=declared)
+        if problem:
+            out.append(explicit(
+                "no_notice_url",
+                f"{var} {problem}: the sign-in prompt would ask people to accept a text they cannot open, and the "
+                "acceptance record would be evidence of nothing. Set the public https link of the published text "
+                "(docs/kvkk/muhendislik-notlari.md)."))
     for name, value in (("FRONTEND_URL", settings.frontend_url), ("BRAND_APP_URL", settings.brand_app_url)):
         if _is_localhost(value):
             out.append(explicit("links_localhost", f"{name} points at localhost: every e-mailed link (verification, reset, invite) would be dead."))

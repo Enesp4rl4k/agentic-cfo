@@ -3,7 +3,7 @@
   POST /compliance/org-erasure/request               owner | admin of the org
   POST /compliance/org-erasure/{request_id}/confirm  owner of the org
   POST /compliance/org-erasure/{request_id}/cancel   owner of the org, or a platform operator
-  POST /compliance/operator/org-erasure              platform operator, on a verified request
+  POST /compliance/operator/org-erasure              platform operator, on a verified request, with the typed phrase
 
 Request records the intent and returns the phrase the owner must type back; nothing is touched. Confirm re-checks
 the role, the organisation and the phrase and SCHEDULES the erasure: the destructive step runs after the cooling-off
@@ -62,6 +62,8 @@ class OperatorErasureBody(BaseModel):
     mode: Literal["anonymise", "hard_delete"] = "anonymise"
     # The ticket or case number under which the data subject's identity and authority were verified; never a name.
     verification_ref: str = Field(min_length=3, max_length=100)
+    # The same phrase the owner types (`ERASE <slug>`): a deliberate, second act, not a stray call. Required.
+    confirmation_phrase: str = Field(min_length=1, max_length=200)
 
 
 def _require_mode_allowed(mode: str) -> None:
@@ -229,12 +231,16 @@ async def operator_schedule_org_erasure(
     operator: User = Depends(require_platform_operator),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    """The platform operator schedules an erasure on a verified request. The cooling-off is never skipped: the
-    organisation's owner is told in the product and can cancel until it ends."""
+    """The platform operator schedules an erasure on a verified request. Needs the typed confirmation phrase and a
+    verification reference; the `erasure` decision record names the operator (`decided_by`, `acting_role`). The
+    cooling-off is never skipped (the owner flow's window, at least a day): the organisation's owner is told in the
+    product and can cancel until it ends. It is still ONE person acting; a second-person approval is not built."""
     _require_mode_allowed(body.mode)
     org = await db.get(Organization, body.org_id)
     if org is None:
         raise HTTPException(status_code=404, detail=NOT_FOUND)
+    if body.confirmation_phrase.strip() != _phrase(org.slug):
+        raise HTTPException(status_code=422, detail="Onay ifadesi eşleşmiyor.")
     now = datetime.now(UTC)
     who = hash_id("user", str(operator.id))
     req = OrgErasureRequest(
