@@ -59,7 +59,7 @@ from app.services.ingest.rows import (
     _tablo_ekstresi,
     _try_parse_csv,
 )
-from app.services.pdf_isolation import apply_attachment_note, ingest_hata_metni
+from app.services.pdf_isolation import apply_pdf_notes, ingest_hata_metni
 
 logger = logging.getLogger(__name__)
 
@@ -354,7 +354,7 @@ async def _belgeyi_al(
     ledger = ReadLedger()
     sonuc = await _belgeyi_oku(file_path, file_type, state, config, ledger)
     if file_type == "pdf":
-        apply_attachment_note(sonuc, file_path)   # a declared attachment that was not read is said, not skipped
+        apply_pdf_notes(sonuc, file_path)   # an unread attachment or page is said (and held when data is missing), not skipped
     if ledger.touched:
         # The counts travel in the result, never on a row: they survive a file whose rows were all skipped.
         sonuc.patch = {**(sonuc.patch or {}), "ingest_counts": ledger.as_dict()}

@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import functools
 import logging
+import sys
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -34,7 +35,8 @@ logger = logging.getLogger(__name__)
 
 # The worker runs the scheduler and sends the mail: it gets the same production preflight as the API. A
 # fatal finding (placeholder secret, no APP_ENV on Postgres, mail required but no sender) stops it here.
-enforce_or_exit(get_settings(), process="worker")
+# The maintenance worker (arq app.worker.MaintenanceWorkerSettings) parses no uploads: the parser memory rule is the analysis worker's.
+enforce_or_exit(get_settings(), process="worker-maintenance" if any(a.endswith("MaintenanceWorkerSettings") for a in sys.argv) else "worker")
 
 
 class TransientWorkerError(RuntimeError):

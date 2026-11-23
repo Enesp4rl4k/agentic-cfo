@@ -290,3 +290,48 @@ def test_a_refused_workbook_is_a_visible_halt_from_the_door_to_the_run(tmp_path,
     assert result.detail == ingest_hata_metni(SheetOkunamadi("sheet_uncompressed_too_large", limit_mb=128))
     assert not result.detail.startswith("Ingestion error") and "SHEET_MAX_UNCOMPRESSED_MB" in result.detail
     assert "Open it in Excel" in result.detail   # what to do, in English too
+
+
+# ── The CEO / datasource raw-text fallback has the same caps, and its endpoint enforces the upload cap ──
+
+def test_the_domain_analysis_raw_text_fallback_applies_the_line_cap(tmp_path, monkeypatch):
+    from app.agents.orchestration.domain_analysis import _read_as_csv
+
+    use_limits(monkeypatch, max_csv_line_chars=50)
+    ok = tmp_path / "ok.csv"
+    ok.write_bytes(b"a,b\n1,2\n")
+    long_line = tmp_path / "long.csv"
+    long_line.write_bytes(b"a,b\n" + b"x" * 60 + b"\n")
+    assert _read_as_csv(str(ok)) == "a,b\n1,2\n"
+    assert _read_as_csv(str(long_line)) is None   # the caller lists it as "Okunamayan dosya: ..."
+
+
+def test_the_datasource_endpoint_refuses_an_oversized_upload_after_reading_one_byte_past_the_cap(monkeypatch):
+    from types import SimpleNamespace
+
+    from fastapi import HTTPException
+
+    from app.api import datasource
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "max_upload_size_mb", 1)
+    reads: list[int] = []
+
+    class Upload:
+        filename = "cloud.csv"
+
+        async def read(self, n: int = -1) -> bytes:
+            reads.append(n)
+            return b"x" * (n if n >= 0 else 5 * 1024 * 1024)
+
+    class Db:
+        async def get(self, *a):
+            return SimpleNamespace(id="j1")
+
+    domain = next(iter(datasource._DOMAIN_TYPES))
+    source_type = sorted(datasource._DOMAIN_TYPES[domain])[0]
+    with pytest.raises(HTTPException) as caught:
+        asyncio.run(datasource.upload_datasource(job_id="j1", domain=domain, source_type=source_type, file=Upload(),
+                                                 label=None, job=SimpleNamespace(id="j1"), db=Db()))
+    assert caught.value.status_code == 413
+    assert reads == [1024 * 1024 + 1]

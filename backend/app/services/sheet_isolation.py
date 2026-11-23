@@ -85,6 +85,10 @@ _TEXTS: dict[str, tuple[str, str]] = {
         "The file could not be read: the system is busy and no free reader became available within {seconds} seconds. "
         "Try again in a few minutes by uploading the same file again.",
     ),
+    "sheet_memory": (
+        "Dosya okunamadı: dosya bellek sınırını aştı (SHEET_CHILD_MEMORY_MB); dosyayı daha küçük parçalara bölüp yükleyin.",
+        "The file could not be read: it exceeded the memory limit; split the file into smaller parts and upload them separately.",
+    ),
     "sheet_unreadable": (
         "Excel dosyası açılamadı; bozuk ya da parola korumalı olabilir. Parolayı kaldırıp ya da dosyayı "
         "Excel'de yeniden kaydedip tekrar yükleyin.",
@@ -127,7 +131,7 @@ def limits_from_settings() -> dict[str, int]:
     }
 
 
-_REFUSAL_FOR_STATUS = {"overflow": "sheet_output_too_large", "failed": "sheet_unreadable"}
+_REFUSAL_FOR_STATUS = {"overflow": "sheet_output_too_large", "memory": "sheet_memory", "failed": "sheet_unreadable"}
 
 
 def read_sheets(data: bytes, ext: str) -> list[tuple[str | None, list[list[Any]]]]:

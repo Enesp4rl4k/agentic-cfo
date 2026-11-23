@@ -91,19 +91,19 @@ def test_two_attachments_keep_pdf_order_and_a_non_ebelge_one_is_not_a_loss(tmp_p
 def test_an_unsupported_filter_is_reported_not_skipped_silently(tmp_path):
     path = make_pdf(tmp_path / "a.pdf", {"fatura.xml": UBL}, filter_name="/ASCIIHexDecode", drop_type=True)
     scan = pdf_embedded.scan_attachments(path)
-    assert scan.found == [] and scan.unread == [{"name": "fatura.xml", "reason": "unsupported_filter"}]
+    assert scan.found == [] and scan.unread == [{"name": "fatura.xml", "reason": "unsupported_filter", "candidate": True}]
 
 
 def test_an_attachment_over_the_cap_is_reported_for_flate_and_plain_streams(tmp_path):
     big = UBL.replace(b"</Invoice>", b"<N>" + b"x" * 20_000 + b"</N></Invoice>")
     for flate in (False, True):
         scan = pdf_embedded.scan_attachments(make_pdf(tmp_path / f"a{flate}.pdf", {"b.xml": big}, flate=flate), limit=5_000)
-        assert scan.found == [] and scan.unread == [{"name": "b.xml", "reason": "too_large"}], flate
+        assert scan.found == [] and scan.unread == [{"name": "b.xml", "reason": "too_large", "candidate": True}], flate
 
 
 def test_an_encrypted_pdf_declares_attachments_it_cannot_read_and_says_so(tmp_path):
     scan = pdf_embedded.scan_attachments(make_pdf(tmp_path / "a.pdf", {"fatura.xml": UBL}, encrypt=True))
-    assert scan.found == [] and scan.unread == [{"name": "", "reason": "encrypted"}]
+    assert scan.found == [] and scan.unread == [{"name": "", "reason": "encrypted", "candidate": False}]
 
 
 def test_an_attachment_declaring_a_dtd_is_reported(tmp_path):
@@ -202,10 +202,10 @@ def test_the_busy_refusal_is_not_cached_so_a_retry_reads_the_file(tmp_path, monk
     assert "HAVALE" in pdf_isolation.guarded_extract(path).text
 
 
-# ── Memory: the children must fit the container ─────────────────────────────────────────────
+# ── Memory: the children must fit the container (and only where children run) ──────────────
 
-def settings_for(child=512, sheet=512, slots=1, procs=2):
-    return SimpleNamespace(pdf_child_memory_mb=child, sheet_child_memory_mb=sheet, pdf_parse_concurrency=slots, parse_process_count=procs)
+def settings_for(rss=800, slots=1, procs=2):
+    return SimpleNamespace(parse_child_rss_mb=rss, pdf_parse_concurrency=slots, parse_process_count=procs)
 
 
 def limit_files(monkeypatch, tmp_path, v2: str | None = None, v1: str | None = None):
@@ -237,30 +237,36 @@ def test_the_cgroup_limit_is_read_from_v2_then_v1_and_unlimited_or_absent_is_non
 
 
 def test_children_that_fit_say_nothing_and_a_host_without_cgroup_files_is_quiet(tmp_path, monkeypatch):
-    limit_files(monkeypatch, tmp_path, v2=str(1280 * MB))
-    assert preflight._parser_memory_findings(settings_for(), {}) == []   # 512 x 1 x 2 = 1024 <= 1280
+    limit_files(monkeypatch, tmp_path, v2=str(2560 * MB))
+    assert preflight._parser_memory_findings(settings_for(), "api") == []   # 800 x 1 x 2 = 1600 <= 2560
     monkeypatch.setattr(preflight, "_CGROUP_LIMIT_FILES", (tmp_path / "absent",))
-    assert preflight._parser_memory_findings(settings_for(child=99999), {}) == []
+    assert preflight._parser_memory_findings(settings_for(rss=99999), "api") == []
 
 
 def test_children_that_can_exceed_the_container_warn(tmp_path, monkeypatch):
     limit_files(monkeypatch, tmp_path, v2=str(1280 * MB))
-    (finding,) = preflight._parser_memory_findings(settings_for(child=512, slots=2, procs=2), {})   # 2048 > 1280
+    (finding,) = preflight._parser_memory_findings(settings_for(rss=800, slots=1, procs=2), "api")   # 1600 > 1280
     assert finding.code == "parser_memory_exceeds_container" and finding.severity == preflight.WARN
-    assert "2048" in finding.message and "1280" in finding.message and "parser-sizing.md" in finding.message
+    assert "1600" in finding.message and "1280" in finding.message and "parser-sizing.md" in finding.message
 
 
-def test_one_child_as_big_as_the_container_is_fatal(tmp_path, monkeypatch):
-    limit_files(monkeypatch, tmp_path, v2=str(1280 * MB))
-    (finding,) = preflight._parser_memory_findings(settings_for(child=3072), {})   # the old default
+def test_one_child_as_big_as_the_container_is_fatal_but_only_where_children_run(tmp_path, monkeypatch):
+    limit_files(monkeypatch, tmp_path, v2=str(512 * MB))
+    (finding,) = preflight._parser_memory_findings(settings_for(rss=800), "api")
     assert finding.code == "parser_memory_impossible" and finding.severity == preflight.FATAL
+    for process in (None, "worker-maintenance", "migrate", "anything-else"):   # migrate, --db, maintenance: no children
+        assert preflight._parser_memory_findings(settings_for(rss=800), process) == [], process
 
 
-def test_the_shipped_defaults_fit_the_production_container():
+def test_an_arq_worker_counts_as_one_process_whatever_the_api_process_count_is(tmp_path, monkeypatch):
+    limit_files(monkeypatch, tmp_path, v2=str(1000 * MB))
+    assert preflight._parser_memory_findings(settings_for(rss=800, procs=4), "worker") == []
+    assert [f.code for f in preflight._parser_memory_findings(settings_for(rss=800, procs=4), "api")] == ["parser_memory_exceeds_container"]
+
+
+def test_the_shipped_defaults_fit_the_production_container_and_the_backstop_is_above_the_budget():
     s = get_settings()
-    compose = (pdf_isolation.Path(__file__).resolve().parents[2] / "docker-compose.prod.yml").read_text(encoding="utf-8")
-    assert "mem_limit: 1280m" in compose
-    assert max(s.pdf_child_memory_mb, s.sheet_child_memory_mb) * s.pdf_parse_concurrency * s.parse_process_count <= 1280
+    assert s.pdf_child_memory_mb > s.parse_child_rss_mb, "RLIMIT_AS counts address space: it must sit above the resident budget"
 
 
 # ── reportlab text ──────────────────────────────────────────────────────────────────────────
@@ -272,3 +278,135 @@ def test_rl_text_escapes_reportlab_markup_and_slices_before_escaping():
     assert rl_text(None) == "None" and rl_text(5) == "5"
     narrative = "&" * 399 + "x"
     assert rl_text(narrative[:400]).count("&amp;") == 399   # cut first: no half entity
+
+
+# ── Resource limits: a MemoryError is a visible failure, never an empty page ───────────────
+
+def page_pdf(path, pages: int) -> str:
+    doc = pymupdf.open()
+    for n in range(pages):
+        doc.new_page().insert_text((50, 72), f"sayfa {n + 1}", fontsize=10)
+    doc.save(str(path))
+    doc.close()
+    return str(path)
+
+
+def force_strategies(monkeypatch, plumber):
+    from app.services import ocr_service
+
+    monkeypatch.setattr(ocr_service, "_try_native_extraction", lambda page: ("", 0.0))   # thin pages: pdfplumber is asked
+    monkeypatch.setattr(ocr_service, "_try_pdfplumber_extraction", plumber)
+    monkeypatch.setattr(ocr_service, "_try_tesseract_ocr", lambda page, dpi=300: ("", 0.0))
+
+
+def test_a_memory_error_on_page_n_refuses_the_document_and_names_the_pages(tmp_path, monkeypatch):
+    def plumber(file_path, page_num):
+        if page_num == 2:
+            raise MemoryError
+        return "x " * 80, 0.9, False
+
+    force_strategies(monkeypatch, plumber)
+    result = pdf_isolation.parse_here(page_pdf(tmp_path / "a.pdf", 5))
+    assert result.strategy_used == "failed" and result.text == ""            # not a success, not a partial text
+    refusal = result.metadata["refusal"]
+    assert refusal["code"] == "pdf_memory"
+    error = pdf_isolation.PdfOkunamadi("pdf_memory", **refusal["params"])
+    assert "dosya bellek sınırını aştı" in error.tr and "sayfa 3-5 okunamadı" in error.tr and "bölüp yükleyin" in error.tr
+    assert "memory limit" in error.en and "page 3-5" in error.en and "split" in error.en
+    assert "bozuk" not in error.tr   # not "damaged, download it again"
+
+
+def test_a_memory_error_in_tesseract_is_not_swallowed_into_an_empty_page(tmp_path, monkeypatch):
+    import types
+
+    from app.services import ocr_service
+
+    fake = types.ModuleType("pytesseract")
+    fake.Output = SimpleNamespace(DICT="dict")
+
+    def image_to_data(*a, **k):
+        raise MemoryError
+
+    fake.image_to_data = image_to_data
+    monkeypatch.setitem(sys.modules, "pytesseract", fake)
+    page = pymupdf.open(page_pdf(tmp_path / "a.pdf", 1))[0]
+    with pytest.raises(MemoryError):
+        ocr_service._try_tesseract_ocr(page, dpi=72)
+
+
+def test_tesseract_ended_by_a_failed_allocation_counts_as_memory_but_other_failures_do_not():
+    from app.services import ocr_service
+
+    killed = RuntimeError("tesseract failed")
+    killed.status = -6   # type: ignore[attr-defined]
+    assert ocr_service._tesseract_ran_out_of_memory(killed)
+    assert ocr_service._tesseract_ran_out_of_memory(RuntimeError("terminate called after throwing an instance of 'std::bad_alloc'"))
+    assert not ocr_service._tesseract_ran_out_of_memory(RuntimeError("Error opening data file tur.traineddata"))
+
+
+def test_a_child_that_reports_a_memory_error_or_is_killed_is_the_memory_refusal(tmp_path, monkeypatch):
+    path = page_pdf(tmp_path / "a.pdf", 1)
+    monkeypatch.setattr(pdf_isolation, "_WORKER_COMMAND", [sys.executable, "-c", "import sys; sys.stderr.write('@@MEM@@' + chr(10)); sys.exit(3)"])
+    refusal = extract_text_from_pdf(path).metadata["refusal"]
+    assert refusal["code"] == "pdf_memory"
+    if sys.platform != "win32":   # the OOM killer's SIGKILL
+        pdf_isolation._cache.clear()
+        monkeypatch.setattr(pdf_isolation, "_WORKER_COMMAND", [sys.executable, "-c", "import os, signal; os.kill(os.getpid(), signal.SIGKILL)"])
+        assert extract_text_from_pdf(path).metadata["refusal"]["code"] == "pdf_memory"
+
+
+def test_an_unreadable_page_with_content_is_listed_and_holds_the_result(tmp_path):
+    import app.agents.data_ingestion as di
+
+    doc = pymupdf.open()
+    doc.new_page().insert_text((50, 72), "01.03.2026 HAVALE GELEN ODEME ACIKLAMA 1.250,00 TL " * 3, fontsize=8)   # readable
+    doc.new_page().insert_text((50, 72), "ok", fontsize=10)   # a page with a little text the strategies cannot use
+    doc.new_page()                                              # a genuinely blank page: not reported
+    path = str(tmp_path / "a.pdf")
+    doc.save(path)
+    doc.close()
+    result = extract_text_from_pdf(path)
+    assert result.metadata.get("pages_unread") == [2]           # page 2 had content and gave nothing; page 3 is blank
+    sonuc = SkillResult(ok=True, patch={}, confidence=0.95, needs_review=False, detail="3 işlem")
+    pdf_isolation.apply_pdf_notes(sonuc, path)
+    assert sonuc.needs_review is True and "Sayfa 2 okunamadı" in sonuc.detail and "could not be read" in sonuc.detail
+    assert di.apply_pdf_notes is pdf_isolation.apply_pdf_notes
+
+
+# ── The hold is for e-Belge candidates only ─────────────────────────────────────────────────
+
+def held_by(tmp_path, attachments, **options) -> tuple[bool, str]:
+    path = make_pdf(tmp_path / "h.pdf", attachments, drop_type=True, **options)
+    extract_text_from_pdf(path)
+    sonuc = SkillResult(ok=True, patch={}, confidence=0.95, needs_review=False, detail="x")
+    pdf_isolation.apply_pdf_notes(sonuc, path)
+    return sonuc.needs_review, sonuc.detail
+
+
+def test_an_unread_xml_attachment_holds_the_result_and_says_so(tmp_path):
+    held, detail = held_by(tmp_path, {"fatura.xml": UBL}, filter_name="/ASCIIHexDecode")
+    assert held is True and NOTE in detail
+
+
+def test_an_unread_attachment_of_unknown_kind_gets_the_note_without_a_hold(tmp_path):
+    held, detail = held_by(tmp_path, {"ek1": b"binary-ish"}, filter_name="/ASCIIHexDecode")   # no name extension, no XML bytes
+    assert held is False and NOTE in detail
+
+
+def test_an_encrypted_pdf_attachment_is_not_a_hold_candidate(tmp_path):
+    path = make_pdf(tmp_path / "e.pdf", {"fatura.xml": UBL}, encrypt=True)
+    assert pdf_embedded.scan_attachments(path).unread == [{"name": "", "reason": "encrypted", "candidate": False}]
+
+
+def test_an_attachment_with_xml_content_but_no_name_is_a_candidate_by_its_first_bytes(tmp_path):
+    doc = pymupdf.open()
+    doc.new_page()
+    doc.embfile_add("ek", b"x")
+    for xref in range(1, doc.xref_length()):
+        if doc.xref_get_key(xref, "Type") == ("name", "/EmbeddedFile"):
+            doc.update_stream(xref, b"<Invoice/>", compress=False)
+            doc.xref_set_key(xref, "Filter", "/LZWDecode")
+    path = str(tmp_path / "m.pdf")
+    doc.save(path)
+    doc.close()
+    assert pdf_embedded.scan_attachments(path).unread == [{"name": "ek", "reason": "unsupported_filter", "candidate": True}]

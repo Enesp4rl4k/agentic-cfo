@@ -71,6 +71,7 @@ class PageResult:
     word_count: int
     has_tables: bool = False
     warnings: list[str] = field(default_factory=list)
+    had_content: bool = True   # False for a page with no text layer and no image: blank, not "unread"
 
 
 @dataclass
@@ -145,6 +146,8 @@ def _try_pdfplumber_extraction(file_path: str, page_num: int) -> tuple[str, floa
     except ImportError:
         logger.debug("pdfplumber not installed — skipping table extraction")
         return "", 0.0, False
+    except MemoryError:
+        raise   # a resource limit is not an empty page: the document outcome says so (_extract_in_process)
     except Exception as e:
         logger.debug("pdfplumber extraction failed for page %d: %s", page_num, e)
         return "", 0.0, False
@@ -207,9 +210,20 @@ def _try_tesseract_ocr(page: Any, dpi: int = _TESSERACT_DPI) -> tuple[str, float
     except ImportError:
         logger.debug("pytesseract or Pillow not installed — OCR skipped")
         return "", 0.0
+    except MemoryError:
+        raise
     except Exception as e:
+        if _tesseract_ran_out_of_memory(e):   # Tesseract inherits the child's limit: its failed malloc is a memory failure
+            raise MemoryError(str(e)) from e
         logger.warning("Tesseract OCR failed: %s", e)
         return "", 0.0
+
+
+def _tesseract_ran_out_of_memory(exc: Exception) -> bool:
+    """Tesseract was ended by a failed allocation (SIGABRT/SIGKILL exit status, or `bad_alloc` / "memory" in its message)."""
+    status = getattr(exc, "status", None)
+    text = str(exc).lower()
+    return status in (-6, -9, 134, 137) or "bad_alloc" in text or "cannot allocate memory" in text or "out of memory" in text
 
 
 def _clean_ocr_text(text: str) -> str:
@@ -253,6 +267,59 @@ def extract_text_from_pdf(file_path: str, force_ocr: bool = False) -> OCRResult:
     """
     result: OCRResult = pdf_isolation.guarded_extract(file_path, force_ocr)
     return result
+
+
+def _read_page(doc: Any, file_path: str, page_num: int, force_ocr: bool) -> PageResult:
+    """One page by the best available strategy. A MemoryError is NOT caught here (see `_extract_in_process`)."""
+    page = doc[page_num]
+    best_text = ""
+    best_conf = 0.0
+    best_strategy = "failed"
+    page_has_tables = False
+    page_warnings: list[str] = []
+
+    if not force_ocr:
+        # Strategy 1: Native text layer
+        native_text, native_conf = _try_native_extraction(page)
+        if native_conf >= 0.70:
+            best_text = native_text
+            best_conf = native_conf
+            best_strategy = "native"
+
+        # Strategy 2: pdfplumber (better for tables)
+        if best_conf < 0.80:
+            pl_text, pl_conf, has_tables = _try_pdfplumber_extraction(file_path, page_num)
+            if pl_conf > best_conf:
+                best_text = pl_text
+                best_conf = pl_conf
+                best_strategy = "pdfplumber"
+                page_has_tables = has_tables
+
+    # Strategy 3: Tesseract OCR (for scanned pages)
+    if force_ocr or best_conf < 0.60:
+        pdf_isolation.ocr_started()
+        ocr_text, ocr_conf = _try_tesseract_ocr(page)
+        if ocr_conf > best_conf:
+            best_text = _clean_ocr_text(ocr_text)
+            best_conf = ocr_conf
+            best_strategy = "tesseract"
+        elif ocr_conf == 0.0 and best_conf < 0.60:
+            page_warnings.append(
+                f"Sayfa {page_num + 1}: metin okunamadı (OCR yok, zaman aşımı ya da düşük güven). "
+                "Page text could not be read."
+            )
+
+    return PageResult(
+        had_content=(not page_warnings) or bool(page.get_images()) or bool(page.get_text("text").strip()),
+        page_num=page_num,
+        text=best_text,
+        confidence=best_conf,
+        strategy=best_strategy,
+        char_count=len(best_text),
+        word_count=len(best_text.split()) if best_text else 0,
+        has_tables=page_has_tables,
+        warnings=page_warnings,
+    )
 
 
 def _extract_in_process(file_path: str, force_ocr: bool = False) -> OCRResult:
@@ -308,60 +375,19 @@ def _extract_in_process(file_path: str, force_ocr: bool = False) -> OCRResult:
             }
 
             for page_num in range(page_count):
-                page = doc[page_num]
-                best_text = ""
-                best_conf = 0.0
-                best_strategy = "failed"
-                page_has_tables = False
-                page_warnings: list[str] = []
+                try:
+                    page_result = _read_page(doc, file_path, page_num, force_ocr)
+                except MemoryError:
+                    # NOT an empty page: the document is refused and the message names the pages not read.
+                    logger.warning("PDF parse hit its memory limit on page %d of %d: %s", page_num + 1, page_count, path.name)
+                    return pdf_isolation.refused(file_path, "pdf_memory", **pdf_isolation.memory_pages(page_num + 1, page_count))
+                page_results.append(page_result)
+                all_warnings.extend(page_result.warnings)
+                doc_has_tables = doc_has_tables or page_result.has_tables
 
-                if not force_ocr:
-                    # Strategy 1: Native text layer
-                    native_text, native_conf = _try_native_extraction(page)
-                    if native_conf >= 0.70:
-                        best_text = native_text
-                        best_conf = native_conf
-                        best_strategy = "native"
-
-                    # Strategy 2: pdfplumber (better for tables)
-                    if best_conf < 0.80:
-                        pl_text, pl_conf, has_tables = _try_pdfplumber_extraction(file_path, page_num)
-                        if pl_conf > best_conf:
-                            best_text = pl_text
-                            best_conf = pl_conf
-                            best_strategy = "pdfplumber"
-                            page_has_tables = has_tables
-
-                # Strategy 3: Tesseract OCR (for scanned pages)
-                if force_ocr or best_conf < 0.60:
-                    pdf_isolation.ocr_started()
-                    ocr_text, ocr_conf = _try_tesseract_ocr(page)
-                    if ocr_conf > best_conf:
-                        best_text = _clean_ocr_text(ocr_text)
-                        best_conf = ocr_conf
-                        best_strategy = "tesseract"
-                    elif ocr_conf == 0.0 and best_conf < 0.60:
-                        page_warnings.append(
-                            f"Sayfa {page_num + 1}: metin okunamadı (OCR yok, zaman aşımı ya da düşük güven). "
-                            "Page text could not be read."
-                        )
-
-                if page_has_tables:
-                    doc_has_tables = True
-
-                word_count = len(best_text.split()) if best_text else 0
-                page_results.append(PageResult(
-                    page_num=page_num,
-                    text=best_text,
-                    confidence=best_conf,
-                    strategy=best_strategy,
-                    char_count=len(best_text),
-                    word_count=word_count,
-                    has_tables=page_has_tables,
-                    warnings=page_warnings,
-                ))
-                all_warnings.extend(page_warnings)
-
+    except MemoryError:   # opening or walking the document itself ran out of memory
+        logger.warning("PDF parse hit its memory limit: %s", path.name)
+        return pdf_isolation.refused(file_path, "pdf_memory")
     except Exception:
         logger.exception("PDF extraction failed for %s", file_path)
         return pdf_isolation.refused(file_path, "pdf_unreadable")  # the exception text may name server paths: log only
@@ -390,6 +416,10 @@ def _extract_in_process(file_path: str, force_ocr: bool = False) -> OCRResult:
     strategies = [pr.strategy for pr in page_results if pr.strategy != "failed"]
     from collections import Counter
     dominant_strategy = Counter(strategies).most_common(1)[0][0] if strategies else "failed"
+
+    unread_pages = [pr.page_num + 1 for pr in page_results if pr.warnings and pr.had_content]
+    if unread_pages:   # pages that yielded nothing: shown to the user as not read (pdf_isolation.apply_pdf_notes)
+        doc_meta["pages_unread"] = unread_pages
 
     result = OCRResult(
         text=full_text,

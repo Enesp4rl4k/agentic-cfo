@@ -53,6 +53,8 @@ _STDERR_KEEP = 2000
 _STDERR_LINE_CAP = 4096          # a stderr line is held at most this long while it has no newline
 _STDERR_TOTAL_LIMIT = 16 * 1024 * 1024
 _OCR_MARK = "@@OCR@@"
+_MEM_MARK = "@@MEM@@"      # the child hit its memory limit (a MemoryError reached the top)
+_PEAK_MARK = "@@PEAK@@"    # "<VmPeak kB> <VmHWM kB> <largest descendant RSS kB>": the child's own peaks at exit
 NEWLINE = bytes([10])
 # The child parses attacker-controlled bytes: it gets no secrets (no CMAP_PATH, no keys), only what a parser needs.
 _WORKER_ENV_KEEP = (
@@ -93,6 +95,12 @@ _TEXTS: dict[str, tuple[str, str]] = {
         "The PDF could not be read: the system is busy and no free reader became available within {seconds} seconds. "
         "Try again in a few minutes by uploading the same file again.",
     ),
+    "pdf_memory": (
+        "PDF okunamadı: dosya bellek sınırını aştı{where_tr} (PDF_CHILD_MEMORY_MB); "
+        "daha kısa dönemlere bölüp yükleyin.",
+        "The PDF could not be read: the file exceeded the memory limit{where_en}; "
+        "split the statement into shorter periods and upload them separately.",
+    ),
     "pdf_unreadable": (
         "PDF okunamadı: dosya bozuk, şifreli ya da desteklenmeyen bir biçimde olabilir. Dosyayı kaynağından "
         "yeniden indirin ya da PDF olarak yeniden kaydedip yükleyin.",
@@ -100,6 +108,9 @@ _TEXTS: dict[str, tuple[str, str]] = {
         "Download it again from its source, or re-save it as a PDF, and upload it again.",
     ),
 }
+
+
+_DEFAULT_PARAMS = {"where_tr": "", "where_en": ""}
 
 
 class PdfOkunamadi(Exception):
@@ -112,15 +123,21 @@ class PdfOkunamadi(Exception):
 
     @property
     def tr(self) -> str:
-        return _TEXTS[self.code][0].format(**self.params)
+        return _TEXTS[self.code][0].format(**{**_DEFAULT_PARAMS, **self.params})
 
     @property
     def en(self) -> str:
-        return _TEXTS[self.code][1].format(**self.params)
+        return _TEXTS[self.code][1].format(**{**_DEFAULT_PARAMS, **self.params})
 
     @property
     def user_text(self) -> str:
         return f"{self.tr}\n{self.en}"
+
+
+def memory_pages(first: int, last: int) -> dict[str, str]:
+    """The `pdf_memory` refusal's parameters naming the pages that were not read (1-based)."""
+    span = str(first) if first == last else f"{first}-{last}"
+    return {"where_tr": f" (sayfa {span} okunamadı)", "where_en": f" (page {span} was not read)"}
 
 
 def ingest_hata_metni(exc: BaseException) -> str:
@@ -240,7 +257,7 @@ def split_stderr(pending: bytes, chunk: bytes) -> tuple[list[bytes], bytes]:
 class ChildOutcome:
     """How a supervised child ended. `out` is its stdout, only when status is "ok"."""
 
-    status: str   # ok | busy | overflow | timeout | failed
+    status: str   # ok | busy | overflow | timeout | memory | failed
     out: bytes = b""
 
 
@@ -280,6 +297,8 @@ def _run_child(file_path: str, force_ocr: bool) -> Any:
                          ocr_extra_s=s.pdf_ocr_seconds_per_page, label=Path(file_path).name)
     if outcome.status == "busy":
         return refused(file_path, "pdf_busy", seconds=s.parse_queue_wait_seconds)
+    if outcome.status == "memory":
+        return refused(file_path, "pdf_memory")
     if outcome.status == "overflow":
         return refused(file_path, "pdf_output_too_large")
     if outcome.status == "timeout":
@@ -302,7 +321,7 @@ def _supervise(argv: list[str], timeout_s: int, ocr_extra_s: int, stdin_data: by
     )
     out = bytearray()
     err = bytearray()
-    state = {"ocr": 0, "overflow": False}
+    state: dict[str, Any] = {"ocr": 0, "overflow": False, "memory": False}
 
     def read_stdout() -> None:
         assert proc.stdout is not None
@@ -313,8 +332,13 @@ def _supervise(argv: list[str], timeout_s: int, ocr_extra_s: int, stdin_data: by
             out.extend(chunk)
 
     def note_line(line: bytes) -> None:
-        if line.strip() == _OCR_MARK.encode():
+        stripped = line.strip()
+        if stripped == _OCR_MARK.encode():
             state["ocr"] += 1
+        elif stripped == _MEM_MARK.encode():
+            state["memory"] = True
+        elif stripped.startswith(_PEAK_MARK.encode()):
+            logger.info("parser child peaks (kB: VmPeak VmHWM descendant-RSS): %s", stripped[len(_PEAK_MARK):].decode("ascii", "replace").strip())
         else:
             err.extend(line[:500])
             del err[:-_STDERR_KEEP]
@@ -367,6 +391,10 @@ def _supervise(argv: list[str], timeout_s: int, ocr_extra_s: int, stdin_data: by
     if timed_out:
         logger.warning("Parser child exceeded its budget and its group was killed: %s", label)
         return ChildOutcome("timeout")
+    killed = os.name == "posix" and proc.returncode == -signal.SIGKILL   # the kernel's OOM killer, or a limit
+    if state["memory"] or killed:
+        logger.warning("Parser child ended by a memory limit (exit %s): %s", proc.returncode, label)
+        return ChildOutcome("memory")
     if proc.returncode != 0 or not out:
         logger.warning("Parser worker failed (exit %s): %s", proc.returncode, err.decode("utf-8", "replace"))
         return ChildOutcome("failed")
@@ -443,8 +471,10 @@ def cached_result(file_path: str) -> Any | None:
         return _cache.get(key)
 
 
-def attachment_note(file_path: str) -> str | None:
-    """Turkish then English note when the PDF declared attachments that were not read; None when nothing was lost."""
+def attachment_note(file_path: str) -> tuple[str, bool] | None:
+    """(Turkish then English note, hold) when the PDF declared attachments that were not read; None when nothing
+    was lost. `hold` is True only when an unread attachment is an e-Belge CANDIDATE (XML by name, MIME or
+    content): a hold is for data integrity, an encrypted PDF or an unknown attachment gets the note alone."""
     result = cached_result(file_path)
     unread = (result.metadata or {}).get("attachments_unread") if result is not None else None
     if not unread:
@@ -453,15 +483,36 @@ def attachment_note(file_path: str) -> str | None:
     reasons = sorted({r["reason"] for r in unread})
     why_tr = ", ".join(_REASONS.get(r, (r, r))[0] for r in reasons)
     why_en = ", ".join(_REASONS.get(r, (r, r))[1] for r in reasons)
-    return f"{tr} ({why_tr}). {en} ({why_en})."
+    return f"{tr} ({why_tr}). {en} ({why_en}).", any(r.get("candidate") for r in unread)
 
 
-def apply_attachment_note(result: Any, file_path: str) -> None:
-    """Put the note on an ingestion result (its detail, and held for review): never a silent fallback."""
-    note = attachment_note(file_path)
-    if note:
-        result.detail = f"{result.detail or ''} [{note}]".strip()
-        result.needs_review = True
+def pages_note(file_path: str) -> str | None:
+    """Turkish then English note naming the pages that yielded no text (always held: rows on them are missing)."""
+    result = cached_result(file_path)
+    pages = (result.metadata or {}).get("pages_unread") if result is not None else None
+    if not pages:
+        return None
+    shown = ", ".join(str(p) for p in pages[:20]) + (f" (+{len(pages) - 20})" if len(pages) > 20 else "")
+    return (f"Sayfa {shown} okunamadı; bu sayfalardaki kayıtlar yok. "
+            f"Page(s) {shown} could not be read; the rows on them are missing.")
+
+
+def apply_pdf_notes(result: Any, file_path: str) -> None:
+    """Put what the PDF read did not get on an ingestion result (its detail, and held where data is missing):
+    an unread attachment, unread pages. Never a silent fallback."""
+    notes: list[str] = []
+    hold = False
+    attachment = attachment_note(file_path)
+    if attachment:
+        notes.append(attachment[0])
+        hold = hold or attachment[1]
+    pages = pages_note(file_path)
+    if pages:
+        notes.append(pages)
+        hold = True
+    if notes:
+        result.detail = f"{result.detail or ''} [{' | '.join(notes)}]".strip()
+        result.needs_review = bool(result.needs_review) or hold
 
 
 # ── Child side ───────────────────────────────────────────────────────────────────────────────
@@ -480,6 +531,24 @@ def parse_here(file_path: str, force_ocr: bool = False) -> Any:
     return result
 
 
+def report_peak() -> None:
+    """Child side: write this process's peak address space, peak resident set and the largest descendant's
+    resident set (Tesseract) to stderr, where the parent logs them. Linux only; silent elsewhere."""
+    try:
+        import resource
+
+        peaks = {"VmPeak": 0, "VmHWM": 0}
+        with open("/proc/self/status", encoding="ascii") as status:
+            for line in status:
+                key, _, value = line.partition(":")
+                if key in peaks:
+                    peaks[key] = int(value.split()[0])
+        grandchild = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
+        sys.stderr.write(f"{_PEAK_MARK} {peaks['VmPeak']} {peaks['VmHWM']} {grandchild}" + chr(10))
+    except (OSError, ImportError, ValueError):
+        return
+
+
 def _apply_limits(mem_mb: int, cpu_s: int) -> None:
     try:
         import resource
@@ -495,8 +564,13 @@ def _child_main(argv: list[str]) -> int:
     _apply_limits(mem_mb, cpu_s)
     _child_limits.update(ocr_s=ocr_s, max_pages=pages)
     # A library may print to stdout (PyMuPDF's `fitz` import does); only the JSON below may reach it.
-    with contextlib.redirect_stdout(sys.stderr):
-        result = parse_here(path, force)
+    try:
+        with contextlib.redirect_stdout(sys.stderr):
+            result = parse_here(path, force)
+    except MemoryError:   # said, not swallowed: the parent turns this into the "memory limit" refusal
+        sys.stderr.write(_MEM_MARK + chr(10))
+        return 3
+    report_peak()
     # json.dumps escapes to ASCII, so no console codepage can mangle the text.
     sys.stdout.write(json.dumps(asdict(result)))
     return 0

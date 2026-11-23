@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import re
+import string
 import zlib
 from dataclasses import dataclass, field
 from typing import Any
@@ -38,6 +39,7 @@ _MAX_DECLARED = 200
 _MAX_FILES = 20
 _MAX_TREE_NODES = 500
 
+_BOM = bytes([0xEF, 0xBB, 0xBF])
 _REF = re.compile(r"(\d+)\s+0\s+R")
 _EF_STREAMS = re.compile(r"/EF\s*<<[^>]*?/(?:UF|F)\s+(\d+)\s+0\s+R")
 _KIDS = re.compile(r"/Kids\s*\[([^\]]*)\]")
@@ -49,7 +51,7 @@ class Scan:
     """`found`: e-Belge XML texts in PDF order. `unread`: declared attachments that could not be read, with why."""
 
     found: list[str] = field(default_factory=list)
-    unread: list[dict[str, str]] = field(default_factory=list)
+    unread: list[dict[str, Any]] = field(default_factory=list)
 
 
 def bounded_inflate(raw: bytes, limit: int = EMBEDDED_XML_LIMIT) -> bytes | None:
@@ -80,6 +82,8 @@ def _filter_of(doc: Any, xref: int) -> str | None:
 def _object_text(doc: Any, xref: int) -> str:
     try:
         return doc.xref_object(xref, compressed=True)
+    except MemoryError:
+        raise   # a resource limit is reported by the child, never turned into 'no attachment'
     except Exception:
         return ""
 
@@ -88,6 +92,8 @@ def _key_text(doc: Any, xref: int, key: str) -> str:
     """A key's value as PDF text; an indirect value is followed to its object."""
     try:
         kind, value = doc.xref_get_key(xref, key)
+    except MemoryError:
+        raise   # a resource limit is reported by the child, never turned into 'no attachment'
     except Exception:
         return ""
     if kind == "xref":
@@ -167,8 +173,29 @@ def declared_streams(doc: Any) -> list[int]:
 def _names(doc: Any) -> list[str]:
     try:
         return [str(n) for n in doc.embfile_names()]
+    except MemoryError:
+        raise   # a resource limit is reported by the child, never turned into 'no attachment'
     except Exception:
         return []
+
+
+def _is_candidate(doc: Any, xref: int, name: str) -> bool:
+    """Could this unread attachment be an e-Belge? XML by name, by MIME subtype, or by its first bytes. Only a
+    candidate holds the ingestion (data may be missing); anything else is noted, not held."""
+    if name.lower().endswith(".xml"):
+        return True
+    try:
+        if "xml" in doc.xref_get_key(xref, "Subtype")[1].lower():
+            return True
+        raw = doc.xref_stream_raw(xref)
+        head = raw[:64]
+        if _filter_of(doc, xref) == "flate":
+            head = zlib.decompressobj().decompress(raw, 64)
+    except MemoryError:
+        raise
+    except Exception:   # any failure to look is "not known to be XML"
+        return False
+    return head.lstrip(_BOM + string.whitespace.encode()).startswith(b"<")
 
 
 def _may_be_xml(name: str) -> bool:
@@ -188,7 +215,7 @@ def scan_attachments(file_path: str, limit: int = EMBEDDED_XML_LIMIT) -> Scan:
     try:
         with pymupdf.open(file_path) as doc:
             if doc.needs_pass:
-                scan.unread.append({"name": "", "reason": "encrypted"})
+                scan.unread.append({"name": "", "reason": "encrypted", "candidate": False})
                 return scan
             streams = declared_streams(doc)
             names = _names(doc)
@@ -200,7 +227,7 @@ def scan_attachments(file_path: str, limit: int = EMBEDDED_XML_LIMIT) -> Scan:
                 if reason:
                     logger.info("PDF attachment not read (xref %d): %s", xref, reason)
                     if _may_be_xml(name):
-                        scan.unread.append({"name": name, "reason": reason})
+                        scan.unread.append({"name": name, "reason": reason, "candidate": _is_candidate(doc, xref, name)})
                     continue
                 if not (text.lstrip().startswith("<") and any(m in text[:4000] for m in _EBELGE_MARKERS)):
                     continue   # read, and it is not an e-Belge: nothing was lost
@@ -208,12 +235,14 @@ def scan_attachments(file_path: str, limit: int = EMBEDDED_XML_LIMIT) -> Scan:
                     guvenli_mi(text)
                 except UnsafeXMLError:
                     logger.warning("PDF attachment skipped: DTD/ENTITY declared (xref %d)", xref)
-                    scan.unread.append({"name": name, "reason": "unsafe_xml"})
+                    scan.unread.append({"name": name, "reason": "unsafe_xml", "candidate": True})
                     continue
                 scan.found.append(text)
+    except MemoryError:
+        raise   # a resource limit is reported by the child, never turned into 'no attachment'
     except Exception as exc:
         logger.warning("PDF ekleri okunamadı: %s", exc)
-        scan.unread.append({"name": "", "reason": "unreadable"})
+        scan.unread.append({"name": "", "reason": "unreadable", "candidate": False})
     return scan
 
 
@@ -224,6 +253,8 @@ def _read_stream(doc: Any, xref: int, limit: int) -> tuple[str, str]:
         return "", "unsupported_filter"
     try:
         raw = doc.xref_stream_raw(xref)
+    except MemoryError:
+        raise   # a resource limit is reported by the child, never turned into 'no attachment'
     except Exception:
         return "", "unreadable"
     if mode == "":

@@ -158,6 +158,16 @@ def _read_as_csv(path: str, source_type: str = "") -> str | None:
                 if any(v not in (None, "") for v in row):
                     w.writerow(["" if v is None else v for v in row])
             return out.getvalue()
+        # The same size and line-length caps as every other door that reads a CSV as text (sheet_child.check_text_bytes).
+        from app.services.sheet_child import SheetLimit, check_text_bytes
+        from app.services.sheet_isolation import limits_from_settings
+
+        limits = limits_from_settings()
+        try:
+            check_text_bytes(veri, limits["max_bytes"], limits["max_csv_line_chars"])
+        except SheetLimit as limit:
+            logger.warning("Alan dosyası okunamadı %s: %s", path, limit.code)   # the caller lists it as "Okunamayan dosya"
+            return None
         return veri.decode("utf-8-sig", errors="replace")
     except Exception as exc:
         logger.warning("Alan dosyası okunamadı %s: %s", path, exc)

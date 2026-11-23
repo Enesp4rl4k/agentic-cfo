@@ -296,8 +296,8 @@ def parse(data: bytes, ext: str, limits: dict[str, int]) -> dict[str, Any]:
         return {"sheets": read_xlsx(data, limits) if ext == "xlsx" else read_csv(data, limits)}
     except SheetLimit as limit:
         return {"refusal": {"code": limit.code, "params": limit.params}}
-    except MemoryError:
-        return {"refusal": {"code": "sheet_unreadable", "params": {}}}
+    except MemoryError:   # a resource limit, said as such: not "damaged"
+        return {"refusal": {"code": "sheet_memory", "params": {}}}
 
 
 def _child_main(argv: list[str]) -> int:

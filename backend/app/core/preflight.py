@@ -259,29 +259,40 @@ def cgroup_memory_limit_mb() -> int | None:
     return None
 
 
-def _parser_memory_findings(settings: Settings, env: Mapping[str, str]) -> list[Finding]:
+# The processes that run parser children (a PDF or spreadsheet read on an upload). The migrate job, `--db` checks and
+# the maintenance worker never do, so the sizing rule does not apply to them.
+PARSING_PROCESSES = frozenset({"api", "worker"})
+
+
+def _parser_memory_findings(settings: Settings, process: str | None) -> list[Finding]:
     """Parser children must fit in the container (docs/ops/parser-sizing.md): past its memory limit the
-    kernel's OOM killer decides what dies, and it may pick the API process itself, not the child."""
+    kernel's OOM killer decides what dies, and it may pick the API process itself, not the child.
+
+    The quantity is the child's expected RESIDENT set (`PARSE_CHILD_RSS_MB`, measured peak x headroom), not its
+    `RLIMIT_AS`, which counts address space and is only a generous backstop. Only for a process that parses."""
+    if process not in PARSING_PROCESSES:
+        return []
     limit = cgroup_memory_limit_mb()
     if limit is None:
         return []
-    child = max(settings.pdf_child_memory_mb, settings.sheet_child_memory_mb)
-    procs, slots = max(1, settings.parse_process_count), max(1, settings.pdf_parse_concurrency)
-    worst = child * slots * procs
-    if child >= limit:
+    rss = settings.parse_child_rss_mb
+    procs = max(1, settings.parse_process_count) if process == "api" else 1   # an arq worker is one process
+    slots = max(1, settings.pdf_parse_concurrency)
+    worst = rss * slots * procs
+    if rss >= limit:
         return [_fatal("parser_memory_impossible", (
-            f"A parser child may use {child} MB (PDF_CHILD_MEMORY_MB / SHEET_CHILD_MEMORY_MB) and this container "
-            f"is limited to {limit} MB: the memory limit can never stop a child before the kernel's OOM killer, "
-            f"which may kill the API process. Lower the child limit (docs/ops/parser-sizing.md)."))]
+            f"A parser child may use {rss} MB resident (PARSE_CHILD_RSS_MB) and this container is limited to {limit} MB: "
+            f"one parse alone would end in the kernel's OOM killer, which may kill the API process. "
+            f"Raise the container's memory limit (docs/ops/parser-sizing.md)."))]
     if worst > limit:
         return [_warn("parser_memory_exceeds_container", (
-            f"Parser children can use up to {child} MB x PDF_PARSE_CONCURRENCY {slots} x PARSE_PROCESS_COUNT {procs} "
+            f"Parser children can use {rss} MB x PDF_PARSE_CONCURRENCY {slots} x {procs} process(es) "
             f"= {worst} MB, over this container's {limit} MB limit: a burst of uploads may be ended by the OOM "
-            f"killer, not by the per-child limit. Lower the child limit or the concurrency (docs/ops/parser-sizing.md)."))]
+            f"killer, not by the per-child limit. Raise the container limit or lower the concurrency (docs/ops/parser-sizing.md)."))]
     return []
 
 
-def check_settings(settings: Settings, environ: Mapping[str, str] | None = None) -> list[Finding]:
+def check_settings(settings: Settings, environ: Mapping[str, str] | None = None, process: str | None = None) -> list[Finding]:
     """Every finding for these settings. Pure: logs nothing, raises nothing."""
     env = os.environ if environ is None else environ
     findings = [
@@ -290,19 +301,19 @@ def check_settings(settings: Settings, environ: Mapping[str, str] | None = None)
         *_exposure_findings(settings, env),
         *_mail_findings(settings, env),
         *_degraded_findings(settings, env),
-        *_parser_memory_findings(settings, env),
+        *_parser_memory_findings(settings, process),
     ]
     if settings.use_sqlite and app_env(env) in _PRODUCTION_ENVS:
         findings.append(_fatal("sqlite_in_production", f"APP_ENV={app_env(env)} with USE_SQLITE=true: a development database must not hold company data."))
     return findings
 
 
-def enforce(settings: Settings, environ: Mapping[str, str] | None = None) -> list[Finding]:
+def enforce(settings: Settings, environ: Mapping[str, str] | None = None, process: str | None = None) -> list[Finding]:
     """Log every finding; raise `PreflightError` for fatal ones in production.
 
     Outside production a fatal finding is logged as a warning (and returned) so development is not
     blocked. Returns the findings so a caller can show them."""
-    findings = check_settings(settings, environ)
+    findings = check_settings(settings, environ, process)
     production = is_production(settings, environ)
     fatal = [f for f in findings if f.severity == FATAL]
     for finding in findings:
@@ -325,7 +336,7 @@ def enforce_or_exit(settings: Settings, *, process: str) -> list[Finding]:
     if _enforced:
         return []
     try:
-        findings = enforce(settings)
+        findings = enforce(settings, process=process)
     except PreflightError as err:
         logger.critical("%s process: STARTUP ABORTED — %s", process, err)
         raise SystemExit(1) from err
