@@ -1,3 +1,7 @@
+# Direct dependencies, every one an exact pin (backend/tests/test_dependency_pins.py
+# fails on anything else). The transitive set is pinned in constraints.txt and is
+# installed with it: pip install -r requirements.txt -c constraints.txt
+# To change a version: docs/ops/dependency-pinning.md
 # Web framework
 fastapi==0.141.1
 uvicorn[standard]==0.52.4
@@ -39,7 +43,7 @@ openpyxl==3.1.5
 
 # PDF generation + templating
 weasyprint==69.0
-Jinja2>=3.1.4    # HTML template rendering for PDF reports
+Jinja2==3.1.6    # HTML template rendering for PDF reports
 
 # Validation
 pydantic==2.13.4
@@ -55,9 +59,9 @@ apscheduler==3.10.4
 scipy==1.13.1
 numpy==1.26.4
 # ML anomaly detection (Sprint L1) — graceful fallback if not installed
-scikit-learn>=1.4.0
+scikit-learn==1.9.1
 # Time-series forecasting (Sprint L1) — STL + ARIMA
-statsmodels>=0.14.0
+statsmodels==0.15.0
 
 # Email notifications
 aiosmtplib==5.1.2
@@ -87,7 +91,7 @@ ruff==0.16.4    # pinned — ruff.toml selects the rule set; CI gate is blocking
 mypy==2.3.1
 
 sentry-sdk==2.75.0   # pinned: 2.76.0 broke strict mypy on sentry_monitoring.py (init kwargs, push_scope); migrate to data_collection/new_scope first
-cryptography>=42.0.0
+cryptography==50.0.2
 
 # Imported by the app and missing from this file until the first CI install:
 # bcrypt (password hashing — a clean install could not log anyone in),
