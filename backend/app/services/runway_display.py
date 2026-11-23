@@ -17,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from app.services.runway import COMPUTED, NOT_BURNING
+from app.services.runway import COMPUTED, NOT_BURNING, under_a_month
 from app.services.runway import _date_tr as date_tr
 
 PROMPT_RULE = (
@@ -41,7 +41,9 @@ class RunwayView:
         return self.basis == "known" and self.months is not None and not self.identity_uncertain
 
     def short(self) -> str:
-        return "bilinmiyor" if self.months is None else f"{self.months:g} ay"
+        if self.months is None:
+            return "bilinmiyor"
+        return under_a_month(self.months) or f"{self.months:g} ay"
 
     def text(self) -> str:
         """The figure with the basis it rests on: what a sentence may say about the runway."""

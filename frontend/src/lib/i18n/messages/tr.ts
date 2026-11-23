@@ -195,6 +195,7 @@ export const tr: MessageTree = {
     identityUncertainNote: "Aynı hesap olabilecek ekstreler toplanmaz; yalnızca en güncel bakiye sayılır.",
     runwayAttention: "Dikkat",
     runwayUploadLink: "Yeni ekstre yükle",
+    runwayUnderMonth: "1 aydan az",
   },
   takvim: {
     title: "Ödeme takvimi",
@@ -1593,6 +1594,8 @@ export const tr: MessageTree = {
     },
     runway: {
       heading: "Nakit pisti",
+      uploadLink: "Yeni ekstre yükle",
+      underMonth: "1 aydan az",
     },
   },
   integrations: {

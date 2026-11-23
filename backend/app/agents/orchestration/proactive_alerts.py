@@ -33,6 +33,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.agents.orchestration.scan_support import active_orgs, kri_key
 from app.services import outbox
 
 logger = logging.getLogger(__name__)
@@ -93,6 +94,8 @@ class ProactiveAlertOrchestrator:
         self.redis = redis
         # The scheduled slot (ledger period): alert ids derive from it, so a repeated slot repeats no alert.
         self.slot, self.save_failures = slot, 0
+        # Orgs whose scan raised: the slot is not done (the scheduler fails it, the retry is idempotent).
+        self.failed_orgs: list[str] = []
 
     def _alert_id(self, *key: str) -> str:
         return str(uuid.uuid5(uuid.NAMESPACE_URL, "|".join((self.slot, *key)))) if self.slot else str(uuid.uuid4())
@@ -125,7 +128,7 @@ class ProactiveAlertOrchestrator:
                 if await self._is_cooldown_active(org_id, kri.get("name", "")):
                     continue
 
-                alert = await self._create_kri_alert(org_id, kri, "critical")
+                alert = await self._create_kri_alert(org_id, kri, "critical", key=kri_key(kri, red_kris))
                 if alert:
                     await self._dispatch_alert(alert)
                     alerts_created += 1
@@ -138,7 +141,7 @@ class ProactiveAlertOrchestrator:
                 if await self._is_cooldown_active(org_id, f"cascade:{kri.get('name', '')}"):
                     continue
 
-                cascade_alert = await self._run_cascade_and_alert(org_id, kri)
+                cascade_alert = await self._run_cascade_and_alert(org_id, kri, key=kri_key(kri, cascade_kris))
                 if cascade_alert:
                     await self._dispatch_alert(cascade_alert)
                     alerts_created += 1
@@ -147,7 +150,7 @@ class ProactiveAlertOrchestrator:
             for kri in upcoming[:2]:
                 trajectory = kri.get("trajectory_months")
                 if trajectory and trajectory <= 2:
-                    alert = await self._create_upcoming_alert(org_id, kri)
+                    alert = await self._create_upcoming_alert(org_id, kri, key=kri_key(kri, upcoming))
                     if alert:
                         await self._dispatch_alert(alert)
                         alerts_created += 1
@@ -161,6 +164,7 @@ class ProactiveAlertOrchestrator:
 
         except Exception as exc:
             logger.error("Proactive scan hatasi: org=%s err=%s", org_id, exc)
+            await self._abandon_org(org_id)
             return {"alerts_created": 0, "error": str(exc)}
 
     async def run_scheduled_scan(self) -> dict[str, Any]:
@@ -180,6 +184,7 @@ class ProactiveAlertOrchestrator:
                 try:
                     results.append(await self.scan_and_alert(oid))
                 except Exception as exc:
+                    await self._abandon_org(oid)
                     results.append(exc)
 
             total_alerts = sum(
@@ -199,7 +204,19 @@ class ProactiveAlertOrchestrator:
 
         except Exception as exc:
             logger.error("Scheduled scan hatasi: %s", exc)
+            self.failed_orgs.append("*")
             return {"scanned": 0, "error": str(exc)}
+
+    async def _abandon_org(self, org_id: str) -> None:
+        """An org's scan failed: drop its uncommitted work so the next org starts clean, and remember it.
+
+        What it already committed stays (alert ids are slot-derived, so the retry repeats none of it)."""
+        self.failed_orgs.append(org_id)
+        if self.db is not None:
+            try:
+                await self.db.rollback()
+            except Exception:
+                logger.exception("rollback after a failed org scan failed: org=%s", org_id)
 
     # ── KRI hesaplama ──────────────────────────────────────────────────────────
 
@@ -225,12 +242,13 @@ class ProactiveAlertOrchestrator:
             return {"kris": kris, "posture": posture}
         except Exception as exc:
             logger.warning("KRI hesaplama hatasi: org=%s err=%s", org_id, exc)
+            self.failed_orgs.append(org_id)  # not "no KRIs": the scan could not look
             return None
 
     # ── Alert olusturma ────────────────────────────────────────────────────────
 
     async def _create_kri_alert(
-        self, org_id: str, kri: dict[str, Any], severity: str
+        self, org_id: str, kri: dict[str, Any], severity: str, key: str | None = None
     ) -> AlertEvent | None:
         name  = kri.get("name", "Bilinmeyen KRI")
         val   = kri.get("current_value", 0)
@@ -259,7 +277,7 @@ class ProactiveAlertOrchestrator:
                 body += f"{i}. {m}\n"
 
         return AlertEvent(
-            alert_id   = self._alert_id(org_id, "kri_breach", name),
+            alert_id   = self._alert_id(org_id, "kri_breach", key or name),
             org_id     = org_id,
             trigger    = "kri_breach",
             severity   = severity,
@@ -271,7 +289,7 @@ class ProactiveAlertOrchestrator:
         )
 
     async def _run_cascade_and_alert(
-        self, org_id: str, kri: dict[str, Any]
+        self, org_id: str, kri: dict[str, Any], key: str | None = None
     ) -> AlertEvent | None:
         """KRI icin cascade simulasyonu calistir, alert olustur.
 
@@ -326,7 +344,7 @@ class ProactiveAlertOrchestrator:
             body, severity = cascade_alert_text(cascade, basis, base_sc.overall_risk_score)
 
             return AlertEvent(
-                alert_id   = self._alert_id(org_id, "cascade_risk", str(kri.get("name", ""))),
+                alert_id   = self._alert_id(org_id, "cascade_risk", key or str(kri.get("name", ""))),
                 org_id     = org_id,
                 trigger    = "cascade_risk",
                 severity   = severity,
@@ -353,7 +371,7 @@ class ProactiveAlertOrchestrator:
             await record_skipped(self.db, org_id, str(kri.get("name", "")), missing)
 
     async def _create_upcoming_alert(
-        self, org_id: str, kri: dict[str, Any]
+        self, org_id: str, kri: dict[str, Any], key: str | None = None
     ) -> AlertEvent | None:
         name       = kri.get("name", "")
         trajectory = kri.get("trajectory_months", 0)
@@ -366,7 +384,7 @@ class ProactiveAlertOrchestrator:
         )
 
         return AlertEvent(
-            alert_id   = self._alert_id(org_id, "kri_upcoming", name),
+            alert_id   = self._alert_id(org_id, "kri_upcoming", key or name),
             org_id     = org_id,
             trigger    = "kri_upcoming",
             severity   = "medium",
@@ -531,37 +549,8 @@ class ProactiveAlertOrchestrator:
         return [str(a).strip() for a in addrs if str(a).strip()]
 
     async def _get_active_orgs(self) -> list[str]:
-        """Orgs with an analysis or an agent job in the last 24 hours.
-
-        This was raw SQL (CLAUDE.md law 4) in Postgres-only syntax
-        (`NOW() - INTERVAL`): on SQLite it raised into an `except: pass` and
-        the hourly scan covered no organisation at all. It also read only
-        `agent_jobs`, so an org that only ran CFO analyses was never scanned
-        (plan v6 §S0).
-        """
-        if not self.db:
-            return []
-        from datetime import UTC, datetime, timedelta
-
-        from sqlalchemy import select
-
-        from app.models.agent_job import AgentJob
-        from app.models.analysis_job import AnalysisJob
-
-        since = datetime.now(UTC) - timedelta(hours=24)
-        try:
-            orgs: set[str] = set()
-            for model in (AnalysisJob, AgentJob):
-                rows = await self.db.execute(
-                    select(model.org_id)
-                    .where(model.created_at > since, model.org_id.isnot(None))
-                    .distinct()
-                )
-                orgs.update(str(o) for o in rows.scalars())
-            return sorted(orgs)[:100]
-        except Exception as exc:
-            logger.warning("Proactive scan: active-org query failed: %s", exc)
-            return []
+        """Orgs with recent analysis or agent jobs (see `scan_support.active_orgs`)."""
+        return await active_orgs(self.db)
 
     async def _save_alert(self, alert: AlertEvent) -> None:
         """Persist the alert (durable log). Idempotent on `alert_id`."""

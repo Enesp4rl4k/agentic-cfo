@@ -380,7 +380,9 @@ def _build_scenario_explanation(
 
 def _runway_detail(runway: dict[str, Any]) -> str:
     if runway["runway_months"] is not None:
-        return f"{runway['runway_months']} ay"
+        from app.services.runway import under_a_month
+
+        return under_a_month(runway["runway_months"]) or f"{runway['runway_months']} ay"
     return {
         "computed": "36 aydan uzun",
         "not_burning": "nakit azalmıyor",

@@ -42,7 +42,9 @@ export function RunwayCard({
   const measured = status === "computed" || status === "not_burning";
   let value: string | null = null;
   if (months !== null) {
-    value = copy.runwayMonths.replace("{n}", months.toLocaleString(locale, { maximumFractionDigits: 1 }));
+    value = months < 1
+      ? copy.runwayUnderMonth
+      : copy.runwayMonths.replace("{n}", months.toLocaleString(locale, { maximumFractionDigits: 1 }));
   } else if (!measured) {
     value = copy.runwayUnknown;
   }
