@@ -408,7 +408,9 @@ def generate_unified_pdf(
 
     try:
         from weasyprint import HTML as WeasyHTML
-        pdf_bytes: bytes = WeasyHTML(string=html).write_pdf()
+
+        from app.services.pdf_fetch import deny_fetch
+        pdf_bytes: bytes = WeasyHTML(string=html, url_fetcher=deny_fetch).write_pdf()
         return pdf_bytes
     except ImportError:
         logger.error("WeasyPrint not installed — cannot generate PDF")

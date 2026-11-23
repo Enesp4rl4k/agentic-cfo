@@ -59,6 +59,7 @@ from app.services.ingest.rows import (
     _tablo_ekstresi,
     _try_parse_csv,
 )
+from app.services.ocr_service import PdfOkunamadi
 
 logger = logging.getLogger(__name__)
 
@@ -594,6 +595,10 @@ async def _belgeyi_oku(
             ),
         )
 
+    except PdfOkunamadi as exc:
+        # Refused or unreadable PDF: the reason is already a sentence for the user.
+        logger.warning("PDF not read for job=%s: %s", state.get("job_id"), exc)
+        return SkillResult(ok=False, detail=str(exc), halt=True)
     except Exception as exc:
         logger.exception("Data ingestion failed for job=%s", state.get("job_id"))
         return SkillResult(ok=False, detail=f"Ingestion error: {exc}", halt=True)

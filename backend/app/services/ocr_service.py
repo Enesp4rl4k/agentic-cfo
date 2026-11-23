@@ -39,14 +39,44 @@ Usage:
 """
 from __future__ import annotations
 
+import json
 import logging
+import os
 import re
 import statistics
+import subprocess
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# ── Limits on an uploaded PDF (it is untrusted input to three C/Python parsers) ─────────────────
+# The upload door already refuses a file over max_upload_size_mb; the same cap is applied here so a PDF
+# that reaches the parser by another road (mail attachment, MCP, scheduled sync) is bounded too.
+MAX_PDF_PAGES = 200
+# One whole parse (every page, every strategy) in the child process. A statement of 200 pages needs
+# well under this; a crafted file that makes a parser spin does not get to hold a worker.
+PARSE_TIMEOUT_SECONDS = 90
+# A page rendered for OCR may not exceed this many pixels (a 14400 x 14400 pt page at 300 dpi would
+# be a 3.4-gigapixel bitmap). Also the decompression-bomb limit Pillow enforces on the render.
+MAX_RENDER_PIXELS = 60_000_000
+# The parse runs in a child process, so a crash (segfault in a C parser) or a hang cannot take the
+# worker with it. Tests that patch parser internals switch it off; production leaves it on.
+ISOLATE_PARSER = True
+_WORKER_MAX_STDOUT = 64 * 1024 * 1024
+# The child parses attacker-controlled bytes: it gets no secrets, only what a parser needs to run.
+_WORKER_ENV_KEEP = (
+    "PATH", "SYSTEMROOT", "TEMP", "TMP", "TMPDIR", "HOME", "LANG", "LC_ALL", "TESSDATA_PREFIX",
+    "PYTHONPATH", "VIRTUAL_ENV", "LD_LIBRARY_PATH",
+)
+# Overridable in tests.
+_WORKER_COMMAND: list[str] | None = None
+
+
+class PdfOkunamadi(Exception):
+    """The PDF was refused or could not be parsed safely. The message is shown to the user."""
 
 # Minimum character count to consider native text extraction successful
 _MIN_NATIVE_CHARS_PER_PAGE = 50
@@ -160,10 +190,17 @@ def _try_tesseract_ocr(page: Any, dpi: int = _TESSERACT_DPI) -> tuple[str, float
         import pytesseract
         from PIL import Image
 
-        # Render page to pixmap (PNG)
+        # The page is rendered by PyMuPDF to PNG here, so Pillow only ever decodes a PNG this process
+        # just produced; the allow-list and the pixel ceiling keep it that way and bound a huge page.
+        rect = page.rect
+        pixels = (rect.width * dpi / 72) * (rect.height * dpi / 72)
+        if pixels > MAX_RENDER_PIXELS:
+            logger.warning("OCR skipped: page would render to %.0f pixels (limit %d)", pixels, MAX_RENDER_PIXELS)
+            return "", 0.0
+        Image.MAX_IMAGE_PIXELS = MAX_RENDER_PIXELS
         mat = page.get_pixmap(dpi=dpi)
         img_bytes = mat.tobytes("png")
-        image = Image.open(io.BytesIO(img_bytes))
+        image = Image.open(io.BytesIO(img_bytes), formats=["PNG"])
 
         # Run Tesseract with Turkish + English
         # --oem 3: best engine (LSTM), --psm 6: assume uniform block of text
@@ -235,7 +272,15 @@ def _clean_ocr_text(text: str) -> str:
     return text.strip()
 
 
-def extract_text_from_pdf(file_path: str, force_ocr: bool = False) -> OCRResult:
+def _refused(file_path: str, reason: str) -> OCRResult:
+    """A visible failure: no text, strategy "failed", and the reason in Turkish for the user."""
+    return OCRResult(
+        text="", confidence=0.0, strategy_used="failed", page_count=0, page_results=[],
+        file_path=file_path, warnings=[f"PDF okunamadı: {reason}"],
+    )
+
+
+def _extract_in_process(file_path: str, force_ocr: bool = False) -> OCRResult:
     """
     Extract text from a PDF using the best available strategy.
 
@@ -278,6 +323,8 @@ def extract_text_from_pdf(file_path: str, force_ocr: bool = False) -> OCRResult:
     try:
         with fitz.open(file_path) as doc:
             page_count = doc.page_count
+            if page_count > MAX_PDF_PAGES:
+                return _refused(file_path, f"{page_count} sayfa var; en fazla {MAX_PDF_PAGES} sayfa okunur. Dosyayı bölüp yükleyin.")
             doc_meta = {
                 "title": doc.metadata.get("title", ""),
                 "author": doc.metadata.get("author", ""),
@@ -348,7 +395,7 @@ def extract_text_from_pdf(file_path: str, force_ocr: bool = False) -> OCRResult:
             page_count=0,
             page_results=[],
             file_path=file_path,
-            warnings=[f"PDF extraction error: {e}"],
+            warnings=[f"PDF okunamadı: {e}"],
         )
 
     # Combine all page texts
@@ -395,6 +442,64 @@ def extract_text_from_pdf(file_path: str, force_ocr: bool = False) -> OCRResult:
     )
 
     return result
+
+
+def _worker_command(file_path: str, force_ocr: bool) -> list[str]:
+    if _WORKER_COMMAND is not None:
+        return [*_WORKER_COMMAND, file_path, "1" if force_ocr else "0"]
+    return [sys.executable, "-m", "app.services.pdf_worker", file_path, "1" if force_ocr else "0"]
+
+
+def _from_payload(payload: dict[str, Any]) -> OCRResult:
+    pages = [PageResult(**p) for p in payload.pop("page_results", [])]
+    return OCRResult(page_results=pages, **payload)
+
+
+def _extract_isolated(file_path: str, force_ocr: bool) -> OCRResult:
+    """Run the parse in a child process with a timeout. Every failure is a visible "okunamadı"."""
+    backend_dir = Path(__file__).resolve().parents[2]
+    env = {k: v for k, v in os.environ.items() if k in _WORKER_ENV_KEEP}
+    env["PYTHONPATH"] = os.pathsep.join(filter(None, [str(backend_dir), env.get("PYTHONPATH", "")]))
+    try:
+        proc = subprocess.run(
+            _worker_command(file_path, force_ocr),
+            capture_output=True, timeout=PARSE_TIMEOUT_SECONDS, cwd=str(backend_dir), env=env, check=False,
+        )
+    except subprocess.TimeoutExpired:
+        logger.warning("PDF parse exceeded %ss and was killed: %s", PARSE_TIMEOUT_SECONDS, Path(file_path).name)
+        return _refused(file_path, f"okuma {PARSE_TIMEOUT_SECONDS} saniyede bitmedi; dosya çok karmaşık ya da bozuk.")
+    except OSError as exc:
+        logger.error("PDF worker could not be started: %s", exc)
+        return _refused(file_path, "okuma işlemi başlatılamadı.")
+    if proc.returncode != 0 or not proc.stdout:
+        logger.warning("PDF worker failed (exit %s): %s", proc.returncode, proc.stderr[-500:].decode("utf-8", "replace"))
+        return _refused(file_path, "dosya okunurken bir hata oluştu; dosya bozuk olabilir.")
+    if len(proc.stdout) > _WORKER_MAX_STDOUT:
+        return _refused(file_path, "dosyadan çıkan metin beklenenden çok büyük.")
+    try:
+        return _from_payload(json.loads(proc.stdout.decode("utf-8")))
+    except (ValueError, TypeError, KeyError):
+        logger.warning("PDF worker returned unreadable output for %s", Path(file_path).name)
+        return _refused(file_path, "dosya okunurken bir hata oluştu; dosya bozuk olabilir.")
+
+
+def extract_text_from_pdf(file_path: str, force_ocr: bool = False) -> OCRResult:
+    """Extract text from a PDF: size cap, page cap, child process with a timeout.
+
+    Never raises for a bad file and never returns an empty success: a refused, crashed or timed-out
+    parse is a result with strategy "failed", no text and a Turkish "PDF okunamadı: ..." warning.
+    """
+    path = Path(file_path)
+    if path.exists():
+        from app.config import get_settings
+
+        limit = get_settings().max_upload_size_mb * 1024 * 1024
+        size = path.stat().st_size
+        if size > limit:
+            return _refused(file_path, f"dosya {size / 1024 / 1024:.1f} MB; en fazla {limit // 1024 // 1024} MB okunur.")
+        if ISOLATE_PARSER:
+            return _extract_isolated(file_path, force_ocr)
+    return _extract_in_process(file_path, force_ocr)
 
 
 def extract_invoice_fields(text: str) -> dict[str, Any]:

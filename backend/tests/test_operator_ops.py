@@ -153,8 +153,16 @@ async def test_a_failing_destination_alerts_without_the_address(client):
     assert len(mails) == 1 and "org=org-1" in mails[0].body and "gizli@firma.com" not in mails[0].body
 
 
-async def test_preflight_warnings_are_sent_once_per_window(client):
-    now = datetime.now(UTC)
+async def test_preflight_warnings_are_sent_once_per_window(client, monkeypatch):
+    # No real clock and no live preflight: a `now` that straddled a cool-down bucket, or a Redis
+    # timeout that changed the set of warnings between the two calls, sent two mails.
+    monkeypatch.setattr(
+        preflight,
+        "check_settings",
+        lambda _settings, _environ=None: [preflight.Finding("no_llm_key", preflight.WARN, "stub")],
+    )
+    window = max(1, get_settings().operator_alert_cooldown_minutes) * 60
+    now = datetime.fromtimestamp(1_800_000_000 // window * window + 60, tz=UTC)  # one minute into a window
     await ops_watch.watch(now)
     await ops_watch.watch(now + timedelta(minutes=15))
     mails = [r for r in await alert_rows(client) if "Başlangıç denetimi" in r.subject]

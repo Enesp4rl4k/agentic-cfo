@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import html
 import logging
+import re
 from datetime import UTC, datetime
 from functools import partial
 from typing import Any
@@ -59,12 +60,20 @@ def _scenario_runway(forecast: dict[str, Any], key: str) -> str:
     return f"{view.short()} (senaryo — varsayım{note})"
 
 
+_CSS_STRING_UNSAFE = re.compile(r'[\\"<>\r\n]')
+
+
 def _build_html(
     dashboard: dict[str, Any],
     company_name: str,
     period: str,
     generated_at: str,
 ) -> str:
+    # The company name and period are typed by a person. In the page margin they sit inside a CSS string
+    # (a quote or backslash would end it, `</style>` would end the sheet), in the body inside HTML.
+    margin_text = _CSS_STRING_UNSAFE.sub("", f"{company_name} · {period} · {generated_at}")
+    company_name = html.escape(company_name)
+    period = html.escape(period)
     pnl      = dashboard.get("pnl") or {}
     # Every amount on the page is in the currency the P&L states, or bare when it states none.
     cur = pnl.get("currency")
@@ -143,7 +152,7 @@ def _build_html(
   size: A4;
   margin: 1.2cm 1.5cm;
   @bottom-center {{
-    content: "{company_name} · {period} · {generated_at}";
+    content: "{margin_text}";
     font-size: 7pt;
     color: #94a3b8;
   }}
@@ -457,6 +466,8 @@ def generate_executive_report(
 
     try:
         from weasyprint import HTML
+
+        from app.services.pdf_fetch import deny_fetch
     except (ImportError, OSError) as exc:
         # OSError, not ImportError, is what a missing Pango/GObject raises —
         # it slipped past and became an unhandled 500 (plan v7 §P0 / W3).
@@ -482,7 +493,7 @@ def generate_executive_report(
     )
 
     try:
-        pdf_bytes = HTML(string=html_content).write_pdf()
+        pdf_bytes = HTML(string=html_content, url_fetcher=deny_fetch).write_pdf()
         logger.info("Executive report PDF generated: %d bytes", len(pdf_bytes))
         return pdf_bytes
     except Exception as exc:

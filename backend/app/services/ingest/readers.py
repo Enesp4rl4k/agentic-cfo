@@ -24,9 +24,14 @@ def _read_pdf(file_path: str) -> str:
     Returns the best-quality text available, with a warning comment
     prepended if confidence is low (for LLM fallback awareness).
     """
+    from app.services.ocr_service import PdfOkunamadi, extract_text_from_pdf
+
     try:
-        from app.services.ocr_service import extract_text_from_pdf
         result = extract_text_from_pdf(file_path)
+
+        if result.strategy_used == "failed" and not result.text.strip() and result.warnings:
+            # Refused (size, pages), timed out or crashed in the parser: say so, do not return "".
+            raise PdfOkunamadi(result.warnings[0])
 
         if result.needs_llm_fallback:
             # Prepend low-confidence marker for LLM extraction path
@@ -43,6 +48,8 @@ def _read_pdf(file_path: str) -> str:
 
         return text
 
+    except PdfOkunamadi:
+        raise
     except Exception as exc:
         # Graceful fallback to original simple extraction
         logger.warning("OCR service failed (%s), falling back to basic PDF read: %s", file_path, exc)
