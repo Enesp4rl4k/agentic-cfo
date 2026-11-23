@@ -161,7 +161,8 @@ async def test_ingestion_node_applies_rules_before_downstream(monkeypatch):
         needs_review = False
         patch = {"transactions": [
             {"category": "other_expense", "vendor": None,
-             "description": "TURKCELL ILETISIM FATURA", "amount_cents": 100, "type": "expense"},
+             "description": "TURKCELL ILETISIM FATURA", "amount_cents": 100, "type": "expense",
+             "currency": "TRY"},
         ]}
 
     async def sahte(state, cfg):

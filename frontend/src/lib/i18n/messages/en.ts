@@ -2744,6 +2744,7 @@ export type MessageTree = {
     confirmLink: string;
     leftOut: string;
     perCurrency: string;
+    unknown: string;
     dominantCaption: string;
     journalLeftOut: string;
   };
@@ -6466,6 +6467,7 @@ export const en: MessageTree = {
     confirmLink: "Confirm the currency",
     leftOut: "{n} foreign-currency transactions are not included ({currencies}).",
     perCurrency: "Totals by currency",
+    unknown: "currency unknown",
     dominantCaption: "The figures below are in {currency} only; other currencies are not included.",
     journalLeftOut: "{n} foreign-currency entries are not in this export ({currencies}).",
   },

@@ -11,8 +11,8 @@ from app.models.transaction import Transaction
 from app.services.ledger import append_job
 
 
-def statement(day: str, cents: int) -> dict[str, Any]:
-    return {"closing_balance": {"date": day, "balance_cents": cents}}
+def statement(day: str, cents: int, currency: str = "TRY") -> dict[str, Any]:
+    return {"closing_balance": {"date": day, "balance_cents": cents, "currency": currency}}
 
 
 async def upload(

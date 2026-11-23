@@ -24,6 +24,10 @@ def _consistent_pnl() -> dict:
 
 
 def _txns() -> list[dict]:
+    return [{**t, "currency": "TRY"} for t in _unstamped()]
+
+
+def _unstamped() -> list[dict]:
     return [
         {"type": "income", "amount_cents": 60_000, "category": "sales"},
         {"type": "income", "amount_cents": 40_000, "category": "services"},
@@ -100,7 +104,7 @@ def _with_transfer(category: str = "transfer", type_: str = "income") -> tuple[d
     """The P&L the real `_compute_pnl` makes of the transactions, and those transactions."""
     from app.agents.pnl_agent import _compute_pnl
 
-    txs = [*_txns(), {"type": type_, "amount_cents": 77_000, "category": category}]
+    txs = [*_txns(), {"type": type_, "amount_cents": 77_000, "category": category, "currency": "TRY"}]
     return _compute_pnl(txs), txs
 
 

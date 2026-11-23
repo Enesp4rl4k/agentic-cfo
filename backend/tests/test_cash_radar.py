@@ -69,9 +69,9 @@ async def _upload(client, org_id: str, *rows: dict[str, Any], meta: dict | None 
         return job.id
 
 
-def _statement(day: str, cents: int) -> dict:
+def _statement(day: str, cents: int, currency: str = "TRY") -> dict:
     """What the worker records for a statement whose balances chain."""
-    return {"closing_balance": {"date": day, "balance_cents": cents}}
+    return {"closing_balance": {"date": day, "balance_cents": cents, "currency": currency}}
 
 
 async def _radar(client, org_id: str, anchor: date = ANCHOR) -> Any:

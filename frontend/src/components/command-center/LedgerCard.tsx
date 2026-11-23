@@ -6,7 +6,7 @@ import { CanButton } from "@/components/ui/can-button";
 import { Card } from "@/components/ui/card";
 import { useCurrencyFormat } from "@/hooks/useCurrencyFormat";
 import { useI18n } from "@/hooks/useI18n";
-import { BaseCurrencyNotice, OtherCurrencyLines } from "@/components/ui/other-currency-lines";
+import { BaseCurrencyNotice, OtherCurrencyLines, shownCode } from "@/components/ui/other-currency-lines";
 import { useOrgSettings } from "@/hooks/useOrgSettings";
 import { formatCurrency } from "@/lib/utils";
 import { failureMessage } from "@/lib/forbidden";
@@ -30,8 +30,8 @@ export function LedgerCard() {
   const { org } = useOrgSettings();
   // A row in another currency is shown in its own, never in the base currency's symbol.
   const fmtIn = (value: number, currency?: string) =>
-    currency && currency !== (org?.base_currency || currency)
-      ? formatCurrency(value, currency, org?.locale || "tr-TR")
+    currency !== undefined && currency !== (org?.base_currency || currency)
+      ? formatCurrency(value, currency, org?.locale || "tr-TR", t.otherCurrency.unknown)
       : fmt(value);
   const queryClient = useQueryClient();
   const { data: summary } = useQuery({ queryKey: SUMMARY_KEY, queryFn: getLedgerSummary });
@@ -101,7 +101,7 @@ export function LedgerCard() {
         <dl className="grid gap-2 text-sm sm:grid-cols-2" data-testid="per-currency-totals">
           {summary.currency_totals.map((c) => (
             <div key={c.currency} className="rounded-md border border-border p-2">
-              <dt className="text-xs font-medium text-muted-foreground">{c.currency}</dt>
+              <dt className="text-xs font-medium text-muted-foreground">{shownCode(c.currency, t.otherCurrency.unknown)}</dt>
               <dd className="tabular-nums">
                 {copy.revenue}: {fmtIn((c.revenue_cents ?? 0) / 100, c.currency)} · {copy.expense}:{" "}
                 {fmtIn((c.expense_cents ?? 0) / 100, c.currency)}
