@@ -21,6 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from app.services.runway import RUNWAY_WATCH_MONTHS, is_within, level_for_months
 from app.services.runway_display import runway_for_display
 
 # Modelling assumptions — rule-based, not measured. Returned with every result.
@@ -128,14 +129,14 @@ def baseline_from_cfo(cfo_result: dict[str, Any] | None) -> StressBaseline | Non
     )
 
 
-def _risk_level(stressed_runway: float) -> str:
-    if stressed_runway < 3.0:
+def _risk_level(stressed_runway: float, *, proven: bool) -> str:
+    """The stressed runway's class is the service's; CRITICAL only on the authority of a proven baseline."""
+    level = level_for_months(stressed_runway, proven=proven)
+    if level == "critical":
         return "CRITICAL"
-    if stressed_runway < 6.0:
+    if level == "warning":
         return "HIGH"
-    if stressed_runway < 12.0:
-        return "MODERATE"
-    return "LOW"
+    return "MODERATE" if is_within(stressed_runway, RUNWAY_WATCH_MONTHS) else "LOW"
 
 
 def recommendation_codes(shock: ShockInputs) -> list[str]:
@@ -182,9 +183,7 @@ def simulate(shock: ShockInputs, baseline: StressBaseline) -> dict[str, Any]:
         factor = max(RUNWAY_FLOOR, 1.0 - ratio * RUNWAY_ELASTICITY)
         stressed_runway = round(baseline.runway_months * factor, 1)
         runway_delta = round(stressed_runway - baseline.runway_months, 1)
-        risk_level = _risk_level(stressed_runway)
-        if risk_level == "CRITICAL" and baseline.runway_basis != "known":
-            risk_level = "HIGH"        # no "critical" on the authority of a runway that is not proven (`runway_display`)
+        risk_level = _risk_level(stressed_runway, proven=baseline.runway_basis == "known")
 
     return {
         "baseline_runway_months": baseline.runway_months,

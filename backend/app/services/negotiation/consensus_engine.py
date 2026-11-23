@@ -36,6 +36,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Literal
 
+from app.services.runway_display import runway_for_display
+
 logger = logging.getLogger(__name__)
 
 # ── Constants ─────────────────────────────────────────────────────────────────
@@ -189,11 +191,14 @@ def _extract_claims(
     if topic == "cash_risk":
         # CFO: cash runway months
         cfo = getattr(ctx, "last_cfo_result", None) or {}
-        runway = _safe(cfo, "forecast", "scenarios", "base", "runway_months")
+        view = runway_for_display(cfo.get("forecast"))  # value, basis and class from the one reader
+        runway = view.months
         if runway is not None:
             # Normalize: 0 months = 1.0 risk, 12+ months = 0.0 risk
             risk_val = max(0.0, min(1.0, 1.0 - runway / 12.0))
-            label    = "kritik" if risk_val > 0.75 else "yüksek" if risk_val > 0.50 else "orta" if risk_val > 0.25 else "düşük"
+            # The label is the runway's class: "kritik" only on a proven runway.
+            label    = {"critical": "kritik", "warning": "yüksek"}.get(
+                view.level or "", "orta" if view.watch else "düşük")
             claims["cfo"] = AgentClaim("cfo", topic, risk_val, label,
                                        {"runway_months": runway})
 

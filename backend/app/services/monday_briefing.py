@@ -76,6 +76,7 @@ class MondayBriefing:
     runway_status: str = "no_balance"
     runway_months: float | None = None
     runway_level: str | None = None
+    runway_cash_gone: bool = False   # the balance is already at or below zero ("nakit bitmiş", not "1 aydan az")
     runway_attention: bool = False   # low (<= RUNWAY_ATTENTION_MONTHS), known or assumed: said first
     runway_basis: str | None = None
     runway_line: str = ""
@@ -396,6 +397,7 @@ async def assemble_monday_briefing(
         runway_months=runway["runway_months"] if runway else None,
         runway_level=runway["level"] if runway else None,
         runway_attention=bool(runway and runway.get("attention")),
+        runway_cash_gone=bool(runway and runway.get("cash_gone")),
         runway_basis=runway["basis"] if runway else None,
         runway_line=runway_text,
     )

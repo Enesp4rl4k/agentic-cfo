@@ -23,6 +23,7 @@ from typing import Any
 from app.platform.run_gate import inherited_confidence
 from app.services.company_context import get_company_context, save_company_context
 from app.services.context_persist import write_derived_result
+from app.services.runway_display import runway_for_display
 from app.services.semantic.rebuild import rebuild_semantic_snapshot
 
 logger = logging.getLogger(__name__)
@@ -62,9 +63,7 @@ def _cfo_has_cash_crisis(ctx: Any) -> bool:
     """CFO runway < 6 months — ask CHRO about hiring/attrition risk."""
     cfo = ctx.last_cfo_result or {}
     forecast = cfo.get("forecast") or {}
-    base = (forecast.get("scenarios") or {}).get("base") or {}
-    runway = base.get("runway_months")
-    return runway is not None and runway < 6
+    return runway_for_display(forecast).level is not None
 
 
 def _cto_has_low_velocity(ctx: Any) -> bool:

@@ -33,7 +33,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.agents.orchestration.scan_support import active_orgs, kri_key
+from app.agents.orchestration.scan_support import active_orgs, kri_alert_words, kri_key
 from app.services import outbox
 
 logger = logging.getLogger(__name__)
@@ -120,7 +120,7 @@ class ProactiveAlertOrchestrator:
 
             posture    = kri_result.get("posture", {})
             red_kris   = posture.get("red_kris", [])
-            posture.get("amber_kris", [])
+            amber_kris = posture.get("amber_kris", [])
             upcoming   = posture.get("upcoming_red", [])
 
             # 2. Kritik KRI'lar icin alert olustur
@@ -129,6 +129,15 @@ class ProactiveAlertOrchestrator:
                     continue
 
                 alert = await self._create_kri_alert(org_id, kri, "critical", key=kri_key(kri, red_kris))
+                if alert:
+                    await self._dispatch_alert(alert)
+                    alerts_created += 1
+
+            # 2b. A low runway on an assumption is amber, never "kritik", and is still said first (capped severity).
+            for kri in [k for k in amber_kris if k.get("attention")][:self.MAX_CASCADES_PER_SCAN]:
+                if await self._is_cooldown_active(org_id, kri.get("name", "")):
+                    continue
+                alert = await self._create_kri_alert(org_id, kri, "high", key=kri_key(kri, amber_kris))
                 if alert:
                     await self._dispatch_alert(alert)
                     alerts_created += 1
@@ -260,9 +269,9 @@ class ProactiveAlertOrchestrator:
         unproven = kri.get("basis") not in (None, "known") or bool(kri.get("identity_uncertain"))
         if unproven:
             severity = "high" if severity == "critical" else severity
-        title = f"🚨 {name}: {val} {unit} — Kırmızı Eşik Aşıldı"
+        title, lead = kri_alert_words(name, val, unit, critical=severity == "critical")
         body  = (
-            f"**{name}** metrigi kritik seviyeye ulasti.\n\n"
+            lead +
             f"Mevcut Deger: **{val} {unit}**\n"
             f"Kanit: {ev}\n\n"
         )

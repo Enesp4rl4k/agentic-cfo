@@ -17,7 +17,19 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from app.services.runway import COMPUTED, NOT_BURNING, under_a_month
+from app.services.runway import (
+    COMPUTED,
+    NOT_BURNING,
+    RUNWAY_WATCH_MONTHS,
+    cash_gone,
+    cash_gone_phrase,
+    is_attention,
+    is_comfortable,
+    is_within,
+    level_for_months,
+    level_severity,
+    months_phrase,
+)
 from app.services.runway import _date_tr as date_tr
 
 PROMPT_RULE = (
@@ -35,15 +47,65 @@ class RunwayView:
     identity_uncertain: bool = False
     sentence: str | None = None     # a sentence already built upstream (carried in a financial summary)
     reasons: tuple[str, ...] = ()   # why it is only assumed, one sentence each (the runway block's `reasons`)
+    balance_cents: int | None = None  # the balance the runway starts from (<= 0: the cash is already gone)
+    from_block: bool = False        # the runway block stands behind the number: its own class is the class
+    block_level: str | None = None
+    block_attention: bool = False
+    scenario: bool = False          # a what-if row (optimistic, pessimistic): an assumption, so never critical
 
     @property
     def proven(self) -> bool:
         return self.basis == "known" and self.months is not None and not self.identity_uncertain
 
+    @property
+    def level(self) -> str | None:
+        """The ONE class ("critical" | "warning" | None): the block's own when it stands behind the number, else the
+        service's classifier over the figure. Critical only when proven: an assumed runway is capped at warning."""
+        if self.months is None:
+            return None
+        if self.scenario:
+            return level_for_months(self.months, proven=False)
+        if self.from_block:
+            return "warning" if self.block_level == "critical" and not self.proven else self.block_level
+        return level_for_months(self.months, proven=self.proven)
+
+    @property
+    def severity(self) -> str | None:
+        """The class in the alerts' and risks' vocabulary: "critical" | "high" | None."""
+        return level_severity(self.level)
+
+    @property
+    def attention(self) -> bool:
+        """Low enough to be said first, known or assumed (never as 'kritik' unless proven)."""
+        return self.block_attention if self.from_block and not self.scenario else is_attention(self.months)
+
+    @property
+    def watch(self) -> bool:
+        return is_within(self.months, RUNWAY_WATCH_MONTHS)
+
+    @property
+    def comfortable(self) -> bool:
+        return is_comfortable(self.months)
+
+    @property
+    def label(self) -> str:
+        """The word that goes with the class: KRİTİK (proven) | DİKKAT (low, assumed) | Uyarı | "" (none)."""
+        if self.level == "critical":
+            return "KRİTİK"
+        if self.attention:
+            return "DİKKAT"
+        return "Uyarı" if self.level else ""
+
+    @property
+    def gone(self) -> bool:
+        return cash_gone(self.balance_cents)
+
     def short(self) -> str:
         if self.months is None:
             return "bilinmiyor"
-        return under_a_month(self.months) or f"{self.months:g} ay"
+        if self.gone:
+            return cash_gone_phrase("known" if self.proven else "assumed")
+        return months_phrase(self.months)
 
     def text(self) -> str:
         """The figure with the basis it rests on: what a sentence may say about the runway."""
@@ -66,7 +128,10 @@ class RunwayView:
 
     def fin_fields(self) -> dict[str, Any]:
         """The keys the CEO agents' financial summary carries beside the bare number."""
-        return {"runway_basis": self.basis, "runway_text": self.text(), "runway_proven": self.proven}
+        return {
+            "runway_basis": self.basis, "runway_text": self.text(), "runway_proven": self.proven,
+            "runway_level": self.level, "runway_attention": self.attention,
+        }
 
     def prompt_line(self) -> str:
         return f"Nakit ömrü: {self.text()}. {PROMPT_RULE}"
@@ -86,10 +151,14 @@ def runway_for_display(forecast: dict[str, Any] | None, scenario: str = "base") 
     if months is None:
         return RunwayView(None, "unknown", message=str(block.get("message") or ""))
     basis = "assumed" if (block.get("basis") != "known" or block.get("balance_basis") == "assumed") else "known"
+    standing = block.get("status") == COMPUTED
     return RunwayView(
         months, basis, as_of=block.get("as_of"), message=str(block.get("message") or ""),
         identity_uncertain=bool(block.get("identity_uncertain")),
         reasons=tuple(str(r["text"]) for r in block.get("reasons") or [] if isinstance(r, dict) and r.get("text")),
+        balance_cents=block.get("opening_cash_cents") if standing else None,
+        scenario=scenario != "base", from_block=True, block_level=block.get("level") if standing else None,
+        block_attention=bool(block.get("attention")) and standing,
     )
 
 
@@ -101,4 +170,10 @@ def view_from_fin(fin: dict[str, Any]) -> RunwayView:
     basis = fin.get("runway_basis") or "unverified"
     if basis == "known" and fin.get("runway_proven") is False:
         basis = "assumed"  # e.g. an open account-identity question
-    return RunwayView(float(months), basis, sentence=fin.get("runway_text") or None)
+    view = RunwayView(float(months), basis, sentence=fin.get("runway_text") or None)
+    if "runway_level" not in fin:  # a summary from before the class was carried: classify the figure itself
+        return view
+    return RunwayView(
+        view.months, view.basis, sentence=view.sentence,
+        from_block=True, block_level=fin.get("runway_level"), block_attention=bool(fin.get("runway_attention")),
+    )

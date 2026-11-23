@@ -123,6 +123,7 @@ class RunwayOut(BaseModel):
     # Why the balance is only assumed (one sentence each) and whether the runway is low enough to be said first.
     reasons: list[dict[str, str]] = []
     attention: bool = False
+    cash_gone: bool = False
     upload_path: str = "/upload"
     other_currencies: list[OtherCurrencyBalanceOut] = []
 

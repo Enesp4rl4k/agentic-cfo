@@ -174,18 +174,18 @@ def _compute_overall_health(result: dict[str, Any]) -> float | None:
     if fin:
         fin_score = 60.0  # neutral baseline
         net_margin = fin.get("net_margin", 0) or 0
-        runway = fin.get("cash_runway_months") if view_from_fin(fin).proven else None
+        runway_view = view_from_fin(fin)
 
         # Margin contribution: 0% margin → 0, 20%+ margin → +25 pts
         fin_score += min(25.0, max(-25.0, net_margin * 125))
 
-        # Runway contribution: <2m → -30, 2-6m → -10, 6-12m → +0, 12m+ → +15
-        if runway is not None:
-            if runway < 2:
+        # Runway contribution (a proven runway only): critical -30, warning -10, within a year +0, beyond +15.
+        if runway_view.proven:
+            if runway_view.level == "critical":
                 fin_score -= 30
-            elif runway < 6:
+            elif runway_view.level:
                 fin_score -= 10
-            elif runway >= 12:
+            elif not runway_view.watch:
                 fin_score += 15
 
         scores.append(max(0.0, min(100.0, fin_score)))

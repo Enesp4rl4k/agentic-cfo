@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.services.agent_bus import QueryType, get_agent_bus
+from app.services.runway import level_for_months
 
 logger = logging.getLogger(__name__)
 
@@ -390,13 +391,15 @@ class CHRONegotiationResponder(AgentNegotiator):
             }
 
         # Nakit durumuna gore plan
-        if runway_months < 3:
+        # The band is the service's (`runway.level_for_months`); the figure is the caller's declared runway.
+        band = level_for_months(runway_months, proven=True)
+        if band == "critical":
             # Kritik: tum ise alimi durdur
             planned_hires   = 0
             deferrable      = True
             deferrable_months = 6
             recommendation  = "Tum ise alimlar 6 ay ertelenebilir. Kritik roller icin freelance degerlendir."
-        elif runway_months < 6:
+        elif band == "warning":
             # Dikkatli: sadece kritik roller
             planned_hires   = max(0, round(open_roles * 0.3))
             deferrable      = True

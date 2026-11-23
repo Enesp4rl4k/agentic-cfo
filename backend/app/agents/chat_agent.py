@@ -30,7 +30,7 @@ from app.agents.chat_money import (
 )
 from app.core.currency_totals import fmt_amount
 from app.core.turkish import fold
-from app.services.runway_display import PROMPT_RULE, view_from_fin
+from app.services.runway_display import PROMPT_RULE, runway_for_display, view_from_fin
 
 logger = logging.getLogger(__name__)
 
@@ -158,8 +158,8 @@ def _runway_line(forecast: dict[str, Any]) -> str:
     runway = forecast.get("runway") or {}
     if runway.get("message"):
         return str(runway["message"])
-    ay = ((forecast.get("scenarios") or {}).get("base") or {}).get("runway_months")
-    return f"{ay} months" if ay is not None else "not computed"
+    view = runway_for_display(forecast)
+    return f"{view.text()}" if view.months is not None else "not computed"
 
 
 def _runway_cevabi(dashboard: dict[str, Any]) -> str | None:
@@ -171,9 +171,9 @@ def _runway_cevabi(dashboard: dict[str, Any]) -> str | None:
     if runway.get("message"):
         # The sentence names the balance, its date and the burn it rests on, or says there is none.
         return str(runway["message"])
-    ay = base.get("runway_months")
-    if isinstance(ay, (int, float)):
-        return f"Baz senaryoda nakit pisti: {ay:.1f} ay."
+    view = runway_for_display(forecast)
+    if view.months is not None:
+        return f"Baz senaryoda nakit pisti: {view.text()}."
     return "Bu analizde nakit pisti hesaplanmadı."
 
 

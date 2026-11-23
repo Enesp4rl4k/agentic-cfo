@@ -99,8 +99,8 @@ def _detect_cross_risks(
     audit_coverage          = audit.get("coverage_rate")
 
     # ── Risk 1: Infra waste while cash is short ────────────────────────────────
-    if infra_waste > 0 and runway is not None and runway <= 6:
-        severity = "critical" if runway <= 3 else "high"
+    if infra_waste > 0 and runway_view.level:
+        severity = runway_view.severity
         monthly_savings = infra_waste / 100
         risks.append({
             "risk_id": "cross-infra-cash-runway",
@@ -187,7 +187,7 @@ def _detect_cross_risks(
         })
 
     # ── Risk 6 (CMO): Negative unit economics — CAC > LTV ─────────────────────
-    if ltv_cac > 0 and ltv_cac < 1.0 and runway is not None and runway <= 12:
+    if ltv_cac > 0 and ltv_cac < 1.0 and runway_view.watch:
         risks.append({
             "risk_id": "cross-cmo-negative-unit-econ",
             "title": "Negative unit economics accelerating cash burn",
@@ -220,7 +220,7 @@ def _detect_cross_risks(
         })
 
     # ── Risk 8 (CMO): Poor ROAS + low cash runway ─────────────────────────────
-    if roas > 0 and roas < 1.5 and runway is not None and runway <= 6:
+    if roas > 0 and roas < 1.5 and runway_view.level:
         ad_spend = mkt.get("total_spend_cents", 0)
         risks.append({
             "risk_id": "cross-cmo-roas-runway",
@@ -233,7 +233,7 @@ def _detect_cross_risks(
                 f"ROAS {roas:.2f}x with {runway:.1f} months cash runway. "
                 "Pause underperforming campaigns immediately to conserve cash."
             ),
-            "urgency": "now" if runway <= 3 else "30d",
+            "urgency": "now" if runway_view.attention else "30d",
         })
 
     # ── Risk 9 (COO): SLA breaches + revenue at risk ──────────────────────────
@@ -271,12 +271,12 @@ def _detect_cross_risks(
         })
 
     # ── Risk 11 (COO): Ops crisis score + critical fin alert ──────────────────
-    if ops_score is not None and ops_score >= 7.0 and runway is not None and runway <= 6:
+    if ops_score is not None and ops_score >= 7.0 and runway_view.level:
         risks.append({
             "risk_id": "cross-coo-ops-runway",
             "title": "Operational breakdown while cash runway is short",
             "domains": ["cfo", "coo"],
-            "severity": "critical",
+            "severity": runway_view.cap("critical"),
             "financial_impact_cents": 0,
             "tech_impact": f"Ops health score {ops_score}/10 — operational execution at risk",
             "recommended_action": (
@@ -332,7 +332,7 @@ def _detect_cross_risks(
             })
 
     # ── Risk 14 (Compliance): Critical violations while cash is tight ─────────
-    if critical_violations > 0 and runway is not None and runway <= 12:
+    if critical_violations > 0 and runway_view.watch:
         risks.append({
             "risk_id": "cross-compliance-violations-cash",
             "title": "Critical compliance violations creating regulatory penalty risk",
@@ -405,14 +405,13 @@ def _detect_cross_risks(
     if (
         enterprise_risk_score is not None
         and enterprise_risk_score >= 7.0
-        and runway is not None
-        and runway <= 6
+        and runway_view.level
     ):
         risks.append({
             "risk_id": "cross-risk-critical-runway",
             "title": "Critical enterprise risk posture while cash runway is short",
             "domains": ["risk", "cfo"],
-            "severity": "critical",
+            "severity": runway_view.cap("critical"),
             "financial_impact_cents": 0,
             "tech_impact": (
                 f"Enterprise risk score {enterprise_risk_score}/10 "

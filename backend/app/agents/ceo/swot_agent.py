@@ -89,20 +89,20 @@ def _extract_swot(
         ))
 
     if runway is not None:
-        if runway > 18:
+        if runway_view.comfortable:
             strengths.append(_item(
                 f"Guclu nakit pozisyonu: nakit omru {runway_view.text()}",
                 "cfo", 7,
                 f"Nakit omru {runway_view.text()} -- yatirim ve buyume kapasitesi var",
                 "Stratejik yatirimlari degerlendir",
             ))
-        elif runway < 6:
+        elif runway_view.level:
             threats.append(_item(
                 (
-                    f"Kritik nakit riski: {runway_view.text()}" if runway_view.proven
+                    f"Kritik nakit riski: {runway_view.text()}" if runway_view.level == "critical"
                     else f"Dusuk nakit omru: {runway_view.text()}"
                 ),
-                "cfo", 10 if runway_view.proven else 6,
+                "cfo", 10 if runway_view.level == "critical" else 6,
                 f"Mevcut burn rate ile nakit omru {runway_view.text()}",
                 "Acil fundraising veya maliyet kesintisi gerekli",
             ))

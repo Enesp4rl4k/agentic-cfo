@@ -195,6 +195,8 @@ export type MessageTree = {
     runwayAttention: string;
     runwayUploadLink: string;
     runwayUnderMonth: string;
+    runwayCashGone: string;
+    runwayCashGoneAssumed: string;
   };
   takvim: {
     title: string;
@@ -1508,6 +1510,8 @@ export type MessageTree = {
       heading: string;
       uploadLink: string;
       underMonth: string;
+      cashGone: string;
+      cashGoneAssumed: string;
     };
   };
   integrations: {
@@ -3563,6 +3567,8 @@ export const en: MessageTree = {
     runwayAttention: "Attention",
     runwayUploadLink: "Upload a new statement",
     runwayUnderMonth: "Under 1 month",
+    runwayCashGone: "Cash has run out",
+    runwayCashGoneAssumed: "Cash appears to have run out per the last statement",
   },
   takvim: {
     title: "Payment calendar",
@@ -4964,6 +4970,8 @@ export const en: MessageTree = {
       heading: "Cash runway",
       uploadLink: "Upload a new statement",
       underMonth: "Under 1 month",
+      cashGone: "Cash has run out",
+      cashGoneAssumed: "Cash appears to have run out per the last statement",
     },
   },
   integrations: {

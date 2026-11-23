@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.services.runway import level_for_months
 from app.services.semantic.catalog import HEALTH_WEIGHTS
 from app.services.semantic.types import (
     BriefFinding,
@@ -103,10 +104,12 @@ def build_from_snapshot(
     findings: list[BriefFinding] = []
 
     runway = _num(values.get("finance.runway_months"))
-    if runway is not None and runway < 6:
+    # The snapshot carries a runway only when it is KNOWN; the class is the service's.
+    runway_level = level_for_months(runway, proven=True)
+    if runway_level:
         findings.append(
             BriefFinding(
-                severity="critical" if runway < 3 else "high",
+                severity="critical" if runway_level == "critical" else "high",
                 domain="finance",
                 statement=(
                     f"Nakit koşu süresi {runway:.1f} ay — 6 aylık güvenlik eşiğinin altında."
@@ -259,7 +262,7 @@ def build_from_snapshot(
     ]
 
     rec_idx = 0
-    if runway is not None and runway < 6:
+    if runway_level:
         rec_idx = 0
     elif roas is not None and roas < 1.5:
         rec_idx = 1

@@ -22,6 +22,8 @@ from datetime import UTC
 from typing import Any
 
 from app.agents.state import AgentRunConfig, CFOState, SkillResult
+from app.services.runway import RUNWAY_CRITICAL_MONTHS, RUNWAY_WARNING_MONTHS
+from app.services.runway_display import runway_for_display
 
 logger = logging.getLogger(__name__)
 
@@ -32,8 +34,6 @@ THRESHOLDS = {
     "gross_margin_warning": 0.20,     # <20% gross margin
     "net_margin_critical": -0.05,     # negative net margin >5%
     "net_margin_warning": 0.02,       # <2% net margin
-    "cashflow_runway_critical": 2,    # <2 months runway
-    "cashflow_runway_warning": 6,     # <6 months runway
     "revenue_mom_decline_critical": -0.20,  # -20% MoM
     "revenue_mom_decline_warning": -0.10,   # -10% MoM
     "budget_variance_warning": 15.0,  # >15% over budget
@@ -110,37 +110,23 @@ def _check_cashflow(cashflow: dict[str, Any], forecast: dict[str, Any]) -> list[
             "metric": "operating_cashflow",
         })
 
-    # Runway from base scenario
-    base = forecast.get("scenarios", {}).get("base", {})
-    runway = base.get("runway_months")
-    # Only the measured runway (a proven balance over complete months) may be critical; the base
-    # scenario is a projection with assumed growth, a warning at most.
-    measured = forecast.get("runway") or {}
-    if runway is not None:
-        if runway <= THRESHOLDS["cashflow_runway_critical"]:
-            alerts.append({
-                "type": "liquidity",
-                "severity": "critical" if measured.get("level") == "critical" else "warning",
-                "message": (
-                    f"Cash runway is only {runway} month(s) under base scenario. "
-                    f"Immediate financing or cost action required."
-                ),
-                "threshold": THRESHOLDS["cashflow_runway_critical"],
-                "actual_value": runway,
-                "metric": "runway_months",
-            })
-        elif runway <= THRESHOLDS["cashflow_runway_warning"]:
-            alerts.append({
-                "type": "liquidity",
-                "severity": "warning",
-                "message": (
-                    f"Cash runway is {runway} months. "
-                    f"Consider arranging credit facility or reducing burn."
-                ),
-                "threshold": THRESHOLDS["cashflow_runway_warning"],
-                "actual_value": runway,
-                "metric": "runway_months",
-            })
+    # The runway's class is the service's (`runway_display.runway_for_display`: the block's own level, capped at
+    # "warning" unless the balance is known and current). Nothing here decides a threshold of its own.
+    view = runway_for_display(forecast)
+    if view.level:
+        critical = view.level == "critical"
+        alerts.append({
+            "type": "liquidity",
+            "severity": "critical" if critical else "warning",
+            "message": (
+                f"{view.label}: Cash runway (nakit ömrü) {view.text()}. "
+                + ("Acil finansman ya da maliyet aksiyonu gerekir." if critical
+                   else "Kredi imkânı ya da harcama hızını azaltmak değerlendirilmeli.")
+            ),
+            "threshold": RUNWAY_CRITICAL_MONTHS if critical else RUNWAY_WARNING_MONTHS,
+            "actual_value": view.months,
+            "metric": "runway_months",
+        })
 
     return alerts
 

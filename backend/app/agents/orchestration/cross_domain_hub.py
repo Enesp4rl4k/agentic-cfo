@@ -159,11 +159,10 @@ class CrossDomainHub:
         def has(*names: str) -> bool:
             return all(n in m for n in names)
 
-        if self.runway_months is not None and has("ayrilma_orani") \
-                and self.runway_months < 4 and m["ayrilma_orani"] > 0.20:
+        if self.runway_view.level and has("ayrilma_orani") and m["ayrilma_orani"] > 0.20:
             out.append(CrossDomainInsight(
                 id="talent_cash_cascade", title="Nakit sıkışıyor, çalışanlar ayrılıyor",
-                domains=["cfo", "chro"], severity=self.runway_view.cap("critical"), insight_type="risk",
+                domains=["cfo", "chro"], severity=self.runway_view.severity or "high", insight_type="risk",
                 description=(f"Nakit ömrü {self.runway_view.text()} ve personelin "
                              f"%{m['ayrilma_orani']*100:.0f}'i ayrılmış."),
                 evidence=[f"CFO tahmini: nakit ömrü {self.runway_view.text()}",

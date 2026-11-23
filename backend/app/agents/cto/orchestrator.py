@@ -34,6 +34,7 @@ from app.agents.cto.state import (
 )
 from app.agents.cto.tech_debt_agent import run_tech_debt_agent
 from app.agents.cto.velocity_agent import run_velocity_agent
+from app.services.runway import level_for_months
 
 logger = logging.getLogger(__name__)
 
@@ -197,9 +198,12 @@ async def node_cto_summary(state: CTOState, config: dict) -> CTOState:
 
         if cfo_sum.get("runway_months") is not None:
             runway = cfo_sum["runway_months"]
+            # The CFO summary carries a runway only when it is KNOWN (`runway_display`); the class is the service's.
+            level = level_for_months(runway, proven=True)
             cross_context_lines.append(
                 f"Nakit Ömrü (CFO): {runway:.1f} ay"
-                + (" — KRİTİK: Teknik borç yatırımlarını ertelemek gerekebilir" if runway < 6 else "")
+                + (f" — {'KRİTİK' if level == 'critical' else 'UYARI'}: Teknik borç yatırımlarını ertelemek gerekebilir"
+                   if level else "")
             )
         if cfo_sum.get("critical_anomalies"):
             cross_context_lines.append(

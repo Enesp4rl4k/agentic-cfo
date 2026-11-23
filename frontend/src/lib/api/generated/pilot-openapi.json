@@ -1477,6 +1477,11 @@
             ],
             "title": "Runway Basis"
           },
+          "runway_cash_gone": {
+            "default": false,
+            "title": "Runway Cash Gone",
+            "type": "boolean"
+          },
           "runway_level": {
             "anyOf": [
               {
@@ -2323,6 +2328,11 @@
           "beyond_horizon": {
             "default": false,
             "title": "Beyond Horizon",
+            "type": "boolean"
+          },
+          "cash_gone": {
+            "default": false,
+            "title": "Cash Gone",
             "type": "boolean"
           },
           "currency": {

@@ -752,6 +752,11 @@ export interface components {
             runway_attention: boolean;
             /** Runway Basis */
             runway_basis?: string | null;
+            /**
+             * Runway Cash Gone
+             * @default false
+             */
+            runway_cash_gone: boolean;
             /** Runway Level */
             runway_level?: string | null;
             /**
@@ -1064,6 +1069,11 @@ export interface components {
              * @default false
              */
             beyond_horizon: boolean;
+            /**
+             * Cash Gone
+             * @default false
+             */
+            cash_gone: boolean;
             /** Currency */
             currency?: string | null;
             /** Identity Note */
