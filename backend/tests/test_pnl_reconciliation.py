@@ -36,6 +36,7 @@ MIX = [
     {"id": "6", "amount_cents": 50_000, "type": "expense", "category": "tax",
      "description": "Gelir vergisi ödemesi"},
 ]
+MIX = [{**t, "currency": "TRY"} for t in MIX]
 
 
 def _journal(txs):

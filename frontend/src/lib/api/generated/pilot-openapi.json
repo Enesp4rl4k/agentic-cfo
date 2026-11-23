@@ -1745,6 +1745,16 @@
           "receivable_cents": {
             "title": "Receivable Cents",
             "type": "integer"
+          },
+          "recurring_payable_cents": {
+            "default": 0,
+            "title": "Recurring Payable Cents",
+            "type": "integer"
+          },
+          "tax_payable_cents": {
+            "default": 0,
+            "title": "Tax Payable Cents",
+            "type": "integer"
           }
         },
         "required": [

@@ -29,7 +29,8 @@ DEMO = Path(__file__).resolve().parents[2] / "demo" / "data" / "logo_tiger_2024.
 def _txs() -> list[dict]:
     txs = _tablo_ekstresi(str(DEMO))
     assert txs, "the demo export did not parse"
-    return txs
+    # The export states no currency; ingestion would settle it (hold.resolve_currency): lira here.
+    return [{**t, "currency": "TRY"} for t in txs]
 
 
 def test_demo_pnl_matches_the_hand_calculation():
@@ -66,9 +67,9 @@ def test_a_salary_row_on_a_sales_account_is_an_expense_not_revenue():
 def test_balance_sheet_cash_is_neither_revenue_nor_expense():
     """A loan drawn (credit on 300) and a KDV payment move cash, not profit."""
     pnl = _compute_pnl([
-        {"type": "income", "category": "revenue", "amount_cents": 100_00, "transaction_date": "2024-01-02"},
-        {"type": "income", "category": "transfer", "amount_cents": 500_00, "transaction_date": "2024-01-03"},
-        {"type": "expense", "category": "tax_payment", "amount_cents": 18_00, "transaction_date": "2024-01-26"},
+        {"type": "income", "category": "revenue", "amount_cents": 100_00, "transaction_date": "2024-01-02", "currency": "TRY"},
+        {"type": "income", "category": "transfer", "amount_cents": 500_00, "transaction_date": "2024-01-03", "currency": "TRY"},
+        {"type": "expense", "category": "tax_payment", "amount_cents": 18_00, "transaction_date": "2024-01-26", "currency": "TRY"},
     ])
     assert (pnl["revenue"], pnl["total_expenses"], pnl["ebitda"]) == (100_00, 0, 100_00)
 

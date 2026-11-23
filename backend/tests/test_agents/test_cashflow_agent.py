@@ -9,6 +9,8 @@ SAMPLE_TRANSACTIONS = [
     {"type": "expense", "category": "salary",   "amount_cents": 200_000, "transaction_date": "2024-02-20"},
     {"type": "expense", "category": "loan",     "amount_cents": 100_000, "transaction_date": "2024-02-25"},
 ]
+# After ingestion every row has a currency; a row with none is "unknown", not the base.
+SAMPLE_TRANSACTIONS = [{**t, "currency": "TRY"} for t in SAMPLE_TRANSACTIONS]
 
 
 def test_cashflow_operating():

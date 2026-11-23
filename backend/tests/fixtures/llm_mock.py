@@ -147,6 +147,7 @@ def make_sample_transactions(n: int = 20) -> list[dict[str, Any]]:
             "description": f"İşlem {i}",
             "vendor": vendors[i % len(vendors)],
             "amount_cents": rng.randint(10_000, 500_000),
+            "currency": "TRY",
         })
     return txs
 

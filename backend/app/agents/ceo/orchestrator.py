@@ -366,11 +366,16 @@ async def _run_cfo_from_transactions(
     from app.agents.forecast_agent import run_forecast
     from app.agents.pnl_agent import run_pnl
     from app.agents.state import DEFAULT_RUN_CONFIG
+    from app.core.currency_totals import DEFAULT_BASE
 
     # Normalize transaction types: frontend may send "revenue" but agents expect "income"
     normalized: list[dict[str, Any]] = []
     for t in transactions:
         tx = dict(t)
+        if not str(tx.get("currency") or "").strip():
+            # The documented schema carries no currency: lira, said on the row as an assumption
+            # (like `hold.resolve_currency`), not left to a silent default in the totals.
+            tx["currency"], tx["currency_assumed"] = DEFAULT_BASE, True
         if tx.get("type") == "revenue":
             tx["type"] = "income"
         normalized.append(tx)

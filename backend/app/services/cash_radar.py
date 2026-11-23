@@ -40,6 +40,7 @@ from app.services.bank_balance import aged_basis, balance_age
 from app.services.briefing_held import held_line as _held_line
 from app.services.company_runway import company_runway
 from app.services.payment_plan import effective_dates
+from app.services.radar_currency import other_currency_projections
 from app.services.radar_held import BasisSplit, HeldDocuments, held_documents
 from app.services.reconciliation import payment_behaviour
 
@@ -369,7 +370,7 @@ async def compute_cash_radar(
         project_recurring_obligations,
     )
 
-    recurring_obs = await detect_recurring_obligations(db, org_id)
+    recurring_obs = await detect_recurring_obligations(db, org_id, cur)
     recurring_projections = project_recurring_obligations(recurring_obs, anchor, HORIZON_WEEKS)
     total_recurring_cents = 0
     for r_proj in recurring_projections:
@@ -399,7 +400,7 @@ async def compute_cash_radar(
     # 2. Statutory tax & SGK liabilities
     from app.services.tax_calendar import project_tax_obligations
 
-    tax_projections = await project_tax_obligations(db, org_id, anchor, HORIZON_WEEKS)
+    tax_projections = await project_tax_obligations(db, org_id, anchor, HORIZON_WEEKS, cur)
     total_tax_cents = 0
     for t_proj in tax_projections:
         idx = (t_proj.expected_date - anchor).days // 7
@@ -441,6 +442,8 @@ async def compute_cash_radar(
     if waiting:
         # Extracted rows a person has not yet accepted: not in any figure here.
         not_included.append(f"{waiting} kayıt incelemenizi bekliyor")
+    for code, v in (await other_currency_projections(db, org_id, cur, anchor, HORIZON_WEEKS)).items():
+        foreign_items.setdefault(code, {"receivable_cents": 0, "payable_cents": 0, "count": 0}).update(v)
     not_included.extend(currency_notes(effective.state, cur, foreign_items))
     held = await held_documents(db, org_id, anchor, ranges, cur)
     if held is not None:

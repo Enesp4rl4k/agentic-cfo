@@ -154,3 +154,37 @@ async def test_a_changed_proposal_goes_back_to_the_accountant(client) -> None:
         assert {str(r.durum) for r in rows} == {
             OnayDurumu.ONAYLANDI.value, OnayDurumu.BEKLIYOR.value,
         }
+
+
+_SAME_DAY = {"transaction_date": "2026-09-01", "amount_kurus": 150_000, "type": "expense",
+             "description": "Kira Eylül", "vendor": "Ofis A.Ş."}
+
+
+def test_the_same_payment_in_two_currencies_gets_two_entry_ids() -> None:
+    """The accounting agent runs once per currency and `sira` restarts at 0 in each run, so the
+    currency has to be part of what identifies the source: approvals are keyed by `kayit_id`."""
+    try_id = kararli_kayit_id({**_SAME_DAY, "currency": "TRY"})
+    usd_id = kararli_kayit_id({**_SAME_DAY, "currency": "USD"})
+    unknown_id = kararli_kayit_id({**_SAME_DAY, "currency": ""})
+    assert len({try_id, usd_id, unknown_id}) == 3
+    assert kararli_kayit_id({**_SAME_DAY, "currency": "usd"}) == usd_id  # case does not matter
+
+
+def test_a_lira_entry_keeps_the_id_it_was_stored_with() -> None:
+    """Entries stored before currencies were part of the id (TRY, or no currency on the row) must keep it,
+    or every existing approval would stop matching. The value is pinned: it is what the old code gave."""
+    import uuid
+
+    from app.agents.accounting import kayit_kimlik as de
+
+    old = str(uuid.uuid5(de._KAYIT_NS, "2026-09-01|150000|expense|Kira Eylül|Ofis A.Ş.||#0"))
+    assert kararli_kayit_id(_SAME_DAY) == old
+    assert kararli_kayit_id({**_SAME_DAY, "currency": "TRY"}) == old
+    assert kararli_kayit_id({**_SAME_DAY, "currency": " try "}) == old
+
+
+def test_a_batch_in_two_currencies_keeps_every_entry_apart() -> None:
+    engine = DoubleEntryEngine()
+    rows = [{**_SAME_DAY, "currency": "TRY"}, {**_SAME_DAY, "currency": "USD"}]
+    ids = [e.kayit_id for e in engine.create_entries_batch(rows, [_thp()] * 2)]
+    assert len(set(ids)) == 2
