@@ -9,13 +9,13 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.runway import level_for_months
 from app.services.semantic.types import MetricPoint
 
 logger = logging.getLogger(__name__)
 
 REVENUE_INFLOW_REL_THRESHOLD = 0.25
 GROWTH_VS_CASH_ROAS_MIN = 3.0
-GROWTH_VS_CASH_RUNWAY_MAX = 4.0
 
 
 def _num(value: Any) -> float | None:
@@ -69,7 +69,7 @@ def detect_metric_conflicts(metrics: list[MetricPoint]) -> list[dict[str, Any]]:
         roas_n is not None
         and run_n is not None
         and roas_n >= GROWTH_VS_CASH_ROAS_MIN
-        and run_n < GROWTH_VS_CASH_RUNWAY_MAX
+        and level_for_months(run_n, proven=True)  # the snapshot carries a runway only when it is KNOWN
     ):
         found.append(
             {

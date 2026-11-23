@@ -24,6 +24,12 @@ describe("cross-agent runway rules", () => {
     expect(screen.getByText(/2\.5 aylık runway/)).toBeTruthy();
   });
 
+  it("keeps the burn insight in the watch band as medium, and never fires the talent-cash cascade there", () => {
+    show({ status: "computed", level: null, watch: true, runway_months: 8 });
+    expect(screen.getByText("Nakit Yakma Uyarısı")).toBeTruthy();
+    expect(screen.queryByText("Yetenek-Nakit Kaskadı")).toBeNull();
+  });
+
   it("fires none when the runway has no class or is not measured, whatever the scenario number says", () => {
     show({ status: "no_balance", level: null, runway_months: null });
     expect(screen.queryByText("Nakit Yakma Uyarısı")).toBeNull();

@@ -1123,6 +1123,11 @@ export interface components {
              * @default /upload
              */
             upload_path: string;
+            /**
+             * Watch
+             * @default false
+             */
+            watch: boolean;
         };
         /** ShortfallOut */
         ShortfallOut: {

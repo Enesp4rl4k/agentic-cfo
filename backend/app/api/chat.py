@@ -494,6 +494,7 @@ def _build_agent_system_prompt(
         ]
         view = runway_for_display(forecast)
         lines.append(f"Nakit Runway: {view.text()}")
+        lines.append(view.class_line())
         if not view.proven:
             lines.append(PROMPT_RULE)
         alerts = cfo.get("alerts", [])

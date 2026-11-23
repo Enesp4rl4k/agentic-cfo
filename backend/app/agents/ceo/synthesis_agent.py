@@ -187,7 +187,7 @@ def _detect_cross_risks(
         })
 
     # ── Risk 6 (CMO): Negative unit economics — CAC > LTV ─────────────────────
-    if ltv_cac > 0 and ltv_cac < 1.0 and runway_view.watch:
+    if ltv_cac > 0 and ltv_cac < 1.0 and runway_view.in_sight:
         risks.append({
             "risk_id": "cross-cmo-negative-unit-econ",
             "title": "Negative unit economics accelerating cash burn",
@@ -332,7 +332,7 @@ def _detect_cross_risks(
             })
 
     # ── Risk 14 (Compliance): Critical violations while cash is tight ─────────
-    if critical_violations > 0 and runway_view.watch:
+    if critical_violations > 0 and runway_view.in_sight:
         risks.append({
             "risk_id": "cross-compliance-violations-cash",
             "title": "Critical compliance violations creating regulatory penalty risk",

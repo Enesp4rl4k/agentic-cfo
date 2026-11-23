@@ -75,6 +75,27 @@ def is_within(months: float | None, limit: float) -> bool:
     return months is not None and round(float(months), 1) <= limit
 
 
+def is_watch(months: float | None) -> bool:
+    """The low-key band between the warning class and a year (RUNWAY_WARNING_MONTHS < months <= RUNWAY_WATCH_MONTHS):
+    worth watching, NEVER an alert (no severity, no 'DİKKAT'/'KRİTİK', nothing sent)."""
+    if months is None:
+        return False
+    shown = round(float(months), 1)
+    return RUNWAY_WARNING_MONTHS < shown <= RUNWAY_WATCH_MONTHS
+
+
+def is_in_sight(months: float | None) -> bool:
+    """A class or the watch band: everything that was ever shown for a runway of a year or less."""
+    return level_for_months(months, proven=False) is not None or is_watch(months)
+
+
+def watch_phrase(months: float, *, en: bool = False) -> str:
+    """The neutral wording of the watch band: 'Nakit pisti 8,0 ay — izlemede' / 'Cash runway 8.0 months — on watch'."""
+    if en:
+        return f"Cash runway {months:.1f} months — on watch"
+    return f"Nakit pisti {months:.1f}".replace(".", ",") + " ay — izlemede"
+
+
 def is_comfortable(months: float | None) -> bool:
     """Beyond RUNWAY_COMFORT_MONTHS the cash position is a strength (None = unknown: never)."""
     return months is not None and round(float(months), 1) > RUNWAY_COMFORT_MONTHS
@@ -263,6 +284,7 @@ def _block(status: str, message: str, opening: dict[str, Any] | None, **extra: A
         # RUNWAY_ATTENTION_MONTHS (known or assumed), which is said first and styled apart from neutral cards.
         "reasons": balance_reasons(opening),
         "attention": False,
+        "watch": False,  # 6 < months <= 12: shown neutrally ("izlemede"), never an alert
         "cash_gone": False,  # a computed runway whose balance is already at or below zero: said as "nakit bitmiş"
         "upload_path": UPLOAD_PATH,
         "avg_monthly_net_cents": None,
@@ -476,6 +498,7 @@ def compute_runway(
         level=level,
         attention=not beyond and runway <= RUNWAY_ATTENTION_MONTHS,
         cash_gone=cash_gone(balance),
+        watch=not beyond and is_watch(runway),
     ) | {"currency": currency, "reasons": [*balance_reasons(opening), *(
         [{"code": "edge_tolerance", "text": assumed_text.strip()}] if assumed_text else [])]}
 
@@ -536,6 +559,7 @@ def runway_line(block: dict[str, Any]) -> str:
     else:
         m = block["runway_months"]
         head = "Nakit pisti " + (under_a_month(m) or "yaklaşık " + f"{m:.1f}".replace(".", ",") + " ay")
+        head += " — izlemede" if block.get("watch") else ""
     # Certainty decides the word, prominence the position: known and low -> "KRİTİK"; low on an assumption
     # -> "DİKKAT: Son ekstreye göre ..." (never "kritik", never "kanıtlı"); both are said first.
     if block.get("level") == "critical":

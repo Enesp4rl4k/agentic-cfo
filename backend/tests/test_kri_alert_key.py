@@ -118,3 +118,30 @@ async def test_an_assumed_low_runway_is_alerted_as_attention_capped_and_a_known_
         assert ("dikkat" in text) == (severity == "high")
         if severity == "high":
             assert "kritik" not in text and "kanıtlı" not in text and "kırmızı" not in text
+
+
+async def test_known_balance_with_an_edge_tolerance_is_critical_on_every_surface(monkeypatch) -> None:
+    """One class: the service says critical (only an assumed BALANCE caps it); the alert agent, the KRI and the proactive
+    alert all read that class, none applies an extra cap of its own."""
+    from app.agents.alert_agent import _check_cashflow
+    from app.agents.risk.gercek_kri import cfo_kri
+    from app.services.runway import compute_runway
+
+    series = [{"month": f"2026-0{m}", "in": 0, "out": 5_000_00, "net": -5_000_00, "complete": True} for m in (1, 2, 3)]
+    series[0]["assumed"] = [{"edge": "start", "days": 2}]
+    opening = {"balance_cents": 7_500_00, "as_of": "2026-03-31", "age_days": 3, "stale": False, "stale_after_days": 7,
+               "filename": "e.csv", "basis": "known", "basis_note": None, "accounts": []}
+    block = compute_runway(opening, {"monthly_series": series}, "TRY")
+    forecast = {"scenarios": {"base": {"runway_months": block["runway_months"]}}, "runway": block}
+    assert block["basis"] == "assumed" and block["level"] == "critical"
+
+    assert [a["severity"] for a in _check_cashflow({"operating": 0}, forecast)] == ["critical"]
+    kri = next(k for k in cfo_kri(None, forecast) if k["name"] == "Nakit Ömrü")
+    assert kri["status"] == "red" and kri["level"] == "critical"
+
+    async def channels(self, org_id, severity):
+        return ["in_app"]
+
+    monkeypatch.setattr(ProactiveAlertOrchestrator, "_get_alert_channels", channels)
+    alert = await ProactiveAlertOrchestrator(db=None, slot="2025-02-03T09")._create_kri_alert("org-1", kri, "critical")
+    assert alert is not None and alert.severity == "critical" and "Kırmızı" in alert.title

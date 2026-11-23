@@ -92,6 +92,8 @@ export interface RunwayBlock {
   level: "critical" | "warning" | null;
   /** The balance is already at or below zero: said as "cash has run out", never as a month count. */
   cash_gone?: boolean;
+  /** 6 < months <= 12: shown neutrally ("izlemede"), never an alert. */
+  watch?: boolean;
   /** The sentence the backend writes: the balance and its date, the burn, or why there is no runway. */
   message: string;
 }

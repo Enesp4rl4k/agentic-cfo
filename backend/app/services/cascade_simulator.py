@@ -374,7 +374,7 @@ class CascadeSimulator:
                 f"Aylık burn rate ₺{burn:,.0f}."
             ),
             quantified_impact={
-                "cash_shortfall_try": round(burn * max(0, 6 - runway_months)),
+                "cash_shortfall_try": round(burn * max(0, RUNWAY_WARNING_MONTHS - runway_months)),
                 "burn_rate_monthly_try": round(burn),
                 "runway_months": round(runway_months, 1),
             },

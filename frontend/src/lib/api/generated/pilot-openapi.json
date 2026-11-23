@@ -2468,6 +2468,11 @@
             "default": "/upload",
             "title": "Upload Path",
             "type": "string"
+          },
+          "watch": {
+            "default": false,
+            "title": "Watch",
+            "type": "boolean"
           }
         },
         "required": [

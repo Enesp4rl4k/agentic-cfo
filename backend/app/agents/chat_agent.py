@@ -277,6 +277,7 @@ def _build_executive_context(
                 f"Net Income: {amount(fin_summary.get('net_income_cents', 0)/100, cur)}"
                 f" ({fin_summary.get('net_margin', 0)*100:.1f}% margin)",
                 f"Cash Runway: {view_from_fin(fin_summary).text()}",
+                view_from_fin(fin_summary).class_line(),
                 PROMPT_RULE,
             ]
 

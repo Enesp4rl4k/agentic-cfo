@@ -21,7 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from app.services.runway import RUNWAY_WATCH_MONTHS, is_within, level_for_months
+from app.services.runway import is_watch, level_for_months
 from app.services.runway_display import runway_for_display
 
 # Modelling assumptions — rule-based, not measured. Returned with every result.
@@ -136,7 +136,7 @@ def _risk_level(stressed_runway: float, *, proven: bool) -> str:
         return "CRITICAL"
     if level == "warning":
         return "HIGH"
-    return "MODERATE" if is_within(stressed_runway, RUNWAY_WATCH_MONTHS) else "LOW"
+    return "MODERATE" if is_watch(stressed_runway) else "LOW"
 
 
 def recommendation_codes(shock: ShockInputs) -> list[str]:

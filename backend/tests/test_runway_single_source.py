@@ -43,25 +43,31 @@ LIMIT = get_settings().radar_balance_stale_after_days
 # ── 1. architecture fitness ──────────────────────────────────────────────────────────────────────────────────────
 
 SERVICE = "app/services/runway.py"
-_RUNWAYISH = re.compile(r"runway|pist|months_left|cash_months", re.IGNORECASE)
-_BOUNDARIES = {"RUNWAY_CRITICAL_MONTHS", "RUNWAY_WARNING_MONTHS", "RUNWAY_ATTENTION_MONTHS", "RUNWAY_WATCH_MONTHS",
-               "RUNWAY_COMFORT_MONTHS"}
+_STRONG = re.compile(r"runway|pist|months_left|cash_months|run_n|nakit_omru|cash_life", re.IGNORECASE)
+_WEAK = re.compile(r"^(months|ay)$", re.IGNORECASE)  # only inside a function that talks about a runway
+_ORDER = (ast.Lt, ast.LtE, ast.Gt, ast.GtE)
+
+# Display-only or unrelated comparisons that are NOT a runway class, each with its reason. Keyed by (file, source).
+ALLOWED: dict[tuple[str, str], str] = {
+    ("app/agents/forecast_agent.py", "len(series) < RUNWAY_MIN_MONTHS"):
+        "how many months of history exist (data sufficiency), not how long cash lasts",
+    ("app/services/materiality.py", "len(months) < MIN_MONTHS"):
+        "how many statement months the sample has (materiality sample size), not how long cash lasts",
+    ("app/services/macro_stress.py", "months <= 0"):
+        "months OBSERVED in the statements (a divisor guard), not a runway",
+}
 
 
-def _name(node: ast.AST) -> str:
-    if isinstance(node, ast.Name):
-        return node.id
-    if isinstance(node, ast.Attribute):
-        return node.attr
-    if isinstance(node, ast.Subscript):
-        key = node.slice
-        return str(key.value) if isinstance(key, ast.Constant) else _name(node.value)
-    if isinstance(node, ast.Call):
-        if isinstance(node.func, ast.Attribute) and node.func.attr == "get" and node.args \
-                and isinstance(node.args[0], ast.Constant):
-            return str(node.args[0].value)
-        return _name(node.func)
-    return ""
+def _idents(node: ast.AST) -> list[str]:
+    out: list[str] = []
+    for x in ast.walk(node):
+        if isinstance(x, ast.Name):
+            out.append(x.id)
+        elif isinstance(x, ast.Attribute):
+            out.append(x.attr)
+        elif isinstance(x, ast.Constant) and isinstance(x.value, str):
+            out.append(x.value)  # a subscript / .get key such as "runway_months"
+    return out
 
 
 def _is_number(node: ast.AST) -> bool:
@@ -71,22 +77,34 @@ def _is_number(node: ast.AST) -> bool:
 
 
 def own_thresholds(source: str, filename: str = "<src>") -> list[tuple[int, str]]:
-    """Places that decide a runway class on their own: a runway figure compared with a bare number or with one of the
-    service's boundary constants, or handed to a call together with bare numbers (`_status(runway, 6.0, 3.0)`)."""
+    """Places that decide a runway class on their own, found by walking Compare/Call nodes:
+
+    (a) an ORDERING comparison (<, <=, >, >=) with a runway-ish identifier on either side: `runway < 6`,
+        `view.months`-style attributes and subscripts such as `cfo_sum['runway_months'] <= 3`, `round(runway, 1) <= 3`,
+        `runway_months <= THRESHOLD`, `run_n < MAX`;
+    (b) the same with a bare `months` / `ay` inside a function that talks about a runway;
+    (c) a runway figure handed to a call together with bare numbers (`_status(runway, 6.0, 3.0)`).
+    An alias (`x = runway; x < 3`) is not followed: review catches that one."""
+    tree = ast.parse(source, filename)
+    src_lines = source
     found: list[tuple[int, str]] = []
-    for node in ast.walk(ast.parse(source, filename)):
-        if isinstance(node, ast.Compare):
-            sides = [node.left, *node.comparators]
-            if any(_RUNWAYISH.search(_name(s)) for s in sides) and any(
-                _is_number(s) or (isinstance(s, ast.Name) and s.id in _BOUNDARIES) for s in sides
-            ):
-                found.append((node.lineno, ast.unparse(node)[:80]))
-        elif isinstance(node, ast.Call):
-            args = [*node.args, *(k.value for k in node.keywords)]
-            if sum(_is_number(a) for a in args) >= 2 and any(_RUNWAYISH.search(_name(a)) for a in args) \
-                    and not _RUNWAYISH.search(_name(node.func)):
-                found.append((node.lineno, ast.unparse(node)[:80]))
-    return found
+    for fn in ast.walk(tree):
+        if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Module)):
+            continue
+        segment = ast.get_source_segment(src_lines, fn) if not isinstance(fn, ast.Module) else ""
+        runway_context = bool(re.search(r"runway|pist", segment or "", re.IGNORECASE))
+        for node in ast.walk(fn):
+            if isinstance(node, ast.Compare) and any(isinstance(o, _ORDER) for o in node.ops):
+                ids = [i for s in (node.left, *node.comparators) for i in _idents(s)]
+                if any(_STRONG.search(i) for i in ids) or (runway_context and any(_WEAK.match(i) for i in ids)):
+                    found.append((node.lineno, ast.unparse(node)[:80]))
+            elif isinstance(node, ast.Call):
+                args = node.args  # positional only: `f(runway, 6.0, 3.0)`; keyword settings are not thresholds
+                if sum(_is_number(a) for a in args) >= 2 and any(
+                    _STRONG.search(i) for a in args if not _is_number(a) for i in _idents(a)
+                ) and not _STRONG.search(" ".join(_idents(node.func))):
+                    found.append((node.lineno, ast.unparse(node)[:80]))
+    return sorted(set(found))
 
 
 def _violations() -> dict[str, list[tuple[int, str]]]:
@@ -95,7 +113,8 @@ def _violations() -> dict[str, list[tuple[int, str]]]:
         rel = path.relative_to(_BACKEND).as_posix()
         if rel == SERVICE:
             continue
-        hits = own_thresholds(path.read_text(encoding="utf-8", errors="replace"), rel)
+        hits = [h for h in own_thresholds(path.read_text(encoding="utf-8", errors="replace"), rel)
+                if (rel, h[1]) not in ALLOWED]
         if hits:
             out[rel] = hits
     return out
@@ -104,9 +123,16 @@ def _violations() -> dict[str, list[tuple[int, str]]]:
 def test_no_module_outside_the_service_classifies_a_runway_on_its_own() -> None:
     found = _violations()
     assert not found, (
-        "A runway's class is decided in `app/services/runway.py` only (`level_for_months`, or the view's `level`, "
-        f"`severity`, `attention`, `watch` from `runway_display`). Route these through it: {found}"
+        "A runway's class is decided in `app/services/runway.py` only (`level_for_months`, `is_watch`, or the view's "
+        f"`level`, `severity`, `attention`, `watch` from `runway_display`). Route these through it: {found}"
     )
+
+
+def test_every_allowed_comparison_still_exists_and_has_a_reason() -> None:
+    seen = {(rel, h[1]) for rel in {k[0] for k in ALLOWED}
+            for h in own_thresholds((_BACKEND / rel).read_text(encoding="utf-8"), rel)}
+    assert set(ALLOWED) <= seen, f"stale entries: {sorted(set(ALLOWED) - seen)}"
+    assert all(len(reason.split()) >= 4 for reason in ALLOWED.values())
 
 
 def test_the_fitness_test_catches_the_patterns_it_forbids() -> None:
@@ -117,6 +143,12 @@ def test_the_fitness_test_catches_the_patterns_it_forbids() -> None:
         "st = _status(runway, 6.0, 3.0, higher_is_worse=False)",
         "if view.months <= RUNWAY_CRITICAL_MONTHS and runway_months:\n    pass",
         "assert 0 < pess_runway",
+        "def f(runway):\n    months = runway\n    if months < 3:\n        pass",
+        "def f(runway):\n    if ay < 3:\n        pass",
+        "def f(view):\n    runway = 1\n    return view.months < 6",
+        "ok = round(runway, 1) <= 3",
+        "ok = runway_months <= THRESHOLD",
+        "ok = run_n < GROWTH_VS_CASH_RUNWAY_MAX",
     ):
         assert own_thresholds(bad), bad
     for fine in (
@@ -124,10 +156,8 @@ def test_the_fitness_test_catches_the_patterns_it_forbids() -> None:
         "if runway_view.level == 'critical':\n    pass",
         "if block['status'] == COMPUTED:\n    pass",
         "level = level_for_months(runway_months, proven=False)",
-        "if len(runway_rows) > 3:\n    pass",
+        "def f(rows):\n    if months < 3:\n        pass",   # `months` with no runway in the function: not ours
     ):
-        if "len(runway_rows)" in fine:
-            continue  # a count of rows, not a runway figure: not a figure named runway-ish by this rule
         assert not own_thresholds(fine), fine
 
 

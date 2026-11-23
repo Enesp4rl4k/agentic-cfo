@@ -32,6 +32,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from app.core.currency_totals import fmt_amount
+from app.services.runway import watch_phrase
 from app.services.runway_display import runway_for_display
 
 logger = logging.getLogger(__name__)
@@ -345,7 +346,7 @@ def _forecast_narrative_template(forecast: dict[str, Any]) -> ForecastNarrative:
     base_net = base.get("twelve_month_net", 0) / 100
     base_view = runway_for_display(forecast)
     pess_view = runway_for_display(forecast, "pessimistic")
-    base_runway, pess_runway = base_view.months, pess_view.months
+    pess_runway = pess_view.months
 
     if base_net > 0:
         summary = (
@@ -366,10 +367,15 @@ def _forecast_narrative_template(forecast: dict[str, Any]) -> ForecastNarrative:
             risk=f"Kötümser senaryoda nakit pisti {pess_runway} ay — acil finansman veya maliyet azaltımı planı hazırlayın.",
             severity=pess_view.severity
         ))
-    if base_view.watch:
+    if base_view.level:  # the measured runway carries its own class (critical only when proven), words and basis
         risks.append(RiskItem(
-            risk=f"Baz senaryoda nakit pisti {base_runway} ay — büyüme yatırımları için dış finansman araştırın.",
-            severity="medium"
+            risk=f"{base_view.label}: Nakit pisti: {base_view.text()} — acil finansman veya maliyet azaltımı planı hazırlayın.",
+            severity=base_view.severity or "high",
+        ))
+    elif base_view.watch:  # the low-key band: neutral wording, never an alert class
+        risks.append(RiskItem(
+            risk=f"{watch_phrase(base_view.months or 0.0)} — büyüme yatırımları için dış finansman araştırın.",
+            severity="medium",
         ))
 
     actions = [

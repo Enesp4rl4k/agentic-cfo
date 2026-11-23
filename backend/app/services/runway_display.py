@@ -20,12 +20,12 @@ from typing import Any
 from app.services.runway import (
     COMPUTED,
     NOT_BURNING,
-    RUNWAY_WATCH_MONTHS,
     cash_gone,
     cash_gone_phrase,
     is_attention,
     is_comfortable,
-    is_within,
+    is_in_sight,
+    is_watch,
     level_for_months,
     level_severity,
     months_phrase,
@@ -34,7 +34,8 @@ from app.services.runway import _date_tr as date_tr
 
 PROMPT_RULE = (
     "Nakit ömrünün dayanağı 'kanıtlı' değilse (varsayım, doğrulanmamış ya da bilinmiyor) onu kesin bir olgu "
-    "gibi tekrarlama; dayanağı söyle. 'Kritik' sözcüğünü yalnızca dayanağı kanıtlı olan nakit ömrü için kullan."
+    "gibi tekrarlama; dayanağı söyle. 'Kritik' sözcüğünü yalnızca dayanağı kanıtlı olan nakit ömrü için kullan. "
+    "Nakit ömrü sınıfı (critical | warning | watch | none | unknown) hizmetin kararıdır: onunla çelişen bir sınıf söyleme."
 )
 
 
@@ -51,6 +52,8 @@ class RunwayView:
     from_block: bool = False        # the runway block stands behind the number: its own class is the class
     block_level: str | None = None
     block_attention: bool = False
+    block_watch: bool = False
+    balance_assumed: bool = False   # the balance itself is assumed / its identity is open (the only thing that caps)
     scenario: bool = False          # a what-if row (optimistic, pessimistic): an assumption, so never critical
 
     @property
@@ -66,7 +69,9 @@ class RunwayView:
         if self.scenario:
             return level_for_months(self.months, proven=False)
         if self.from_block:
-            return self.block_level  # the block already capped it for an assumed balance / open identity question
+            # The service already capped it for an assumed balance / open identity question; a stored block from before
+            # that rule is capped the same way here. An edge tolerance in the burn months never caps.
+            return "warning" if self.block_level == "critical" and self.balance_assumed else self.block_level
         return level_for_months(self.months, proven=self.proven)
 
     @property
@@ -81,7 +86,13 @@ class RunwayView:
 
     @property
     def watch(self) -> bool:
-        return is_within(self.months, RUNWAY_WATCH_MONTHS)
+        """The low-key band above the warning class (6-12 months): neutral wording, never an alert."""
+        return self.block_watch if self.from_block and not self.scenario else is_watch(self.months)
+
+    @property
+    def in_sight(self) -> bool:
+        """A class or the watch band: any runway of a year or less."""
+        return is_in_sight(self.months) if (self.scenario or not self.from_block) else bool(self.level or self.watch)
 
     @property
     def comfortable(self) -> bool:
@@ -95,6 +106,16 @@ class RunwayView:
         if self.attention:
             return "DİKKAT"
         return "Uyarı" if self.level else ""
+
+    @property
+    def class_name(self) -> str:
+        """The class as a plain word for a model's input: critical | warning | watch | none | unknown."""
+        if self.months is None:
+            return "unknown"
+        return self.level or ("watch" if self.watch else "none")
+
+    def class_line(self) -> str:
+        return f"Nakit ömrü sınıfı (hizmetin kararı, değiştirme): {self.class_name}"
 
     @property
     def gone(self) -> bool:
@@ -123,18 +144,18 @@ class RunwayView:
         return f"{self.short()} (varsayıma dayanıyor: {self.message})" if self.message else f"{self.short()} (varsayıma dayanıyor)"
 
     def cap(self, severity: str) -> str:
-        """No critical on an unproven runway's authority."""
-        return "high" if severity == "critical" and not self.proven else severity
+        """No critical unless the SERVICE's class for this runway is critical (no extra cap of a surface's own)."""
+        return "high" if severity == "critical" and self.level != "critical" else severity
 
     def fin_fields(self) -> dict[str, Any]:
         """The keys the CEO agents' financial summary carries beside the bare number."""
         return {
             "runway_basis": self.basis, "runway_text": self.text(), "runway_proven": self.proven,
-            "runway_level": self.level, "runway_attention": self.attention,
+            "runway_level": self.level, "runway_attention": self.attention, "runway_watch": self.watch,
         }
 
     def prompt_line(self) -> str:
-        return f"Nakit ömrü: {self.text()}. {PROMPT_RULE}"
+        return f"Nakit ömrü: {self.text()}. {self.class_line()}. {PROMPT_RULE}"
 
 
 def runway_for_display(forecast: dict[str, Any] | None, scenario: str = "base") -> RunwayView:
@@ -157,8 +178,9 @@ def runway_for_display(forecast: dict[str, Any] | None, scenario: str = "base") 
         identity_uncertain=bool(block.get("identity_uncertain")),
         reasons=tuple(str(r["text"]) for r in block.get("reasons") or [] if isinstance(r, dict) and r.get("text")),
         balance_cents=block.get("opening_cash_cents") if standing else None,
+        balance_assumed=block.get("balance_basis") == "assumed" or bool(block.get("identity_uncertain")),
         scenario=scenario != "base", from_block=True, block_level=block.get("level") if standing else None,
-        block_attention=bool(block.get("attention")) and standing,
+        block_attention=bool(block.get("attention")) and standing, block_watch=bool(block.get("watch")) and standing,
     )
 
 
@@ -176,4 +198,5 @@ def view_from_fin(fin: dict[str, Any]) -> RunwayView:
     return RunwayView(
         view.months, view.basis, sentence=view.sentence,
         from_block=True, block_level=fin.get("runway_level"), block_attention=bool(fin.get("runway_attention")),
+        block_watch=bool(fin.get("runway_watch")),
     )

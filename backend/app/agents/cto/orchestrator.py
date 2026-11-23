@@ -34,9 +34,20 @@ from app.agents.cto.state import (
 )
 from app.agents.cto.tech_debt_agent import run_tech_debt_agent
 from app.agents.cto.velocity_agent import run_velocity_agent
-from app.services.runway import level_for_months
+from app.services.runway_display import view_from_fin
 
 logger = logging.getLogger(__name__)
+
+
+def cfo_runway_line(cfo_sum: dict[str, Any]) -> str:
+    """The CFO's runway for the CTO narrative. The summary carries a runway only when it is KNOWN
+    (`runway_display`); the class and its word are the service's."""
+    view = view_from_fin({"cash_runway_months": cfo_sum["runway_months"], "runway_basis": "known", "runway_proven": True})
+    tail = (
+        f" — {view.label}: Teknik borç yatırımlarını ertelemek gerekebilir" if view.level
+        else " — izlemede" if view.watch else ""
+    )
+    return f"Nakit Ömrü (CFO): {view.months:.1f} ay{tail}"
 
 
 # ── Helper ─────────────────────────────────────────────────────────────────────
@@ -197,14 +208,7 @@ async def node_cto_summary(state: CTOState, config: dict) -> CTOState:
         chro_sum = state.get("__chro_summary") or {}
 
         if cfo_sum.get("runway_months") is not None:
-            runway = cfo_sum["runway_months"]
-            # The CFO summary carries a runway only when it is KNOWN (`runway_display`); the class is the service's.
-            level = level_for_months(runway, proven=True)
-            cross_context_lines.append(
-                f"Nakit Ömrü (CFO): {runway:.1f} ay"
-                + (f" — {'KRİTİK' if level == 'critical' else 'UYARI'}: Teknik borç yatırımlarını ertelemek gerekebilir"
-                   if level else "")
-            )
+            cross_context_lines.append(cfo_runway_line(cfo_sum))
         if cfo_sum.get("critical_anomalies"):
             cross_context_lines.append(
                 f"CFO Kritik Anomali: {cfo_sum['critical_anomalies']} adet — altyapı kaynaklı olabilir"

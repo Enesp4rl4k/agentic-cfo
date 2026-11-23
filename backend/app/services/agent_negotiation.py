@@ -371,9 +371,11 @@ class CHRONegotiationResponder(AgentNegotiator):
         chro_data:     dict[str, Any],
         runway_months: float,
         months_ahead:  int = 3,
+        runway_proven: bool = True,
     ) -> dict[str, Any]:
         """
-        Ise alim plani sorusuna cevap hazirla.
+        Ise alim plani sorusuna cevap hazirla. `runway_proven`: the runway rests on a known balance (an assumed one
+        is capped at the warning band, like everywhere else).
         Nakit durumuna gore dinamik olarak uyarlanir.
         """
         open_roles     = chro_data.get("open_critical_roles", 0) or 0
@@ -392,7 +394,7 @@ class CHRONegotiationResponder(AgentNegotiator):
 
         # Nakit durumuna gore plan
         # The band is the service's (`runway.level_for_months`); the figure is the caller's declared runway.
-        band = level_for_months(runway_months, proven=True)
+        band = level_for_months(runway_months, proven=runway_proven)
         if band == "critical":
             # Kritik: tum ise alimi durdur
             planned_hires   = 0

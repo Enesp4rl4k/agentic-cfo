@@ -124,6 +124,7 @@ class RunwayOut(BaseModel):
     reasons: list[dict[str, str]] = []
     attention: bool = False
     cash_gone: bool = False
+    watch: bool = False
     upload_path: str = "/upload"
     other_currencies: list[OtherCurrencyBalanceOut] = []
 

@@ -185,7 +185,7 @@ def _compute_overall_health(result: dict[str, Any]) -> float | None:
                 fin_score -= 30
             elif runway_view.level:
                 fin_score -= 10
-            elif not runway_view.watch:
+            elif not runway_view.in_sight:
                 fin_score += 15
 
         scores.append(max(0.0, min(100.0, fin_score)))

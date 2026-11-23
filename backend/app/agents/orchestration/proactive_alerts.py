@@ -264,11 +264,10 @@ class ProactiveAlertOrchestrator:
         unit  = kri.get("unit", "")
         ev    = kri.get("evidence", "")
 
-        # A KRI that rests on an assumed balance (or an open account-identity question) is capped below critical
-        # and says so, in the runway's own words.
+        # The runway KRI carries the SERVICE's class (`level`): no extra cap here. Other KRIs rest on their basis.
         unproven = kri.get("basis") not in (None, "known") or bool(kri.get("identity_uncertain"))
-        if unproven:
-            severity = "high" if severity == "critical" else severity
+        if "level" in kri or unproven:
+            severity = "critical" if kri.get("level") == "critical" else "high"
         title, lead = kri_alert_words(name, val, unit, critical=severity == "critical")
         body  = (
             lead +

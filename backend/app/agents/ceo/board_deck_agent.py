@@ -84,7 +84,7 @@ def _runway_momentum(view: RunwayView) -> str | None:
     """Arrow for a measured runway; None when it is unknown (no claim)."""
     if view.months is None:
         return None
-    return "↓" if view.watch else "→"
+    return "↓" if view.in_sight else "→"
 
 
 def _runway_alert(view: RunwayView) -> str | None:
@@ -267,6 +267,7 @@ def _build_slides(
                 "value": _runway_value(runway_view),
                 "momentum": _runway_momentum(runway_view),
                 "alert": _runway_alert(runway_view),
+                **({"sub": "izlemede"} if runway_view.watch else {}),
                 "confidence": 0.88,
             },
             {
@@ -466,6 +467,7 @@ def _build_slides(
                 "label": "Nakit Pisti",
                 "value": _runway_value(runway_view),
                 "alert": _runway_alert(runway_view),
+                **({"sub": "izlemede"} if runway_view.watch else {}),
             },
             {
                 "label": "Aylık Kullanım",
