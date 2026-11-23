@@ -172,3 +172,100 @@ def test_rendering_every_report_with_hostile_text_makes_no_request(listener):
         for name, page in make_all(payload.replace(PORT_PLACEHOLDER, str(port))).items():
             assert HTML(string=page, url_fetcher=deny_fetcher()).write_pdf().startswith(b"%PDF"), name
     assert paths == []
+
+
+# ── reportlab: `Paragraph` parses its text as mini-markup ──────────────────────────────────
+
+def _paragraph_tags(monkeypatch, builder_module, build, text: str) -> tuple[Counter[str], list[str]]:
+    """Run a reportlab builder with `text` in every field; the tags in every Paragraph it created, and its texts."""
+    reportlab = pytest.importorskip("reportlab")
+    assert reportlab
+    seen: list[str] = []
+    real = builder_module.Paragraph
+
+    def spy(body, *args, **kwargs):
+        seen.append(body)
+        return real(body, *args, **kwargs)
+
+    monkeypatch.setattr(builder_module, "Paragraph", spy)
+    out = build(text)
+    assert out[:4] == b"%PDF" or isinstance(out, bytes)
+    tags: Counter[str] = Counter()
+    for body in seen:
+        tags.update(re.findall(r"</?\s*([a-zA-Z][a-zA-Z0-9]*)", body))
+    return tags, seen
+
+
+def _board_deck_exporter(text: str) -> bytes:
+    from app.services.board_deck_pdf import BoardDeckPDFExporter
+
+    return BoardDeckPDFExporter.generate_pdf_bytes(
+        pnl={"revenue": 1000, "net_income": 100, "narrative": text, "cogs": 1}, cashflow={}, forecast={},
+        company_name=text, period=text,
+        anomalies=[{"severity": text, "description": text}], alerts=[{"severity": text, "message": text}],
+    )
+
+
+def _board_deck_builder(text: str) -> bytes:
+    from app.services.board_deck_pdf import BoardDeckPDFBuilder
+
+    deck = {
+        "company_name": text, "period": text, "health_score": text, "health_label": text, "executive_summary": text,
+        "top_priorities": [text], "insights": [{"severity": text, "title": text, "description": text}],
+        "swot": {"strengths": [{"text": text}], "weaknesses": [text], "opportunities": [text], "threats": [text]},
+        "kri_posture": {"kri_score": text, "counts": {"red": text}},
+    }
+    return BoardDeckPDFBuilder().build_pdf(deck)
+
+
+def _smmm_packet(text: str):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        summary={"period": text, "primary_currency": text, "reconciliation": {"action": text}}, job_id=text, status=text,
+        content_hash=text, smmm_statement=text, finalized_by_user_id=text, finalized_at=text,
+        payload={"entries": [{"decision_source": "ai_auto_posted", "date": "2026-01-01", "account_code": text,
+                              "description": text, "currency": text, "review": {"corrected_account": text, "note": text}}]},
+    )
+
+
+@pytest.mark.parametrize("payload", HOSTILE)
+def test_board_deck_builder_text_cannot_become_reportlab_markup(monkeypatch, payload):
+    from app.services import board_deck_pdf
+
+    benign, _ = _paragraph_tags(monkeypatch, board_deck_pdf, _board_deck_builder, "Firma")
+    hostile, texts = _paragraph_tags(monkeypatch, board_deck_pdf, _board_deck_builder, payload.replace(PORT_PLACEHOLDER, "9"))
+    assert hostile == benign, "markup injected into a Paragraph"
+    assert any("&lt;" in t or "&amp;" in t or "&gt;" in t for t in texts) or ("<" not in payload and "&" not in payload)
+
+
+@pytest.mark.parametrize("payload", HOSTILE)
+def test_board_deck_exporter_text_cannot_become_reportlab_markup(monkeypatch, payload):
+    from app.services import board_deck_pdf
+
+    benign, _ = _paragraph_tags(monkeypatch, board_deck_pdf, _board_deck_exporter, "Firma")
+    hostile, _ = _paragraph_tags(monkeypatch, board_deck_pdf, _board_deck_exporter, payload.replace(PORT_PLACEHOLDER, "9"))
+    assert hostile == benign, "markup injected into a Paragraph"
+
+
+@pytest.mark.parametrize("payload", HOSTILE)
+def test_smmm_defensibility_pdf_text_cannot_become_reportlab_markup(monkeypatch, payload):
+    from app.services import smmm_defensibility_pdf as smmm
+
+    def build(text: str) -> bytes:
+        body, media = smmm.render_packet(_smmm_packet(text))
+        assert media == "application/pdf"
+        return body
+
+    benign, _ = _paragraph_tags(monkeypatch, smmm, build, "Firma")
+    hostile, _ = _paragraph_tags(monkeypatch, smmm, build, payload.replace(PORT_PLACEHOLDER, "9"))
+    assert hostile == benign
+
+
+def test_the_narrative_is_cut_before_it_is_escaped_so_no_entity_is_split():
+    from app.services.executive_report_pdf import _build_html
+
+    narrative = "R&D " * 150   # 600 characters, every fourth one an ampersand
+    page = _build_html({"pnl": {"narrative": narrative}, "forecast": {"narrative": narrative}}, "Firma", "2026-Q1", "01.01.2026")
+    assert html.escape(narrative[:400]) in page and html.escape(narrative[:300]) in page
+    assert "R&amp;D R&amp;D R&amp;D" in page and not re.search(r"&(?:a|am|amp)?[^a-z;]", page.split("narrative-box")[1].split("</div>")[0][-12:])

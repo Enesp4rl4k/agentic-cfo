@@ -1,0 +1,94 @@
+{
+  "ragged_header.xlsx": [
+    {
+      "date": "2026-01-05T00:00:00+00:00",
+      "amount_cents": 1450000,
+      "description": "EFT Kira Ödemesi",
+      "type": null
+    },
+    {
+      "date": "2026-01-07T00:00:00+00:00",
+      "amount_cents": 2200000,
+      "description": "Havale Gelen Müşteri",
+      "type": null
+    },
+    {
+      "date": "2026-01-09T00:00:00+00:00",
+      "amount_cents": 8735,
+      "description": "POS Komisyon",
+      "type": null
+    }
+  ],
+  "empty_last_aciklama.xlsx": [
+    {
+      "date": "2026-01-05T00:00:00+00:00",
+      "amount_cents": 1450000,
+      "description": "Kira ödemesi",
+      "type": "expense"
+    },
+    {
+      "date": "2026-01-07T00:00:00+00:00",
+      "amount_cents": 2200000,
+      "description": "",
+      "type": "income"
+    },
+    {
+      "date": "2026-01-09T00:00:00+00:00",
+      "amount_cents": 8735,
+      "description": "POS komisyon",
+      "type": "expense"
+    },
+    {
+      "date": "2026-01-12T00:00:00+00:00",
+      "amount_cents": 125000,
+      "description": "",
+      "type": "expense"
+    },
+    {
+      "date": "2026-01-15T00:00:00+00:00",
+      "amount_cents": 500000,
+      "description": "",
+      "type": "income"
+    }
+  ],
+  "merged_header.xlsx": [
+    {
+      "date": "2026-01-03T00:00:00+00:00",
+      "amount_cents": 4800000,
+      "description": "Maaş Ödemesi Personel",
+      "type": null
+    },
+    {
+      "date": "2026-01-04T00:00:00+00:00",
+      "amount_cents": 3650050,
+      "description": "Tahsilat ABC Ltd",
+      "type": null
+    },
+    {
+      "date": "2026-01-11T00:00:00+00:00",
+      "amount_cents": 231020,
+      "description": "Elektrik Faturası",
+      "type": null
+    }
+  ],
+  "two_sheets.xlsx": [
+    {
+      "date": "2026-01-02T00:00:00+00:00",
+      "amount_cents": 1500000,
+      "description": "Müşteri Tahsilatı",
+      "type": "income"
+    },
+    {
+      "date": "2026-01-06T00:00:00+00:00",
+      "amount_cents": 420075,
+      "description": "Tedarikçi Ödemesi",
+      "type": "expense"
+    },
+    {
+      "date": "2026-01-08T00:00:00+00:00",
+      "amount_cents": 98000,
+      "description": "Vergi Ödemesi",
+      "type": "expense"
+    }
+  ]
+}

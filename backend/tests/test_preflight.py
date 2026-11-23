@@ -185,9 +185,9 @@ def test_enforce_only_warns_outside_production(caplog: pytest.LogCaptureFixture)
 def test_main_runs_the_preflight_at_startup() -> None:
     source = (Path(__file__).resolve().parents[1] / "app" / "main.py").read_text(encoding="utf-8")
     assert 'enforce_or_exit(settings, process="api")' in source
-    assert 'enforce_or_exit(get_settings(), process="worker")' in (
-        Path(__file__).resolve().parents[1] / "app" / "worker.py"
-    ).read_text(encoding="utf-8")
+    worker = (Path(__file__).resolve().parents[1] / "app" / "worker.py").read_text(encoding="utf-8")
+    # The analysis worker parses uploads ("worker"); the maintenance worker does not, so the parser memory rule skips it.
+    assert "enforce_or_exit(get_settings(), process=" in worker and '"worker-maintenance"' in worker and 'else "worker")' in worker
 
 
 # ── schema state ───────────────────────────────────────────────────────────────

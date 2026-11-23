@@ -59,7 +59,7 @@ from app.services.ingest.rows import (
     _tablo_ekstresi,
     _try_parse_csv,
 )
-from app.services.pdf_isolation import ingest_hata_metni
+from app.services.pdf_isolation import apply_pdf_notes, ingest_hata_metni
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +85,6 @@ __all__ = [
     "run_data_ingestion",
     "tur_kategori_celiskisi",
 ]
-
 
 
 async def _extract_transactions_with_llm(
@@ -343,8 +342,7 @@ async def _read_all_documents(state: CFOState, config: AgentRunConfig) -> SkillR
     )
 
 
-# Several documents' text is kept for the audit trail and RAG indexing, capped
-# so a batch of invoices cannot grow the state without bound.
+# Several documents' text is kept for the audit trail and RAG indexing, capped so a batch cannot grow the state without bound.
 _EN_FAZLA_METIN = 400_000
 _BELGE_ARASI = "\n\n"
 
@@ -355,6 +353,8 @@ async def _belgeyi_al(
     """One document, with every row's currency settled (see app.services.ingest.hold)."""
     ledger = ReadLedger()
     sonuc = await _belgeyi_oku(file_path, file_type, state, config, ledger)
+    if file_type == "pdf":
+        apply_pdf_notes(sonuc, file_path)   # an unread attachment or page is said (and held when data is missing), not skipped
     if ledger.touched:
         # The counts travel in the result, never on a row: they survive a file whose rows were all skipped.
         sonuc.patch = {**(sonuc.patch or {}), "ingest_counts": ledger.as_dict()}

@@ -278,4 +278,5 @@ def test_the_worker_module_runs_the_same_preflight():
     from pathlib import Path
 
     source = (Path(__file__).resolve().parents[1] / "app" / "worker.py").read_text(encoding="utf-8")
-    assert 'enforce_or_exit(get_settings(), process="worker")' in source
+    # "worker" for the analysis worker; the maintenance worker (no uploads parsed) is named apart for the parser memory rule.
+    assert "enforce_or_exit(get_settings(), process=" in source and 'else "worker")' in source

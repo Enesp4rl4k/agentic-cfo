@@ -54,6 +54,13 @@ Limits are settings: `MAX_UPLOAD_SIZE_MB`, `PDF_MAX_PAGES` (500), `PDF_PARSE_TIM
 `PDF_CHILD_MEMORY_MB`, `PDF_PARSE_CONCURRENCY`. A refusal, crash or timeout is a visible "PDF okunamadi" that names the limit and what to do, never an empty
 success. The XML of an e-Belge is parsed by `app.core.xml_safety` (stdlib parser, DTD and ENTITY refused before parsing; refused again inside the child).
 
+Spreadsheets are the same class of risk: an .xlsx is a zip of XML, so a few kilobytes can inflate to gigabytes or declare entities that expand. openpyxl,
+`zipfile` and the csv module read uploaded bytes only in `app/services/sheet_child.py` (child process, started by `sheet_isolation`; same `run_worker`
+as the PDF child; `tests/test_parser_isolation_fitness.py` fails if `openpyxl`, `xlrd`, `read_excel` or `load_workbook` appear anywhere else). The child caps
+the zip's member count and total uncompressed size (from the zip directory and again while reading), rows, columns and cells, runs openpyxl with
+`read_only=True, data_only=True`, and refuses to run unless `defusedxml` is active (`defusedxml==0.7.1`, direct dependency; openpyxl uses it automatically
+when importable). Settings and sizing: `docs/ops/parser-sizing.md`.
+
 ## Frontend
 
 `frontend/package-lock.json` is committed and every install uses `npm ci`. The ranges in `package.json` (`^`) are resolved by the lock; update with `npm install <pkg>@<version>` and commit both files.
