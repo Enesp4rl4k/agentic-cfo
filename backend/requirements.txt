@@ -86,7 +86,7 @@ pyyaml==6.0.3              # tests/test_ci_database.py — reads .github/workflo
 ruff==0.16.4    # pinned — ruff.toml selects the rule set; CI gate is blocking
 mypy==2.3.1
 
-sentry-sdk>=1.40.0
+sentry-sdk==2.75.0   # pinned: 2.76.0 broke strict mypy on sentry_monitoring.py (init kwargs, push_scope); migrate to data_collection/new_scope first
 cryptography>=42.0.0
 
 # Imported by the app and missing from this file until the first CI install:

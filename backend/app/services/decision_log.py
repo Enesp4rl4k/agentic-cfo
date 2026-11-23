@@ -191,12 +191,15 @@ async def measure_outcome(
     from app.services.decision_packet import load_pnl_cashflow_forecast
 
     _pnl, _cashflow, forecast = await load_pnl_cashflow_forecast(db, data_job.id)
-    base = (forecast.get("scenarios") or {}).get("base") or {}
-    runway_latest = base.get("runway_months")
+    from app.services.runway_display import runway_for_display
+
+    view = runway_for_display(forecast)
+    runway_latest = view.months
 
     expected = decision.expected or {}
     variance: dict[str, Any] = {"realized_net_kurus": realized_net}
-    if runway_latest is not None and expected.get("runway_months") is not None:
+    # A change in a runway is stated only when the latest one is proven (known), never as arithmetic on a guess.
+    if runway_latest is not None and view.proven and expected.get("runway_months") is not None:
         variance["runway_delta"] = round(
             float(runway_latest) - float(expected["runway_months"]), 2
         )
@@ -211,6 +214,7 @@ async def measure_outcome(
         # Other currencies, summed on their own and not converted.
         "other_currencies": other_currencies,
         "runway_months_latest": runway_latest,
+        "runway_basis_latest": view.basis,
         "data_job_id": data_job.id,
         "decided_at": decided_at.isoformat() if decided_at else None,
         "as_of": now.isoformat(),

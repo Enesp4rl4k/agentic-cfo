@@ -30,6 +30,12 @@ async def client():
 _user = kullanici
 
 
+def _with_known_runway(data: dict) -> dict:
+    """A change in the runway is stated only from a PROVEN runway (`runway_display`): the seeded one is known."""
+    data["forecast"]["runway"] = {"status": "computed", "basis": "known", "balance_basis": "known", "as_of": "2026-03-31"}
+    return data
+
+
 async def _seed_job(
     client,
     org_id: str,
@@ -69,7 +75,7 @@ async def _seed_job(
                     job_id=job.id,
                     report_type=ReportType.FULL,
                     report_format=ReportFormat.JSON,
-                    data=ornek_rapor(runway=runway),
+                    data=_with_known_runway(ornek_rapor(runway=runway)),
                 )
             )
         for days_ago, tx_type, amount in txn_days:

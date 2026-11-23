@@ -79,6 +79,8 @@ function BriefingRunway({ briefing }: Readonly<{ briefing: MondayBriefing }>) {
       basis={briefing.runway_basis ?? null}
       months={briefing.runway_months ?? null}
       text={briefing.runway_line}
+      attention={briefing.runway_attention}
+      uploadHref={briefing.runway_attention && briefing.runway_basis === "assumed" ? "/upload" : null}
       copy={t.cashRadar}
       locale={org?.locale || "tr-TR"}
     />
@@ -218,7 +220,7 @@ export default function BultenPage() {
       {briefing && briefing.has_data && (
         <>
           {/* Cash running out comes first, above the week's own answer. */}
-          {briefing.runway_level === "critical" && <BriefingRunway briefing={briefing} />}
+          {(briefing.runway_level === "critical" || briefing.runway_attention) && <BriefingRunway briefing={briefing} />}
           <header className="space-y-3">
             <span className="tc-eyebrow text-muted-foreground">
               {copy.eyebrow.replace("{start}", briefing.week_start).replace("{end}", briefing.week_end)}
@@ -231,7 +233,7 @@ export default function BultenPage() {
             {briefing.fallback_used && <p className="m-0 text-xs text-muted-foreground">{copy.fallbackNote}</p>}
           </header>
 
-          {briefing.runway_level !== "critical" && <BriefingRunway briefing={briefing} />}
+          {!(briefing.runway_level === "critical" || briefing.runway_attention) && <BriefingRunway briefing={briefing} />}
           <Stats briefing={briefing} copy={copy} fmt={fmt} />
           {briefing.balance_known && briefing.balance_stale && briefing.balance_as_of && (
             <StaleBalanceNotice asOf={briefing.balance_as_of} ageDays={briefing.balance_age_days ?? 0} locale={org?.locale || "tr-TR"} />

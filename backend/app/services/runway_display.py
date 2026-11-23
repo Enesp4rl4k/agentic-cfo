@@ -17,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from app.services.runway import COMPUTED, NOT_BURNING
+from app.services.runway import COMPUTED, NOT_BURNING, under_a_month
 from app.services.runway import _date_tr as date_tr
 
 PROMPT_RULE = (
@@ -34,13 +34,16 @@ class RunwayView:
     message: str = ""               # the runway block's own sentence (carries every assumption)
     identity_uncertain: bool = False
     sentence: str | None = None     # a sentence already built upstream (carried in a financial summary)
+    reasons: tuple[str, ...] = ()   # why it is only assumed, one sentence each (the runway block's `reasons`)
 
     @property
     def proven(self) -> bool:
         return self.basis == "known" and self.months is not None and not self.identity_uncertain
 
     def short(self) -> str:
-        return "bilinmiyor" if self.months is None else f"{self.months:g} ay"
+        if self.months is None:
+            return "bilinmiyor"
+        return under_a_month(self.months) or f"{self.months:g} ay"
 
     def text(self) -> str:
         """The figure with the basis it rests on: what a sentence may say about the runway."""
@@ -53,6 +56,8 @@ class RunwayView:
             return f"{self.short()}{when}"
         if self.basis == "unverified":
             return f"{self.short()} (dayanağı kayıtlı değil, doğrulanmadı)"
+        if self.reasons:   # each reason keeps its OWN sentence: an old balance is not "weak evidence"
+            return f"{self.short()} (varsayıma dayanıyor: {' '.join(self.reasons)})"
         return f"{self.short()} (varsayıma dayanıyor: {self.message})" if self.message else f"{self.short()} (varsayıma dayanıyor)"
 
     def cap(self, severity: str) -> str:
@@ -84,6 +89,7 @@ def runway_for_display(forecast: dict[str, Any] | None, scenario: str = "base") 
     return RunwayView(
         months, basis, as_of=block.get("as_of"), message=str(block.get("message") or ""),
         identity_uncertain=bool(block.get("identity_uncertain")),
+        reasons=tuple(str(r["text"]) for r in block.get("reasons") or [] if isinstance(r, dict) and r.get("text")),
     )
 
 

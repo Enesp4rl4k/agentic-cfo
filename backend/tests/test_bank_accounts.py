@@ -168,7 +168,9 @@ async def test_answering_different_accounts_adds_them_and_the_answer_can_be_chan
     await upload(client, org_id, meta=_stmt("2026-03-01", "2026-03-31", 70_000_00, 60_000_00), filename="mart.pdf")
     assert (await _answer(client, headers, "different", await _balances(client, org_id))).status_code == 200
     radar = await _radar(client, org_id)
-    assert radar.starting_cash_cents == 150_000_00 and radar.opening_cash.basis == "known" and radar.account_questions == []
+    assert radar.starting_cash_cents == 150_000_00 and radar.account_questions == []
+    # The January account is 59 days behind March's: the summed cash is as old as its oldest account, so only assumed.
+    assert radar.opening_cash.basis == "assumed" and "bakiye 59 gün önceki ekstreye ait (2026-01-31)" in radar.opening_cash.basis_note
     # Reversal: the owner changes the answer; the cash is recomputed and the first decision is superseded, not erased.
     accounts = (await _balances(client, org_id))["accounts"]
     ids = {a["name"]: a["job_id"] for a in accounts}

@@ -208,6 +208,12 @@ jobs:
         working-directory: backend
         run: alembic upgrade head
 
+      # SQLite releases a SAVEPOINT differently from Postgres: the hourly KRI scan's slot/retry guarantee
+      # (one org failing fails the slot, the retry completes it without repeating the others) is checked here too.
+      - name: Scheduled-job atomicity on Postgres
+        working-directory: backend
+        run: python -m pytest tests/test_scan_atomicity_postgres.py -q -p no:randomly
+
       # A backup nobody has restored is a hope. Dump a migrated database, restore it into a fresh one,
       # check every table and file came back, run the schema preflight on it (and one migration behind),
       # then the smoke test on an API over the restored database. scripts/restore-roundtrip.sh.

@@ -21,6 +21,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from app.services.runway_display import runway_for_display
+
 # Modelling assumptions — rule-based, not measured. Returned with every result.
 FX_EXPOSURE_RATIO = 0.25       # share of opex priced in USD/EUR (cloud, licences, imports)
 FX_USD_SHARE = 0.5             # split of that exposure between USD and EUR
@@ -59,8 +61,10 @@ class StressBaseline:
     monthly_revenue_kurus: int
     monthly_net_kurus: int
     months_observed: int
-    # ``None`` = the forecast never goes cash-negative (no runway limit).
+    # ``None`` = the forecast never goes cash-negative (no runway limit), or no runway is known.
     runway_months: float | None
+    # What the runway rests on (`runway_display`): "known" | "assumed" | "unverified" | "unknown".
+    runway_basis: str = "unknown"
 
 
 def _num(value: Any) -> float | None:
@@ -111,8 +115,8 @@ def baseline_from_cfo(cfo_result: dict[str, Any] | None) -> StressBaseline | Non
     if net is None:
         net = revenue - (_num(pnl.get("total_expenses")) or opex)
 
-    base = (forecast.get("scenarios") or {}).get("base") or {}
-    runway = _num(base.get("runway_months"))
+    view = runway_for_display(forecast)
+    runway = view.months
 
     return StressBaseline(
         monthly_opex_kurus=_lira_to_kurus(opex / months),
@@ -120,6 +124,7 @@ def baseline_from_cfo(cfo_result: dict[str, Any] | None) -> StressBaseline | Non
         monthly_net_kurus=_lira_to_kurus(net / months),
         months_observed=months,
         runway_months=runway,
+        runway_basis=view.basis,
     )
 
 
@@ -178,9 +183,12 @@ def simulate(shock: ShockInputs, baseline: StressBaseline) -> dict[str, Any]:
         stressed_runway = round(baseline.runway_months * factor, 1)
         runway_delta = round(stressed_runway - baseline.runway_months, 1)
         risk_level = _risk_level(stressed_runway)
+        if risk_level == "CRITICAL" and baseline.runway_basis != "known":
+            risk_level = "HIGH"        # no "critical" on the authority of a runway that is not proven (`runway_display`)
 
     return {
         "baseline_runway_months": baseline.runway_months,
+        "baseline_runway_basis": baseline.runway_basis,
         "stressed_runway_months": stressed_runway,
         "runway_delta_months": runway_delta,
         "monthly_cost_increase_kurus": increase,

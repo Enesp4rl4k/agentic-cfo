@@ -192,6 +192,9 @@ export type MessageTree = {
     openingAssumed: string;
     accountQuestionLink: string;
     identityUncertainNote: string;
+    runwayAttention: string;
+    runwayUploadLink: string;
+    runwayUnderMonth: string;
   };
   takvim: {
     title: string;
@@ -1504,6 +1507,8 @@ export type MessageTree = {
     };
     runway: {
       heading: string;
+      uploadLink: string;
+      underMonth: string;
     };
   };
   integrations: {
@@ -3633,6 +3638,9 @@ export const en: MessageTree = {
     openingAssumed: "The balance rests on weak evidence and is taken as an assumption:",
     accountQuestionLink: "Answer: are these the same account?",
     identityUncertainNote: "Statements that may be one account are not added together; only the newest balance is counted.",
+    runwayAttention: "Attention",
+    runwayUploadLink: "Upload a new statement",
+    runwayUnderMonth: "Under 1 month",
   },
   takvim: {
     title: "Payment calendar",
@@ -5033,6 +5041,8 @@ export const en: MessageTree = {
     },
     runway: {
       heading: "Cash runway",
+      uploadLink: "Upload a new statement",
+      underMonth: "Under 1 month",
     },
   },
   integrations: {

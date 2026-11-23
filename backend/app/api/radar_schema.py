@@ -120,6 +120,10 @@ class RunwayOut(BaseModel):
     runway_months: float | None = None
     beyond_horizon: bool = False
     level: Literal["critical", "warning"] | None = None
+    # Why the balance is only assumed (one sentence each) and whether the runway is low enough to be said first.
+    reasons: list[dict[str, str]] = []
+    attention: bool = False
+    upload_path: str = "/upload"
     other_currencies: list[OtherCurrencyBalanceOut] = []
 
 

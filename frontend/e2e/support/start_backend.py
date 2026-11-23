@@ -57,6 +57,11 @@ def main() -> None:
             "REGISTRATION_MODE": "open",
             "LANGGRAPH_CHECKPOINT": "memory",
             "LOG_FORMAT": "plain",
+            # The journey owns the clock: the API's own scheduler (catch-up every 10 minutes) would run the Monday
+            # briefing by itself on any Monday after 07:00 UTC, before the accountant has joined, and mail the owner
+            # a briefing that the test means to be held. `support/probe.py monday-tick` runs the same job, once, at
+            # the step that wants it (the held-or-sent rule itself: tests/test_monday_hold_clock.py).
+            "SCHEDULER_ENABLED": "false",
             # No model: the product answers from its templates, as it does without a key.
             "OPENAI_API_KEY": "llm-placeholder-e2e",
             "BACKEND_SECRET_KEY": env.get("BACKEND_SECRET_KEY", "e2e-throwaway-signing-key-0123456789abcdef"),
