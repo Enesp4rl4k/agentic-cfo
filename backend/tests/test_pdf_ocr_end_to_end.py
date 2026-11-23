@@ -4,6 +4,7 @@ installed (the Backend CI job installs them); skipped elsewhere, so a machine wi
 about this path and says so."""
 from __future__ import annotations
 
+import os
 import shutil
 
 import pytest
@@ -37,10 +38,10 @@ def scanned_pdf(path, pages: int = 2) -> str:
         for line in ("HAVALE GELEN ODEME 1.250,00 TL", "KIRA ODEMESI GIDEN 14.500,00 TL", f"SAYFA {n + 1} EKSTRE TOPLAM"):
             page.insert_text((60, y), line, fontsize=22)
             y += 50
-        pixmap = page.get_pixmap(dpi=200)
+        pixmap = page.get_pixmap(dpi=200, colorspace=pymupdf.csGRAY)
         target = scan.new_page(width=page.rect.width, height=page.rect.height)
-        target.insert_image(target.rect, pixmap=pixmap)
-    scan.save(str(path))
+        target.insert_image(target.rect, stream=pixmap.tobytes("png"))  # grey and deflated: a colour raster is over the 10 MB upload cap
+    scan.save(str(path), deflate=True, garbage=4)
     return str(path)
 
 
@@ -48,6 +49,7 @@ def test_a_scanned_pdf_is_read_by_tesseract_in_the_child(tmp_path):
     import PIL
 
     path = scanned_pdf(tmp_path / "tarama.pdf")
+    assert os.path.getsize(path) < 5 * 1024 * 1024  # under the upload cap, as a real scan is
     assert pymupdf.open(path)[0].get_text().strip() == ""  # really no text layer
     result = extract_text_from_pdf(path)
     assert result.strategy_used == "tesseract", (result.strategy_used, result.warnings)
