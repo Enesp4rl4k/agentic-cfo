@@ -31,20 +31,23 @@ def statement_pdf(path: Path, pages: int, rows: int = 42) -> Path:
     cols = (40, 110, 330, 410, 490, 560)
     for n in range(pages):
         page = doc.new_page()
-        page.insert_text((40, 40), f"HESAP EKSTRESI sayfa {n + 1} / {pages}   IBAN TR00 0000 0000 0000 0000 0000 00", fontsize=9)
+        shape = page.new_shape()   # one content stream per page, not one per cell (a real statement is not 60 000 streams)
+        shape.insert_text((40, 40), f"HESAP EKSTRESI sayfa {n + 1} / {pages}   IBAN TR00 0000 0000 0000 0000 0000 00", fontsize=9)
         top, step = 60, 17
         for r in range(rows + 1):
-            page.draw_line((cols[0], top + r * step), (cols[-1], top + r * step), width=0.4)
+            shape.draw_line((cols[0], top + r * step), (cols[-1], top + r * step))
         for c in cols:
-            page.draw_line((c, top), (c, top + rows * step), width=0.4)
+            shape.draw_line((c, top), (c, top + rows * step))
+        shape.finish(width=0.4)
         for r in range(rows):
             y = top + r * step + 12
             k = n * rows + r
             cells = (f"{1 + k % 28:02d}.{1 + (k // 28) % 12:02d}.2026", f"{ROW_TEXT[k % 5]} REF{k:07d}", f"{(k * 37) % 9000 + 10:,}.00",
                      f"{(k * 53) % 7000:,}.00", f"{100000 + k * 11:,}.00")
             for c, text in zip(cols, cells, strict=False):
-                page.insert_text((c + 3, y), text, fontsize=7.5)
-    doc.save(str(path))
+                shape.insert_text((c + 3, y), text, fontsize=7.5)
+        shape.commit()
+    doc.save(str(path), deflate=True)   # compressed, as a real statement is: 300 pages stay under the 10 MB upload cap
     doc.close()
     return path
 
