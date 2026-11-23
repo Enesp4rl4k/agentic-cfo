@@ -48,7 +48,9 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: backend/requirements.txt
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/constraints.txt
 
       - name: Set up Node.js 20
         uses: actions/setup-node@v4
@@ -59,10 +61,10 @@ jobs:
 
       - name: Install backend dependencies
         working-directory: backend
-        # The same install as ci.yml (the versions its checks pass on); not locked, like that one.
+        # The same install as ci.yml: direct pins in requirements.txt, everything else from constraints.txt.
         run: |
           pip install --upgrade pip # NOSONAR
-          pip install -r requirements.txt # NOSONAR
+          pip install -r requirements.txt -c constraints.txt # NOSONAR
 
       - name: Install frontend dependencies
         working-directory: frontend
