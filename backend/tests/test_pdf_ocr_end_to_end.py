@@ -11,8 +11,13 @@ import pytest
 
 from app.services.ocr_service import extract_text_from_pdf
 
-pymupdf = pytest.importorskip("pymupdf")
-pytesseract = pytest.importorskip("pytesseract")
+REQUIRED = bool(os.environ.get("REQUIRE_TESSERACT"))  # CI: a missing Tesseract is a failure, not a skip
+if REQUIRED:
+    import pymupdf
+    import pytesseract
+else:
+    pymupdf = pytest.importorskip("pymupdf")
+    pytesseract = pytest.importorskip("pytesseract")
 
 
 def _tesseract_ready() -> bool:
@@ -25,7 +30,9 @@ def _tesseract_ready() -> bool:
     return {"tur", "eng"} <= languages
 
 
-pytestmark = pytest.mark.skipif(not _tesseract_ready(), reason="tesseract with tur+eng models is not installed here")
+pytestmark = pytest.mark.skipif(
+    not REQUIRED and not _tesseract_ready(), reason="tesseract with tur+eng models is not installed here"
+)
 
 
 def scanned_pdf(path, pages: int = 2) -> str:
@@ -46,6 +53,7 @@ def scanned_pdf(path, pages: int = 2) -> str:
 
 
 def test_a_scanned_pdf_is_read_by_tesseract_in_the_child(tmp_path):
+    assert _tesseract_ready(), "REQUIRE_TESSERACT is set but tesseract with tur+eng is not usable"
     import PIL
 
     path = scanned_pdf(tmp_path / "tarama.pdf")
