@@ -666,6 +666,7 @@ async def _process_org_nightly(org, db, cutoff, notification_svc) -> None:
         org_id=str(org.id),
         org_name=org.name or f"Org {org.id}",
         db=db,
+        commit=False,  # the ledger run commits these rows together with its `done` mark
     )
 
 
@@ -970,18 +971,21 @@ async def _hourly_proactive_kri_scan(now: datetime | None = None) -> RunReport:
     catch-up, an older one is skipped (`services/schedule_runner.py` windows).
     """
     report = RunReport()
+    slot = period_for(HOURLY_KRI_SCAN, now)
 
     async def scan(db: Any) -> None:
         from app.agents.orchestration.proactive_alerts import get_proactive_orchestrator
 
-        orchestrator = get_proactive_orchestrator(db=db)
+        orchestrator = get_proactive_orchestrator(db=db, slot=slot)
         result = await orchestrator.run_scheduled_scan()
+        if orchestrator.save_failures:  # an alert was rolled back: the slot is not done, the retry is idempotent
+            raise RuntimeError(f"{orchestrator.save_failures} alert(s) could not be saved")
         if result.get("total_alerts", 0) > 0:
             logger.info(
                 "Proactive KRI scan: orgs=%d alerts=%d", result.get("scanned", 0), result.get("total_alerts", 0),
             )
 
-    await run_guarded(HOURLY_KRI_SCAN, GLOBAL, period_for(HOURLY_KRI_SCAN, now), scan, report)
+    await run_guarded(HOURLY_KRI_SCAN, GLOBAL, slot, scan, report)
     return report
 
 
