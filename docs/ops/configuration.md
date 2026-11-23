@@ -144,8 +144,8 @@ is never blocked. WARN findings are logged in every mode.
 | `RETENTION_ALERT_HISTORY_DAYS` | 365 | optional | - | Retention: days after which alert history rows are deleted |
 | `PRIVACY_NOTICE_VERSION` | `taslak-1` | optional | - | Version of the privacy notice a person must have accepted; change it to ask everyone again (the text is the owner's documents, linked) |
 | `TERMS_VERSION` | `taslak-1` | optional | - | Version of the terms of use a person must have accepted |
-| `PRIVACY_NOTICE_URL` | (empty) | optional | - | Where the privacy notice text lives (a link; the product does not hold legal text) |
-| `TERMS_URL` | (empty) | optional | - | Where the terms of use live (a link) |
+| `PRIVACY_NOTICE_URL` | (empty) | REQUIRED in production | FATAL when `APP_ENV` is production/staging and unset (warning elsewhere) | Where the privacy notice text lives (a link; the product does not hold legal text). The sign-in prompt asks people to accept it, so it must be openable |
+| `TERMS_URL` | (empty) | REQUIRED in production | FATAL when `APP_ENV` is production/staging and unset (warning elsewhere) | Where the terms of use live (a link); same rule |
 | `ERASURE_PSEUDONYM_SECRET` | (unset) | REQUIRED in production | FATAL when `APP_ENV` is production/staging and unset (warning elsewhere) | KVKK member erasure: key of the HMAC behind the stable `member-<hex>` pseudonym. Its own random value (`openssl rand -hex 32`), set once and never rotated (rotating changes the handle of people erased afterwards); empty falls back to `BACKEND_SECRET_KEY`, which does rotate |
 | `LLM_MODEL` | `deepseek-chat` | optional | - |  |
 | `LLM_MODEL_CHEAP` | (unset) | optional | - |  |

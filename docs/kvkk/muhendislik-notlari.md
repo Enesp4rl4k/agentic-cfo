@@ -17,6 +17,10 @@ Hukuki görüş değildir; sorular [avukata-sorular.md](avukata-sorular.md)'de, 
 | **Veri ve gizlilik ekranı** | `frontend/src/components/privacy/`, `/settings/privacy` | `privacy-settings.test.tsx` |
 | **İhlal kapsamı** (hangi şirketler, hangi kategoriler) | `services/privacy/breach_scope.py`, `GET /privacy/operator/breach-scope` | aynı dosya; runbook `docs/ops/runbooks/data-breach.md` |
 
+### Aydınlatma istemi yalnızca ön yüzde uygulanır (pilotun bilinçli kapsamı)
+
+`NoticeGate` yalnızca oturum açmış uygulama kabuğunu (`(dashboard)/layout.tsx`) sarar; **API, kabul edilmeden de çağrılabilir**. Sunucu tarafında `require_notice_accepted` benzeri bir kapı yoktur. Pilot için bilinçli sınır: amaç, insanlara metni göstermek ve kabul kanıtını sunucuda yazmaktır; API'yi doğrudan çağıran bir istemci (kendi betiği) istemi görmez. Sunucu tarafı kapı istenirse şunları **muaf tutmak** gerekir: çıkış, `/privacy/notices` uçları (okuma ve kabul), parola sıfırlama, e-posta doğrulama, davet kabulü, oturum yenileme, ve kişinin hakları (kendi verisini dışa aktarma `/privacy/my-data`, üye silme isteği ve iptali, şirket dışa aktarımı ve silme talebinin iptali); yoksa kabul etmeyen biri kendi verisini alamaz ya da silemez. Ayrıca sağlık/hazırlık uçları ve webhook'lar kişi oturumu taşımadığı için kapsam dışıdır. Üretimde `PRIVACY_NOTICE_URL` ve `TERMS_URL` tanımsızsa preflight başlamayı reddeder; böylece kimse açılamayan bir metni kabul etmez.
+
 ## Silmede bulunan ve kapatılan açıklar
 
 1. **Ajan belleği** (`agent_memory_episodes` / `agent_memory`) ORM şemasında olmadığı için şirket silmede hiç görünmüyordu: her çalışmanın özeti

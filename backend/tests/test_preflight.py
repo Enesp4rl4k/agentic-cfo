@@ -51,6 +51,8 @@ def production_settings(**overrides: Any) -> Settings:
         "trusted_proxy_count": 1,
         "field_encryption_key": "k" * 44,
         "erasure_pseudonym_secret": "e" * 40,
+        "privacy_notice_url": "https://example.test/aydinlatma",
+        "terms_url": "https://example.test/kosullar",
         "platform_operator_emails": "ops@example.test",
         "support_contact": "ops@example.test",
     }
@@ -261,3 +263,13 @@ def test_the_pseudonym_secret_is_required_in_production_and_only_warned_about_el
     assert "no_pseudonym_secret" in codes(check_settings(s, CLEAN_ENV), FATAL)
     assert "no_pseudonym_secret" in codes(check_settings(s, {**CLEAN_ENV, "APP_ENV": "ci"}), WARN)
     assert "no_pseudonym_secret" not in codes(check_settings(production_settings(), CLEAN_ENV))
+
+
+def test_the_notice_links_are_required_in_production_and_only_warned_about_elsewhere() -> None:
+    for field in ("privacy_notice_url", "terms_url"):
+        s = production_settings(**{field: ""})
+        assert "no_notice_url" in codes(check_settings(s, CLEAN_ENV), FATAL)
+        assert "no_notice_url" in codes(check_settings(s, {**CLEAN_ENV, "APP_ENV": "ci"}), WARN)
+        assert "no_notice_url" in codes(check_settings(production_settings(**{field: "  "}), CLEAN_ENV), FATAL)  # blank is unset
+    assert "no_notice_url" not in codes(check_settings(production_settings(), CLEAN_ENV))
+

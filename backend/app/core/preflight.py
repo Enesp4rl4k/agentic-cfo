@@ -136,6 +136,13 @@ def _exposure_findings(settings: Settings, env: Mapping[str, str]) -> list[Findi
             "ERASURE_PSEUDONYM_SECRET is unset: erased members' pseudonyms would be derived from BACKEND_SECRET_KEY, which the "
             "rotate-secret runbook rotates, so the same person would get a different handle afterwards. Set it once "
             "to its own random value (docs/ops/runbooks/rotate-secret.md) and never rotate it."))
+    for var, url in (("PRIVACY_NOTICE_URL", settings.privacy_notice_url), ("TERMS_URL", settings.terms_url)):
+        if not url.strip():
+            out.append(explicit(
+                "no_notice_url",
+                f"{var} is unset: the sign-in prompt would ask people to accept a text they cannot open, and the "
+                "acceptance record would be evidence of nothing. Set the public link of the published text "
+                "(docs/kvkk/muhendislik-notlari.md)."))
     for name, value in (("FRONTEND_URL", settings.frontend_url), ("BRAND_APP_URL", settings.brand_app_url)):
         if _is_localhost(value):
             out.append(explicit("links_localhost", f"{name} points at localhost: every e-mailed link (verification, reset, invite) would be dead."))

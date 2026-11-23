@@ -104,3 +104,42 @@ async def test_blocked_and_failed_requests_stay_listed_for_the_owner_and_the_ove
     assert ov["support_contact"] == "destek@example.test"
     monkeypatch.setattr(get_settings(), "support_contact", "")
     assert (await client.get("/api/v1/privacy/overview", headers=hdr)).json()["data"]["support_contact"] is None
+
+
+def _blocked(**over):
+    now = datetime.now(UTC)
+    return OrgErasureRequest(org_hash="h" * 64, mode="anonymise", status="blocked", blocked_reason="retries_exhausted",
+                             requested_by_hash="r" * 64, requested_at=now, expires_at=now + timedelta(days=7), **over)
+
+
+async def test_a_member_whose_erasure_ended_blocked_can_file_again_and_still_sees_the_blocked_one(client) -> None:
+    hdr, _, uid = await kullanici(client, "np-m@example.com", role="analyst")
+    async with client._maker() as db:
+        db.add(_blocked(scope="member", target_user_id=uid, requested_by_user_id=uid))
+        await db.commit()
+    again = await client.post("/api/v1/privacy/member-erasure", json={"confirmation": "np-m@example.com"}, headers=hdr)
+    assert again.status_code == 200, again.text  # `blocked` is not a live request: no permanent 409
+    rows = (await client.get("/api/v1/privacy/erasure-requests", headers=hdr)).json()["data"]["requests"]
+    assert sorted(r["status"] for r in rows) == ["blocked", "scheduled"]
+    dup = await client.post("/api/v1/privacy/member-erasure", json={"confirmation": "np-m@example.com"}, headers=hdr)
+    assert dup.status_code == 409  # a genuinely live one still blocks a second request
+
+
+async def test_the_company_s_erasure_requests_are_listed_to_the_owner_only(client) -> None:
+    owner, org, _ = await _owner_company(client, "np-o@example.com")
+    admin, _, admin_id = await kullanici(client, "np-ad@example.com", role="admin")
+    async with client._maker() as db:
+        from app.models.user import User
+
+        (await db.get(User, admin_id)).org_id = org
+        db.add(_blocked(scope="org", target_org_id=org))
+        await db.commit()
+    from tests.test_org_erasure import _membership
+
+    await _membership(client, admin_id, org, "admin")
+    admin = (await client.post("/api/v1/auth/login", json={"email": "np-ad@example.com", "password": "StrongPassword123!"})).json()["data"]["access_token"]
+    as_admin = (await client.get("/api/v1/privacy/erasure-requests", headers={"Authorization": f"Bearer {admin}"})).json()["data"]["requests"]
+    assert as_admin == []  # failure codes are not for an admin
+    as_owner = (await client.get("/api/v1/privacy/erasure-requests", headers=owner)).json()["data"]["requests"]
+    assert [r["status"] for r in as_owner] == ["blocked"]
+
