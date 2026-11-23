@@ -58,10 +58,12 @@ def _credit_note_rows(feed: Feed, notes: list[Any]) -> None:
         if getattr(cn, "status", None) == "void":
             feed.ignore(CREDIT_NOTE_RULES["void"])
             continue
-        if refund == 0 and not out_of_band and (getattr(cn, "credit_amount", None) or 0) > 0:
+        credit = getattr(cn, "credit_amount", None)
+        if refund == 0 and not out_of_band and isinstance(credit, int) and credit > 0:
             feed.ignore(CREDIT_NOTE_RULES["balance"])     # reduced the customer's balance: no cash moved
             continue
-        out = None if refund is None else refund + (out_of_band or 0)
+        # `out_of_band_amount` is null when nothing was refunded outside Stripe: that is a stated "none", not a default.
+        out = None if refund is None else (refund if out_of_band is None else refund + out_of_band)
         number = getattr(cn, "number", None) or getattr(cn, "id", "") or ""
         date = _when(getattr(cn, "created", None))
         feed.each([cn])
