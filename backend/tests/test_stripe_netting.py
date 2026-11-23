@@ -140,8 +140,8 @@ async def test_a_credit_note_that_moved_no_cash_or_is_void_is_ignored_by_name_an
     ])
     norm = normalize_csv_transactions(csv_bytes=data, source="billing_stripe")
     assert [r.source_record_id for r in norm.rows] == ["in_1"]
-    assert sorted(h["reference"] for h in norm.held) == ["cn_unknown", "cn_zero"]    # unstated / zero: a person looks
-    assert "cn_balance" not in _by_ref(data) and "cn_void" not in _by_ref(data)
+    assert sorted(h["reference"] for h in norm.held) == ["cn_unknown"]               # unstated: a person looks
+    assert not {"cn_balance", "cn_void", "cn_zero"} & set(_by_ref(data))             # void, balance-only, zero: ignored by rule
 
 
 async def test_credit_notes_that_cannot_be_listed_make_the_pull_partial_never_complete(client, monkeypatch) -> None:
