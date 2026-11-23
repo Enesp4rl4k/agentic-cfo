@@ -120,7 +120,7 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("PostgreSQL mode: skipping create_all — expecting Alembic migrations.")
 
-    start_scheduler()
+    start_scheduler("api")
     yield
     stop_scheduler()
     await engine().dispose()

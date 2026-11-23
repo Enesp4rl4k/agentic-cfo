@@ -165,7 +165,8 @@ is never blocked. WARN findings are logged in every mode.
 | `STALE_PENDING_MINUTES` | 60 | optional | - |  |
 | `STALE_AGENT_RUN_MINUTES` | 30 | optional | - |  |
 | `REAPER_ENABLED` | True | optional | - |  |
-| `SCHEDULER_ENABLED` | True | optional | - |  |
+| `SCHEDULER_ENABLED` | True | optional | - | kill switch: `false` starts no APScheduler cron anywhere |
+| `SCHEDULER_PROCESS` | `api` | REQUIRED = `worker` on the compose stack (the stack sets it) | - | `api` or `worker` (anything else is refused at config load). Names the ONE process type that runs the APScheduler crons: `api` = every API process (dev without a worker); `worker` = only the arq analysis worker (`worker.WorkerSettings`), never the API or the maintenance worker. With `worker`, no worker running means no crons: the readiness `scheduler` check (`no_recent_outbox_pass`) reports it. `SCHEDULER_ENABLED=false` wins over both. Every cron also holds a Redis lock, so replicas of the owner never double-run a tick |
 | `SSE_MAX_CONNECTIONS` | 50 | optional | - |  |
 | `DB_POOL_SIZE` | 20 | optional | - |  |
 | `DB_MAX_OVERFLOW` | 10 | optional | - |  |
@@ -190,14 +191,14 @@ is never blocked. WARN findings are logged in every mode.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `APP_ENV` | (empty = development) | `production` or `staging` turns production rules on even with SQLite; also labels telemetry and Sentry |
+| `APP_ENV` | (empty = development) | `production` or `staging` turns production rules on even with SQLite; also labels telemetry and Sentry. The compose stack sets it for every backend container: `${APP_ENV:-production}`, so put `APP_ENV=staging` in `.env` on a staging box |
 | `LOG_LEVEL` | `INFO` | `DEBUG` in production is a WARN finding |
 | `LOG_FORMAT` | `json` | `json` or anything else for plain text. Both mask e-mail addresses, IBANs and credentials |
 | `SENTRY_DSN` | (unset) | error tracking; unset = errors only in the container log (WARN finding) |
 | `SENTRY_ENVIRONMENT` | `APP_ENV`, else `production` | Sentry environment tag |
 | `SENTRY_TRACES_SAMPLE_RATE` | `0.05` | performance tracing sample rate |
 | `GIT_SHA` | (unset) | commit of the image; shown on `/api/v1/version`, used as the Sentry release |
-| `IMAGE_TAG` | (unset) | fallback for `GIT_SHA` on the compose stack (the deploy sets it to the commit) |
+| `IMAGE_TAG` | (unset) | the compose stack tags images with it and passes it as the `GIT_SHA` build arg and runtime value (the deploy sets it to the commit); `/api/v1/version` reports it |
 | `BUILD_TIME` | (unset) | build timestamp shown on `/api/v1/version` |
 | `NEXTAUTH_SECRET` | (unset) | frontend session secret; the backend only refuses a template value when a shared `.env` carries it |
 | `USE_SQLITE` | `true` | also read directly by `app/core/redis_client.py` to switch Redis off for development |
@@ -221,10 +222,24 @@ is never blocked. WARN findings are logged in every mode.
 | `BACKEND_INTERNAL_URL` | frontend, runtime | server-side calls to the API inside the compose network |
 | `BACKEND_PORT`, `FRONTEND_PORT`, `BACKEND_IMAGE`, `FRONTEND_IMAGE`, `GITHUB_REPOSITORY` | `docker-compose.yml` | ports and image names |
 | `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` | compose and Settings | database name, user, password (the compose file hands them to the postgres container too) |
-| `APP_DOMAIN`, `API_DOMAIN`, `ACME_EMAIL`, `AGE_RECIPIENT`, `BACKUP_RCLONE_REMOTE`, `BACKUP_RETENTION_DAYS` | staging stack (PR #96) | TLS hostnames and the backup destination |
+| `APP_DOMAIN`, `API_DOMAIN`, `ACME_EMAIL` | staging stack (`docker-compose.prod.yml`, required) | public hostnames of the frontend and the API; the Let's Encrypt account e-mail. The compose file derives `BACKEND_CORS_ORIGINS`, `FRONTEND_URL`, `BRAND_APP_URL`, `BACKEND_URL` and the frontend's `NEXTAUTH_URL`/`NEXT_PUBLIC_API_URL` from them |
+| `AGE_RECIPIENT`, `BACKUP_RCLONE_REMOTE` | `scripts/backup.sh` (required) | the `age1...` public key and the rclone `remote:path` of the off-server copy |
+| `BACKUP_RETENTION_DAYS`, `BACKUP_KEEP_LOCAL`, `BACKUP_LOCAL_DIR` | `scripts/backup.sh` | remote retention (default 14 days), newest archives kept on the server (default 2), staging directory (default `/var/backups/aicfo`) |
+| `COMPOSE_FILE` | `scripts/backup.sh` | compose file the script talks to (default `docker-compose.prod.yml`) |
+
 
 `NEXT_PUBLIC_*` values are inlined by `next build`: set them as build arguments, not on the running
-container (the frontend `Dockerfile` of PR #96 does).
+container (the frontend `Dockerfile` takes `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_DEMO_MODE` and
+`NEXT_PUBLIC_LEGACY_DASHBOARDS`; the compose stack passes the first two from `API_DOMAIN`/`false` and the
+third from `.env`, default `false`).
+
+**What each compose service sees.** The backend containers (`migrate`, `backend`, `worker`,
+`worker-maintenance`) read the whole `.env` plus the fixed values the compose file sets (`APP_ENV`,
+`USE_SQLITE=false`, `SCHEDULER_PROCESS=worker`, `TRUSTED_PROXY_COUNT=1`, `ALLOW_INLINE_JOB_FALLBACK=false`,
+`GIT_SHA`, the Postgres/Redis hosts, the public URLs): a value of those in `.env` is ignored. Postgres gets
+only `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`. Caddy gets `APP_DOMAIN`, `API_DOMAIN`, `ACME_EMAIL`.
+The frontend gets exactly `NEXT_PUBLIC_API_URL`, `NEXTAUTH_URL` and `NEXTAUTH_SECRET` at runtime and no backend secret;
+`scripts/check-prod-compose.sh` fails CI if that changes.
 
 ## 4. Read by nothing
 
@@ -238,4 +253,4 @@ Kubernetes and Helm config maps still set some. Setting them changes nothing:
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_S3_BUCKET`, `AWS_S3_REGION` | S3 storage | `STORAGE_BACKEND` is read by nothing; files go to `STORAGE_LOCAL_PATH` |
 | `DEFAULT_COUNTRY_CODE`, `DEFAULT_BASE_CURRENCY`, `DEFAULT_LOCALE` | organisation defaults | not read |
 | `EMAIL_INGEST_API_KEY`, `EMAIL_ALLOWED_DOMAINS`, `EMAIL_MAX_ATTACHMENT_MB` | inbound mail guard | the inbound webhook uses `EMAIL_INBOUND_SECRET`; the others are not read |
-| `PARASUT_REDIRECT_URI` | callback address | built from `BACKEND_URL`; the compose file of PR #96 sets it to no effect |
+| `PARASUT_REDIRECT_URI` | callback address | built from `BACKEND_URL` (the compose stack sets `BACKEND_URL` from `API_DOMAIN`); setting this variable changes nothing |
