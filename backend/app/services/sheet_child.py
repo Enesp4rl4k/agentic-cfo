@@ -303,7 +303,7 @@ def parse(data: bytes, ext: str, limits: dict[str, int]) -> dict[str, Any]:
 def _child_main(argv: list[str]) -> int:
     # Before openpyxl is imported: with lxml present openpyxl parses most parts with lxml, which tolerates an
     # entity declaration; with this off, EVERY part goes through defusedxml, which refuses it.
-    os.environ["OPENPYXL_LXML"] = "False"
+    os.environ.update(OPENPYXL_LXML="False")
     ext, mem_mb, cpu_s = argv[1], int(argv[2]), int(argv[3])
     limits = {k: int(v) for k, v in json.loads(argv[4]).items()}
     from app.services.pdf_isolation import _apply_limits
