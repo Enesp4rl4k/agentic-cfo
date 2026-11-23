@@ -89,22 +89,29 @@ def _complete(row: dict[str, Any]) -> bool:
     amount = row["amount_cents"]
     if row["type"] not in ("income", "expense") or not isinstance(amount, int) or isinstance(amount, bool):
         return False
-    if row["balance_cents"] is None or not row["transaction_date"]:
+    # A balance is not required: a statement that prints its balance on some rows only has rows between them.
+    if not row["transaction_date"]:
         return False
     return not parse_transaction_date(row["transaction_date"])[1]
 
 
-def _participants(chain: dict[str, Any], held: dict[Any, HeldTransaction]) -> tuple[list[dict[str, Any]], int, int, int]:
-    """(rows in the chain, rows still waiting that block it, rejected rows, rejected rows with a balance)."""
+def _participants(
+    chain: dict[str, Any], held: dict[Any, HeldTransaction],
+) -> tuple[list[dict[str, Any]], int, int, int, list[dict[str, Any]]]:
+    """(rows in the chain, rows still waiting that block it, rejected rows, rejected rows with a balance, all rows
+    in file order with the waiting ones as they are: the reading of a statement that prints a balance on some rows)."""
     rows: list[dict[str, Any]] = []
+    whole: list[dict[str, Any]] = []
     blocking = rejected = with_figures = 0
     for entry in chain.get("rows") or []:
         if not entry.get("held"):
             rows.append(_row(entry))
+            whole.append(rows[-1])
             continue
         h = held.get(entry["pos"])
         if h is None:
             blocking += 1
+            whole.append(_row(entry))
         elif h.status == REJECTED:
             rejected += 1
             if h.payload.get("balance_cents") is not None:
@@ -113,9 +120,11 @@ def _participants(chain: dict[str, Any], held: dict[Any, HeldTransaction]) -> tu
             row = _row(h.payload)
             if h.status == PENDING and not _complete(row):
                 blocking += 1
+                whole.append({**row, "type": None})
             else:
                 rows.append(row)
-    return rows, blocking, rejected, with_figures
+                whole.append(row)
+    return rows, blocking, rejected, with_figures, whole
 
 
 def _digest(proof: dict[str, Any] | None, closing: dict[str, Any] | None) -> dict[str, Any]:
@@ -148,11 +157,16 @@ async def reverify(db: AsyncSession, org_id: str, causes: dict[str, list[str]]) 
                 .execution_options(populate_existing=True)
             )).scalars()
         }
-        rows, blocking, rejected, with_figures = _participants(chain, held)
+        rows, blocking, rejected, with_figures, whole = _participants(chain, held)
         old = meta.get("balance_proof")
         identity = (old or {}).get("identity")
         if blocking:
             proof = {**assess([], None, identity=identity), "has_balances": True, "reason": f"{blocking} satır bekliyor"}
+            # A statement that prints its balance on some rows only is proven by its segments: a waiting row that
+            # lies outside them (before the first / after the last printed balance) does not stop that.
+            segmented = assess(whole, meta.get("ingest"), recheck=True, identity=identity)
+            if segmented.get("segments") and segmented["basis"]:
+                proof, rows = segmented, whole
         else:
             proof = assess(rows, meta.get("ingest"), recheck=True, identity=identity)
             if proof["state"] == "unverified" and with_figures:

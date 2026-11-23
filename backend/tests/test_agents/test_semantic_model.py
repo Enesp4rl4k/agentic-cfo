@@ -25,11 +25,14 @@ def test_semantic_catalog_stable_ids() -> None:
     assert "risk.overall_score" in ids
 
 
+KNOWN_RUNWAY = {"status": "computed", "basis": "known", "balance_basis": "known", "as_of": "2026-03-31"}
+
+
 def test_project_from_cfo_shapes() -> None:
     flat = {
         "pnl": {"revenue": 1_000_000, "net_margin": 0.12, "gross_margin": 0.4},
         "cashflow": {"operating": 50_000},
-        "forecast": {"scenarios": {"base": {"runway_months": 8}}},
+        "forecast": {"scenarios": {"base": {"runway_months": 8}}, "runway": KNOWN_RUNWAY},
         "anomalies": [{"severity": "critical"}, {"severity": "low"}],
     }
     pts = project_from_cfo(flat, currency="USD", job_id="j1")
@@ -41,7 +44,7 @@ def test_project_from_cfo_shapes() -> None:
     nested = {
         "dashboard": {
             "pnl": {"revenue_cents": 2_500_000, "net_margin": 0.05},
-            "forecast": {"scenarios": {"base": {"runway_months": 4}}},
+            "forecast": {"scenarios": {"base": {"runway_months": 4}}, "runway": KNOWN_RUNWAY},
         },
         "anomalies": [],
     }
@@ -49,6 +52,9 @@ def test_project_from_cfo_shapes() -> None:
     mmap2 = {p.metric_id: p for p in pts2}
     assert mmap2["finance.revenue"].value == 2_500_000
     assert mmap2["finance.runway_months"].value == 4
+    # An unproven runway (a bare number, or an assumed one) is not handed on to the other agents.
+    bare = {"pnl": {"revenue": 1}, "forecast": {"scenarios": {"base": {"runway_months": 4}}}}
+    assert "finance.runway_months" not in {p.metric_id for p in project_from_cfo(bare, currency="USD")}
 
 
 def test_project_from_cfo_converts_lira_scalars_to_cents() -> None:

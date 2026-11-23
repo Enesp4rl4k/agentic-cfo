@@ -20,13 +20,27 @@ from typing import Any
 
 from app.config import get_settings
 from app.core.currency_totals import fmt_money
-from app.services.bank_balance import assess, balance_age, closing_balance, latest_balance
+from app.services.bank_balance import (
+    aged_basis,
+    assess,
+    balance_age,
+    closing_balance,
+    latest_balance,
+)
 from app.services.coverage import gaps, usable_months
 
 RUNWAY_MIN_MONTHS = 3  # months of cash movement the burn average needs (the forecast's baseline window)
 RUNWAY_CRITICAL_MONTHS = 3
 RUNWAY_WARNING_MONTHS = 6
 RUNWAY_LONG_MONTHS = 36  # beyond this the figure is stated as "longer than", not as a number
+
+# PROMINENCE is not CERTAINTY. Certainty (known / assumed) decides whether "kritik" and the top alert severity may
+# be used. Prominence decides how visibly the user is told: any computed runway at or below this many months is the
+# first thing said (briefing, radar, alert), known or assumed, because a low runway is important news even when it
+# rests on an old statement.
+RUNWAY_ATTENTION_MONTHS = RUNWAY_CRITICAL_MONTHS
+UPLOAD_PROMPT = "Güncel durumu görmek için yeni ekstre yükleyin."
+UPLOAD_PATH = "/upload"
 
 COMPUTED = "computed"
 NOT_BURNING = "not_burning"
@@ -67,6 +81,7 @@ def opening_cash_for(state: dict[str, Any], anchor: date | None = None) -> dict[
     today = anchor or datetime.now(UTC).date()
     limit = get_settings().radar_balance_stale_after_days
     age, stale = balance_age(str(chosen["date"]), today, limit)
+    basis, basis_note = aged_basis(chosen.get("basis"), chosen.get("basis_note"), age, str(chosen["date"])[:10])
     return {
         "balance_cents": int(chosen["balance_cents"]),
         "as_of": str(chosen["date"])[:10],
@@ -75,11 +90,40 @@ def opening_cash_for(state: dict[str, Any], anchor: date | None = None) -> dict[
         "stale_after_days": limit,
         "filename": chosen.get("filename"),
         # "known", or "assumed" when the proof is thin (`bank_balance.assess`): said wherever it is shown.
-        "basis": chosen.get("basis") or "known",
-        "basis_note": chosen.get("basis_note"),
+        "basis": basis,
+        "basis_note": basis_note,
         "accounts": list(chosen.get("accounts") or []),
         "excluded": list(chosen.get("excluded") or []),
     }
+
+
+def balance_reasons(opening: dict[str, Any] | None) -> list[dict[str, str]]:
+    """Why a balance is only assumed, one sentence each, from the one opening dict: {code, text}.
+
+    old_balance (older than the staleness limit), lagging_account (one account behind the others), thin_proof
+    (the statement's own chain is weak; the ONLY reason that says "zayıf kanıt"), identity_unresolved. A known,
+    current balance has none."""
+    if not opening:
+        return []
+    out: list[dict[str, str]] = []
+    accounts = opening.get("accounts") or []
+    if opening.get("stale"):
+        out.append({"code": "old_balance", "text": (
+            f"Bu bakiye {opening['age_days']} gün önceki ekstreden ({_date_tr(opening['as_of'])}). {UPLOAD_PROMPT}")})
+    if len(accounts) > 1:
+        for a in accounts:
+            if a.get("lagging"):
+                out.append({"code": "lagging_account", "text": (
+                    f"{a['name'] or 'adsız ekstre'} bakiyesi {_date_tr(a['as_of'])} tarihli, diğerlerinden "
+                    f"{a['behind_days']} gün eski. {UPLOAD_PROMPT}")})
+    notes = [opening.get("basis_note"), *(a.get("basis_note") for a in accounts)]
+    thin = sorted({p for n in notes if n for p in str(n).split("; ") if "ekstreye ait" not in p})
+    out.extend({"code": "thin_proof", "text": f"Bakiye zayıf kanıta dayanıyor ({p})"} for p in thin)
+    if opening.get("identity_note"):
+        out.append({"code": "identity_unresolved", "text": str(opening["identity_note"])})
+    if not out and opening.get("basis") == "assumed":
+        out.append({"code": "thin_proof", "text": "Bakiye zayıf kanıta dayanıyor (zayıf kanıt)"})
+    return out
 
 
 def _balance_notes(opening: dict[str, Any], money: Any) -> str:
@@ -93,9 +137,12 @@ def _balance_notes(opening: dict[str, Any], money: Any) -> str:
     for a in accounts:
         if a.get("lagging") and len(accounts) > 1:
             parts.append(f"{a['name'] or 'adsız ekstre'} bakiyesi {_date_tr(a['as_of'])} tarihli, diğerlerinden {a['behind_days']} gün eski")
-    if opening.get("basis") == "assumed":
-        why = "; ".join(sorted({a["basis_note"] for a in accounts if a.get("basis_note")} or {opening.get("basis_note") or "zayıf kanıt"}))
-        parts.append(f"Bakiye zayıf kanıta dayanıyor ({why}), varsayım olarak alındı")
+    # Each assumption has its OWN sentence (`balance_reasons`): an old balance is not "weak evidence".
+    for r in balance_reasons(opening):
+        if r["code"] == "thin_proof":
+            parts.append(f"{r['text']}, varsayım olarak alındı")
+    if any(r["code"] == "lagging_account" for r in balance_reasons(opening)):
+        parts.append(UPLOAD_PROMPT.rstrip("."))
     if opening.get("identity_note"):
         parts.append(str(opening["identity_note"]))
     parts.extend(_excluded_note(opening.get("excluded") or []))
@@ -128,6 +175,11 @@ def _block(status: str, message: str, opening: dict[str, Any] | None, **extra: A
         # reaching the month's first and last day) or "assumed" (an edge within the tolerance).
         "basis": None,
         "assumptions": [],
+        # Why the balance is only assumed, one sentence each; `attention`: a computed runway at or below
+        # RUNWAY_ATTENTION_MONTHS (known or assumed), which is said first and styled apart from neutral cards.
+        "reasons": balance_reasons(opening),
+        "attention": False,
+        "upload_path": UPLOAD_PATH,
         "avg_monthly_net_cents": None,
         "runway_months": None,
         "beyond_horizon": False,
@@ -252,7 +304,7 @@ def compute_runway(
         )
     basis = f"{_date_tr(opening['as_of'])} ekstresindeki bakiyeye göre kasa {money(opening['balance_cents'])}"
     stale_note = (
-        f" Bu bakiye {opening['age_days']} gün önceki ekstreden; güncel olmayabilir."
+        f" Bu bakiye {opening['age_days']} gün önceki ekstreden ({_date_tr(opening['as_of'])}); güncel olmayabilir. {UPLOAD_PROMPT}"
         if opening["stale"] else ""
     ) + _balance_notes(opening, money)
     if cashflow.get("esas") == "tahakkuk":
@@ -312,6 +364,8 @@ def compute_runway(
     )
     if opening.get("uncertain") and level == "critical":
         level = "warning"  # the cash is the newest of statements that may be one account: not measured
+    if opening.get("basis") == "assumed" and level == "critical":
+        level = "warning"  # only a measured, current balance may raise a critical alert (stale and thin proofs are assumed)
     if balance <= 0:
         verdict = "Kasa bakiyesi sıfırın altında: nakit bitmiş."
     elif beyond:
@@ -332,14 +386,18 @@ def compute_runway(
         runway_months=None if beyond else round(runway, 1),
         beyond_horizon=beyond,
         level=level,
-    )
+        attention=not beyond and runway <= RUNWAY_ATTENTION_MONTHS,
+    ) | {"currency": currency, "reasons": [*balance_reasons(opening), *(
+        [{"code": "edge_tolerance", "text": assumed_text.strip()}] if assumed_text else [])]}
 
 
 def runway_alert(runway: dict[str, Any]) -> dict[str, str] | None:
     """What the runway says as an alert: severe only when both balance and burn are measured."""
     status = runway["status"]
     if status == COMPUTED and runway["level"]:
-        return {"level": runway["level"], "message": runway["message"], "basis": "runway"}
+        # A low runway on an assumption is still sent: at the capped severity, with the sentence that says why.
+        text = runway_line(runway) if runway.get("attention") and runway["level"] != "critical" else runway["message"]
+        return {"level": runway["level"], "message": text, "basis": "runway"}
     if status in (NO_BALANCE, INSUFFICIENT_HISTORY, NOT_CASH_BASIS, COVERAGE_UNKNOWN):
         return {"level": "info", "message": runway["message"], "basis": "runway"}
     return None
@@ -374,7 +432,8 @@ def runway_line(block: dict[str, Any]) -> str:
     span = f"{_month_name(months[0]['month'], with_year)}–{_month_name(months[-1]['month'], with_year)}"
     avg = block["avg_monthly_net_cents"]
     where = f"{_date_tr(block['as_of'])} ekstresindeki kasa {fmt_money(block['opening_cash_cents'], cur)}"
-    stale = f" Bu bakiye {block['age_days']} gün önceki ekstreden; güncel olmayabilir." if block.get("stale") else ""
+    why_assumed = "".join(f" {r['text']}" for r in block.get("reasons") or [] if r["code"] != "edge_tolerance")
+    stale = why_assumed
     if status == NOT_BURNING:
         return (
             f"Nakit azalmıyor: son {len(months)} tam ayın ({span}) ortalama net nakit akışı "
@@ -386,15 +445,18 @@ def runway_line(block: dict[str, Any]) -> str:
         head = "Kasa bakiyesi sıfırın altında: nakit bitmiş"
     else:
         head = "Nakit pisti yaklaşık " + f"{block['runway_months']:.1f}".replace(".", ",") + " ay"
-    level = {"critical": "KRİTİK: ", "warning": "Uyarı: "}.get(block.get("level") or "", "")
+    # Certainty decides the word, prominence the position: known and low -> "KRİTİK"; low on an assumption
+    # -> "DİKKAT: Son ekstreye göre ..." (never "kritik", never "kanıtlı"); both are said first.
+    if block.get("level") == "critical":
+        level = "KRİTİK: "
+    elif block.get("attention"):
+        level, head = "DİKKAT: Son ekstreye göre ", head[0].lower() + head[1:]
+    else:
+        level = {"warning": "Uyarı: "}.get(block.get("level") or "", "")
     out = (
         f"{level}{head} ({where}; son {len(months)} tam ayın ({span}) ortalama net çıkışı "
         f"{fmt_money(-avg, cur)}/ay)."
     )
-    caveats = _assumed_text(block.get("assumptions") or [])
-    if block.get("identity_note"):
-        caveats += f" {block['identity_note']}."
-    if block.get("balance_basis") == "assumed" and not block.get("identity_note"):
-        why = "; ".join(sorted({a["basis_note"] for a in block.get("accounts") or [] if a.get("basis_note")})) or "zayıf kanıt"
-        caveats += f" Bakiye zayıf kanıta dayanıyor ({why}), varsayım."
-    return out + (f" Varsayım:{caveats}" if block.get("basis") == "assumed" and caveats else "") + stale
+    edges = _assumed_text(block.get("assumptions") or [])
+    caveats = (edges + stale) if block.get("basis") == "assumed" else stale
+    return out + (f" Varsayım:{caveats}" if block.get("basis") == "assumed" and caveats else caveats)

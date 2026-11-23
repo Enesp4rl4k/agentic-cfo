@@ -193,6 +193,8 @@ export const tr: MessageTree = {
     openingAssumed: "Bakiye zayıf kanıta dayanıyor ve varsayım olarak alındı:",
     accountQuestionLink: "Yanıtla: bunlar aynı hesap mı?",
     identityUncertainNote: "Aynı hesap olabilecek ekstreler toplanmaz; yalnızca en güncel bakiye sayılır.",
+    runwayAttention: "Dikkat",
+    runwayUploadLink: "Yeni ekstre yükle",
   },
   takvim: {
     title: "Ödeme takvimi",

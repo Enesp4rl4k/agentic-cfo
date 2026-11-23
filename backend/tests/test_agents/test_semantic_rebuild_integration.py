@@ -75,7 +75,7 @@ async def _seed_contradiction_org(db: AsyncSession) -> None:
     ctx.last_cfo_result = {
         "pnl": {"revenue_cents": 1_600_000, "net_margin": 0.05, "gross_margin": 0.4},
         "cashflow": {"operating": 10_000},
-        "forecast": {"scenarios": {"base": {"runway_months": 3.0}}},
+        "forecast": {"scenarios": {"base": {"runway_months": 3.0}}, "runway": {"status": "computed", "basis": "known", "balance_basis": "known", "as_of": "2026-03-31"}},
         "anomalies": [],
     }
     ctx.last_cmo_result = {
@@ -172,7 +172,7 @@ async def test_trailing_rebuild_includes_both_agent_blobs(db_session: AsyncSessi
     ctx.reporting_period = PERIOD_KEY
     ctx.last_cfo_result = {
         "pnl": {"revenue_cents": 1_600_000},
-        "forecast": {"scenarios": {"base": {"runway_months": 3.0}}},
+        "forecast": {"scenarios": {"base": {"runway_months": 3.0}}, "runway": {"status": "computed", "basis": "known", "balance_basis": "known", "as_of": "2026-03-31"}},
         "anomalies": [],
     }
     await save_company_context(ctx, db_session)

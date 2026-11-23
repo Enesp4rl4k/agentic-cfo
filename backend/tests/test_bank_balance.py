@@ -33,9 +33,15 @@ def test_balances_that_do_not_chain_prove_nothing():
     assert closing_balance(broken) is None
 
 
-def test_a_row_without_a_balance_proves_nothing():
+def test_a_row_without_a_balance_is_outside_the_chain_and_the_closing_is_the_last_printed_balance():
+    """Not "proves nothing" any more (balance_segments): the balance printed on 05.04 stands, the later row is
+    outside the chain, stays held, and the statement is only ever `assumed` (one discriminating segment)."""
+    from app.services.bank_balance import assess
+
     missing = [*OLDEST_FIRST[:2], _row("2025-04-09", 1_500_50, "income", None)]
-    assert closing_balance(missing) is None
+    assert closing_balance(missing) == {"date": "2025-04-05", "balance_cents": 56_000_00}
+    proof = assess(missing, None)
+    assert proof["basis"] == "assumed" and "1 satır bakiye zincirinin dışında" in proof["reason"]
 
 
 def test_a_single_row_has_nothing_to_chain_to():

@@ -273,6 +273,21 @@ describe("Nakit Radarı", () => {
     expect(card.textContent).toContain("KRİTİK: yaklaşık 1,7 ay.");
   });
 
+  it("styles a low runway on an old statement as attention, with the upload link and no critical label", async () => {
+    getCashRadar.mockResolvedValue(radar({
+      runway: runway({
+        level: "warning", basis: "assumed", runway_months: 1.5, attention: true, stale: true, upload_path: "/upload",
+        message: "DİKKAT: Son ekstreye göre nakit pisti yaklaşık 1,5 ay. Bu bakiye 25 gün önceki ekstreden.",
+      }),
+    }));
+    show();
+    const card = await screen.findByTestId("runway-card");
+    expect(card.getAttribute("data-attention")).toBe("true");
+    expect(screen.getByTestId("runway-attention")).toBeTruthy();
+    expect(screen.getByTestId("runway-upload").getAttribute("href")).toBe("/upload");
+    expect(card.textContent).not.toContain("Kritik");
+  });
+
   it("says unknown with no figure when there is no proven balance, and names the statement that failed", async () => {
     getCashRadar.mockResolvedValue(radar({
       starting_cash_cents: null,

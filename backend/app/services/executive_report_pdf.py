@@ -43,6 +43,22 @@ def _sign_class(value: int | float) -> str:
     return "positive" if value >= 0 else "negative"
 
 
+def _scenario_runway(forecast: dict[str, Any], key: str) -> str:
+    """The runway cell of one scenario row. Scenario rows are what-ifs, never measurements.
+
+    The base row is the runway as the headline shows it (value, basis, "bilinmiyor"). The other rows are derived
+    from that base: with an unknown base they are unknown, with an unproven one they say it.
+    """
+    base = runway_for_display(forecast)
+    if key == "base":
+        return base.text()
+    view = runway_for_display(forecast, key)
+    if base.months is None or view.months is None:
+        return "bilinmiyor (senaryo; temel nakit ömrü bilinmiyor)" if base.months is None else "bilinmiyor"
+    note = "" if base.proven else f"; temel nakit ömrü {'varsayıma dayanıyor' if base.basis == 'assumed' else 'doğrulanmadı'}"
+    return f"{view.short()} (senaryo — varsayım{note})"
+
+
 def _build_html(
     dashboard: dict[str, Any],
     company_name: str,
@@ -103,14 +119,13 @@ def _build_html(
     for key in ["pessimistic", "base", "optimistic"]:
         sc = scenarios.get(key) or {}
         net12 = sc.get("twelve_month_net", 0)
-        rw    = runway_for_display(forecast, key).months
-        label = sc.get("label", key)
+        label = html.escape(str(sc.get("label", key)))
         row_class = "base-row" if key == "base" else ""
         scenario_rows += f"""
         <tr class="{row_class}">
-          <td>{label}</td>
+          <td>{label} <span style="color:#64748b">(senaryo — varsayım)</span></td>
           <td class="{_sign_class(net12)}">{fmt_lira(net12)}</td>
-          <td>{f"{rw} ay" if rw else "bilinmiyor"}</td>
+          <td>{html.escape(_scenario_runway(forecast, key))}</td>
         </tr>"""
 
     # Narrative
@@ -402,7 +417,7 @@ tr.base-row td {{ font-weight: 700; background: #eff6ff; }}
 
 <!-- Forecast scenarios -->
 <div class="section" style="margin-bottom:0.35cm">
-  <div class="section-header">12 Aylık Tahmin — 3 Senaryo</div>
+  <div class="section-header">12 Aylık Tahmin — 3 Senaryo (senaryo — varsayım, ölçüm değil)</div>
   <div class="section-body">
     <table>
       <thead><tr><th>Senaryo</th><th style="text-align:right">12 Aylık Net</th><th>Nakit Ömrü</th></tr></thead>
