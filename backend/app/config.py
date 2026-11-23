@@ -348,7 +348,7 @@ class Settings(BaseSettings):
     pdf_max_pages: int = 500
     pdf_parse_timeout_seconds: int = 180          # text path, whole document
     pdf_ocr_seconds_per_page: int = 30            # added per page that needs OCR (Tesseract), so a long scan is not refused for length
-    pdf_child_memory_mb: int = 2048               # RLIMIT_AS of a PDF parser child (Linux): a generous BACKSTOP above its measured peak; docs/ops/parser-sizing.md
+    pdf_child_memory_mb: int = 1536               # RLIMIT_AS of a PDF parser child (Linux): a generous BACKSTOP above its measured peak; docs/ops/parser-sizing.md
     parse_child_rss_mb: int = 800                 # resident memory budget of one parser child (and its Tesseract), measured x headroom: what the container must hold
     pdf_parse_concurrency: int = 1                # simultaneous parser children per PROCESS (PDF and spreadsheet children share it)
     parse_process_count: int = 2                  # API worker processes in this container (uvicorn --workers); an arq worker container sets 1

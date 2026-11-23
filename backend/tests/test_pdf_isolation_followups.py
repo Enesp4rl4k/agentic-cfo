@@ -355,18 +355,23 @@ def test_a_child_that_reports_a_memory_error_or_is_killed_is_the_memory_refusal(
         assert extract_text_from_pdf(path).metadata["refusal"]["code"] == "pdf_memory"
 
 
-def test_an_unreadable_page_with_content_is_listed_and_holds_the_result(tmp_path):
+def test_an_unreadable_page_with_content_is_listed_and_holds_the_result(tmp_path, monkeypatch):
     import app.agents.data_ingestion as di
+    from app.services import ocr_service
 
     doc = pymupdf.open()
-    doc.new_page().insert_text((50, 72), "01.03.2026 HAVALE GELEN ODEME ACIKLAMA 1.250,00 TL " * 3, fontsize=8)   # readable
-    doc.new_page().insert_text((50, 72), "ok", fontsize=10)   # a page with a little text the strategies cannot use
+    doc.new_page().insert_text((50, 72), "01.03.2026 HAVALE GELEN ODEME ACIKLAMA 1.250,00 TL " * 3, fontsize=8)   # readable (native)
+    doc.new_page().insert_text((50, 72), "ok", fontsize=10)   # a page with a little text no strategy can use
     doc.new_page()                                              # a genuinely blank page: not reported
     path = str(tmp_path / "a.pdf")
     doc.save(path)
     doc.close()
-    result = extract_text_from_pdf(path)
+    # hermetic: whatever pdfplumber and Tesseract would make of "ok" on this machine, here they read nothing
+    monkeypatch.setattr(ocr_service, "_try_pdfplumber_extraction", lambda file_path, page_num: ("", 0.0, False))
+    monkeypatch.setattr(ocr_service, "_try_tesseract_ocr", lambda page, dpi=300: ("", 0.0))
+    result = pdf_isolation.parse_here(path)
     assert result.metadata.get("pages_unread") == [2]           # page 2 had content and gave nothing; page 3 is blank
+    monkeypatch.setattr(pdf_isolation, "cached_result", lambda file_path: result)
     sonuc = SkillResult(ok=True, patch={}, confidence=0.95, needs_review=False, detail="3 işlem")
     pdf_isolation.apply_pdf_notes(sonuc, path)
     assert sonuc.needs_review is True and "Sayfa 2 okunamadı" in sonuc.detail and "could not be read" in sonuc.detail

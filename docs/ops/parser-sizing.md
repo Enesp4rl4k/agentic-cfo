@@ -27,12 +27,15 @@ numbers into the CI log and the job summary and fails if the defaults lose their
 
 | Input | Child VmPeak | Child VmHWM | Tesseract VmPeak / VmHWM |
 |---|---|---|---|
-| 300-page text statement, ruled tables, 42 rows a page (12 MB) | 146 MB | 102 MB | none |
-| 300 pages thin enough to go through pdfplumber every page | 146 MB | 95 MB | none |
-| 10-page full-colour scan, OCR at 300 dpi | 286 MB (render only; measured locally without Tesseract) | 203 MB | see the CI numbers below |
+| 300-page text statement, ruled tables, 42 rows a page | 120 MB | 84 MB | none |
+| 300 pages thin enough to go through pdfplumber every page | 140 MB | 101 MB | none |
+| 10-page full-colour scan, OCR at 300 dpi (`tur+eng`) | **517 MB** | 256 MB | 205 MB / 137 MB |
 | .xlsx, 600 000 cells (2.8 MB file) | 105 MB | 90 MB | none |
 
-OCR_NUMBERS_PLACEHOLDER
+These are the CI numbers (Linux, Python 3.12, one run; the 300-page text and OCR rows are in the Backend CI log
+as `PARSER MEMORY ...` lines). Two things follow. The 512 MB `RLIMIT_AS` of the first version of this change was
+**below** the OCR child's own 517 MB peak: every scanned statement would have failed. And Tesseract itself is
+small (205 MB of address space), so the child that renders the page, not Tesseract, sets the limit.
 
 Memory does not grow with the page count: a page is rendered, read and released, so 300 pages cost the same as
 3. What grows it is the page *size* (a 300 dpi A4 render is about 26 MB, several copies at once) and, for
@@ -42,8 +45,8 @@ spreadsheets, the number of cells (`SHEET_MAX_CELLS` bounds it).
 
 | Setting | Default | From |
 |---|---|---|
-| `PDF_CHILD_MEMORY_MB` (RLIMIT_AS backstop) | 2048 | the larger of child and Tesseract VmPeak x 1.5 or more |
-| `PARSE_CHILD_RSS_MB` (resident budget per child) | 800 | (child + Tesseract VmHWM) x 1.25 or more |
+| `PDF_CHILD_MEMORY_MB` (RLIMIT_AS backstop) | 1536 | 517 MB (the OCR child) x 3. The test requires at least x 1.5 |
+| `PARSE_CHILD_RSS_MB` (resident budget per child) | 800 | 256 + 137 = 393 MB resident (child + Tesseract) x 2. The test requires at least x 1.25 |
 | `SHEET_CHILD_MEMORY_MB` | 512 | 105 MB measured for 600 000 cells (the cap is 1 000 000), about 3x |
 | `PDF_PARSE_CONCURRENCY` | 1 | the long statements and scans are the core input: one child gets what it needs |
 

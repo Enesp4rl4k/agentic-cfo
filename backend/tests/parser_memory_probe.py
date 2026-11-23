@@ -56,7 +56,14 @@ def scanned_pdf(path: Path, pages: int, dpi: int = 300) -> Path:
     """Full-colour A4 page images without a text layer: each page is OCR work at `dpi` (the product renders at 300)."""
     import pymupdf
 
-    src = statement_pdf(path.with_suffix(".src.pdf"), 1, rows=38)
+    src = path.with_suffix(".src.pdf")
+    page_doc = pymupdf.open()
+    page = page_doc.new_page()
+    page.insert_text((40, 50), "HESAP EKSTRESI", fontsize=16)
+    for r in range(44):   # plain 11 pt lines: what a scanned statement gives Tesseract to read
+        page.insert_text((40, 80 + r * 16), f"{1 + r % 28:02d}.03.2026 {ROW_TEXT[r % 5]} ACIKLAMA {(r * 37) % 9000 + 10:,}.00 TL", fontsize=11)
+    page_doc.save(str(src))
+    page_doc.close()
     pix = pymupdf.open(str(src))[0].get_pixmap(dpi=dpi, colorspace=pymupdf.csRGB)
     jpeg = pix.tobytes("jpeg")
     doc = pymupdf.open()
