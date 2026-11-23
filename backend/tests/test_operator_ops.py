@@ -98,7 +98,10 @@ async def test_a_failed_backup_report_alerts_once_per_day(client, monkeypatch):
 
 
 async def test_a_stale_backup_alerts_only_when_reporting_is_in_use(client, monkeypatch):
-    now = datetime.now(UTC)
+    # A fixed `now` one minute into an alert window: with the real clock, 31 h and 31 h 15 min later straddled
+    # a window boundary about one run in twenty-four, and the "same window" check saw two mails.
+    window = max(1, get_settings().operator_alert_cooldown_minutes) * 60
+    now = datetime.fromtimestamp(1_800_000_000 // window * window + 60, tz=UTC)
     assert await ops_watch.watch(now) >= 0
     assert not [r for r in await alert_rows(client) if "Yedek raporu" in r.subject]  # no token: nothing claimed
     monkeypatch.setattr(get_settings(), "ops_report_token", "tok-" + "z" * 20)
