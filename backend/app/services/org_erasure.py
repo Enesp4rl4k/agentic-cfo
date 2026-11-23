@@ -39,6 +39,7 @@ A hash-chained ``OrgErasureRecord`` (no personal data) is written as proof.
 """
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import shutil
@@ -371,19 +372,26 @@ async def erase_org(
         return ErasureResult(record=prior[0], already_erased=True, counts=prior[0].counts)
 
     try:
-        counts = await _erase(db, org_id, org_hash, mode, storage_root)
+        counts, sweep = await _erase(db, org_id, org_hash, mode, storage_root)
         record = await _write_record(db, org_hash, mode, counts, requested_by_hash, confirmed_by_hash)
         await db.commit()
         await db.refresh(record)
     except BaseException:
         await db.rollback()
         raise
-    return ErasureResult(record=record, counts=counts)
+    # After the commit: derived data in Redis (a SCAN pass must not hold the erase transaction open). The counts
+    # cannot go into the hash-chained record any more, so they are returned and kept on the request row.
+    from app.services.privacy.ephemeral import sweep_org_redis
+
+    shown = copy.deepcopy(counts)
+    shown.setdefault("_ephemeral", {}).update(await sweep_org_redis(org_id, *sweep))
+    return ErasureResult(record=record, counts=shown)
 
 
 async def _erase(
     db: AsyncSession, org_id: str, org_hash: str, mode: str, storage_root: Path | None
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], tuple[list[str], list[str]]]:
+    """Returns (the counts for the proof record, (user ids, job ids) for the Redis sweep after the commit)."""
     tables = _tables(Base.metadata)
     scope = derive_scope()
     keep_rows = mode == ANONYMISE
@@ -495,11 +503,12 @@ async def _erase(
         .values(target_org_id=None, requested_by_user_id=None)
     )
     counts["_files"] = {"deleted": removed}
-    # Caches, chat history and agent memory live outside the tables (see `privacy.ephemeral`).
+    # In-process caches and agent memory live outside the tables (see `privacy.ephemeral`); a failure aborts.
     from app.services.privacy.ephemeral import erase_org_ephemeral
 
-    counts["_ephemeral"] = await erase_org_ephemeral(db, org_id, erase_users, [r.id for r in job_rows])
-    return counts
+    job_ids = [r.id for r in job_rows]
+    counts["_ephemeral"] = await erase_org_ephemeral(db, org_id, erase_users, job_ids)
+    return counts, (list(erase_users), job_ids)
 
 
 async def _external_followup(

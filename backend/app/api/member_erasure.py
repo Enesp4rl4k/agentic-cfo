@@ -83,7 +83,7 @@ async def _schedule_member(
                                    by=str(requester.id), via=initiated_by)
     await db.commit()
     if run_now:
-        await erasure_flow.run_request(db, req)
+        await erasure_flow.run_request(db, req)  # a lost claim leaves the row as it is: the status below tells
         await db.refresh(req)
     when = req.execute_after.isoformat() if req.execute_after else None
     return {"data": {"request_id": req.id, "status": req.status, "execute_after": when, "pseudonym": pseudonym(str(target.id)),
@@ -154,7 +154,9 @@ async def cancel_member_erasure(
         await erasure_flow.cancel(db, req, by_hash=hash_id("user", uid), decided_by=uid,
                                   role="platform_operator" if operator else req.initiated_by)
     except ValueError as exc:
-        raise HTTPException(status_code=409, detail=f"Talep durumu: {exc}; iptal edilemez.") from exc
+        detail = ("Silme işlemi şu anda çalışıyor; iptal edilemez." if str(exc) == erasure_flow.EXECUTING
+                  else f"Talep durumu: {exc}; iptal edilemez.")
+        raise HTTPException(status_code=409, detail=detail) from exc
     if target is not None:
         await _record_member_decisions(db, target, handle=pseudonym(str(target.id)), outcome="erasure_cancelled",
                                        by=uid, via="operator" if operator else req.initiated_by)

@@ -28,6 +28,8 @@ A person who is the only owner of a company cannot be erased: the company would 
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -47,8 +49,16 @@ MEMBER_MODE = "member_anonymise"
 
 
 def pseudonym(user_id: str) -> str:
-    """The stable pseudonym of a user id: the same id always yields the same handle, and it reveals nothing."""
-    return "member-" + hash_id("user", user_id)[:12]
+    """The stable pseudonym of a user id: the same id always yields the same handle, and it reveals nothing.
+
+    An HMAC under a server-side secret (`ERASURE_PSEUDONYM_SECRET`, else the app secret), so knowing a user id is not
+    enough to confirm that a handle belongs to it.
+    """
+    from app.config import get_settings
+
+    settings = get_settings()
+    key = (settings.erasure_pseudonym_secret or settings.backend_secret_key).encode()
+    return "member-" + hmac.new(key, f"member-pseudonym:{user_id}".encode(), hashlib.sha256).hexdigest()[:12]
 
 
 def is_tombstone(email: str | None) -> bool:

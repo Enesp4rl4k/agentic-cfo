@@ -50,7 +50,7 @@ async def test_confirm_schedules_and_nothing_is_destroyed_during_cooling_off(cli
         assert req.execute_after - req.confirmed_at >= timedelta(days=6, hours=23)
         rec = (await db.execute(select(Decision).where(Decision.org_id == org, Decision.kind == DecisionKind.ERASURE))).scalars().all()
         assert [d.outcome for d in rec] == ["scheduled"]
-        assert await erasure_flow.execute_due(db) == {"executed": 0, "blocked": 0, "failed": 0, "expired": 0}
+        assert await erasure_flow.execute_due(db) == {"executed": 0, "blocked": 0, "failed": 0, "expired": 0, "skipped": 0}
         assert (await db.get(Organization, org)).name != "[erased]"
 
 

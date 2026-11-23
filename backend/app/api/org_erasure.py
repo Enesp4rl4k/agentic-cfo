@@ -175,6 +175,8 @@ async def confirm_org_erasure(
     if not run_now:
         return _scheduled(req)
     outcome = await erasure_flow.run_request(db, req)
+    if outcome.get("claimed") is False:  # cancelled or taken by the executor between confirm and run
+        raise HTTPException(status_code=409, detail=f"Talep durumu: {outcome['status']}.")
     await db.refresh(req)
     record = await db.get(OrgErasureRecord, req.record_id) if req.record_id else None
     logger.info("org erasure executed: request=%s mode=%s", req.id, req.mode)
@@ -189,6 +191,12 @@ async def confirm_org_erasure(
         },
         "error": None,
     }
+
+
+def _cannot_cancel(status: str) -> str:
+    if status == erasure_flow.EXECUTING:
+        return "Silme işlemi şu anda çalışıyor; iptal edilemez."
+    return f"Talep durumu: {status}; iptal edilemez."
 
 
 @router.post("/compliance/org-erasure/{request_id}/cancel")
@@ -210,7 +218,7 @@ async def cancel_org_erasure(
             db, req, by_hash=hash_id("user", str(current_user.id)), decided_by=str(current_user.id),
             role="platform_operator" if operator else "owner")
     except ValueError as exc:
-        raise HTTPException(status_code=409, detail=f"Talep durumu: {exc}; iptal edilemez.") from exc
+        raise HTTPException(status_code=409, detail=_cannot_cancel(str(exc))) from exc
     await db.commit()
     return {"data": {"request_id": req.id, "status": req.status}, "error": None}
 
