@@ -28,8 +28,13 @@ from arq.connections import ArqRedis, RedisSettings
 from redis import exceptions as redis_exc
 
 from app.config import get_settings
+from app.core.preflight import enforce_or_exit
 
 logger = logging.getLogger(__name__)
+
+# The worker runs the scheduler and sends the mail: it gets the same production preflight as the API. A
+# fatal finding (placeholder secret, no APP_ENV on Postgres, mail required but no sender) stops it here.
+enforce_or_exit(get_settings(), process="worker")
 
 
 class TransientWorkerError(RuntimeError):

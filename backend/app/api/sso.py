@@ -116,7 +116,7 @@ async def sso_callback(
     """
     from app.config import get_settings
     from app.services.auth import create_access_token, create_refresh_token
-    from app.services.sso import get_sso_service, provision_sso_user
+    from app.services.sso import SignUpClosed, get_sso_service, provision_sso_user
 
     settings     = get_settings()
     frontend_url = _frontend_url(settings)
@@ -139,6 +139,9 @@ async def sso_callback(
 
     try:
         user = await provision_sso_user(oauth_user, db)
+    except SignUpClosed:
+        # No account for this address and registration is invitation-only: nothing was created.
+        return RedirectResponse(url=f"{error_url}&reason=invite_only")
     except Exception as exc:
         logger.error("SSO user provisioning failed: %s", exc)
         return RedirectResponse(url=f"{error_url}&reason=provisioning_failed")

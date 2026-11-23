@@ -290,6 +290,27 @@ class Settings(BaseSettings):
     # (an e-mail address or a URL). Unset: "platform yöneticinize başvurun".
     support_contact: str = ""
 
+    # Who may create an account (POST /auth/register, SSO sign-up, POST /org/create).
+    #   open         anyone (development, the demo stack, the e2e journey)
+    #   invite_only  a valid pilot invite (issued by a platform operator, e-mailed to the invitee) or an
+    #                organisation invite; a platform operator's own address may register once, to bootstrap
+    #   closed       like invite_only, but a pilot invite no longer creates a company either
+    # Default invite_only: a host that forgets the setting is closed, not open.
+    registration_mode: Literal["open", "invite_only", "closed"] = "invite_only"
+    pilot_invite_expire_days: int = 14
+
+    # Operator notifications (services/operator_alerts.py): a mail to PLATFORM_OPERATOR_EMAILS through the
+    # outbox. One alert code, subject and window is sent once per cool-down, however often it fires.
+    operator_alert_cooldown_minutes: int = 360
+    # A scheduled job (per company and period) that failed this many times alerts the operators.
+    job_failure_alert_after: int = 3
+    # A destination (company, channel, address) with this many failed outbox rows in 24 hours alerts them.
+    outbox_failure_alert_threshold: int = 5
+    # Shared secret of POST /platform/ops/backup-report (the backup cron). Empty: the endpoint answers 404.
+    ops_report_token: str = ""
+    # The newest successful backup report older than this many hours alerts the operators.
+    backup_max_age_hours: int = 30
+
     # File upload
     max_upload_size_mb: int = 10
     # Full-automation mode: upload sonrası analizi otomatik kuyruğa al.

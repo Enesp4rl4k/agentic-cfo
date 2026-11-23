@@ -9,30 +9,38 @@ machinery around it works. Two kinds of check, because they call for different r
   200 with `status: degraded`. Taking the API out of rotation because the worker is down would turn a
   background fault into an outage; monitoring alerts on `degraded` instead.
 
-Neither endpoint takes a user and neither returns an exception text, a host name or a count that is
-per organisation: only fixed codes and platform-wide numbers.
+Neither endpoint returns an exception text or a host name. `/version` is the same for everyone. `/ready` is
+unauthenticated, so an anonymous caller gets only the overall status and `ok | degraded | fail | skipped`
+per check; the migration revision, outbox counts, worker state and the last backup report go to platform
+operators only (their bearer token; no extra shared secret to rotate).
 """
 
 from __future__ import annotations
 
 import asyncio
+import hmac
 import os
 import time
 from collections.abc import Awaitable
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
+from fastapi.security import HTTPAuthorizationCredentials
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import is_platform_operator
+from app.api.auth import _bearer, get_current_user
 from app.config import get_settings
 from app.core import heartbeat
 from app.core.preflight import app_env, code_heads, is_production, schema_state
 from app.core.redis_client import redis_enabled
 from app.database import get_db
 from app.models.outbox_message import FAILED, PENDING, OutboxMessage
+from app.services.ops_watch import backup_state, record_backup_report
 
 router = APIRouter()
 
@@ -161,8 +169,36 @@ def summarise(checks: dict[str, dict[str, Any]]) -> tuple[str, int]:
     return "ready", 200
 
 
+def _verdict(check: dict[str, Any]) -> str:
+    """The only thing an anonymous caller learns about one check: ok | degraded | fail | skipped."""
+    if check["ok"] is None:
+        return "skipped"
+    if check["ok"]:
+        return "ok"
+    return "fail" if check["required"] else "degraded"
+
+
+async def _caller_is_operator(request: Request, credentials: HTTPAuthorizationCredentials | None, db: AsyncSession) -> bool:
+    """Whether the request carries a valid session of a platform operator. Any failure means "no": the
+    probe must never answer differently (or fail) because of a bad or missing credential."""
+    if credentials is None:
+        return False
+    try:
+        user = await get_current_user(request, credentials, None, db)
+    except Exception:
+        return False
+    return is_platform_operator(user.email, get_settings().platform_operator_emails)
+
+
 @router.get("/ready")
-async def ready(db: Annotated[AsyncSession, Depends(get_db)]) -> JSONResponse:
+async def ready(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)] = None,
+) -> JSONResponse:
+    """Readiness. Anonymous (the uptime monitor, a proxy health check): `status` and, per check, only
+    `ok | degraded | fail | skipped`; the HTTP status carries the same (503 = not ready). Revision, outbox
+    counts, worker state and backup times are for platform operators (a bearer token of one)."""
     production = is_production(get_settings())
     checks: dict[str, dict[str, Any]] = {
         "database": await _bounded(_database(db), required=True, name="database"),
@@ -178,7 +214,16 @@ async def ready(db: Annotated[AsyncSession, Depends(get_db)]) -> JSONResponse:
     except Exception:
         checks["redis"] = _check(False, required=production, code="redis_error")
     status, http = summarise(checks)
-    return JSONResponse(status_code=http, content={"data": {"status": status, "checks": checks}, "error": None})
+    if await _caller_is_operator(request, credentials, db):
+        data: dict[str, Any] = {"status": status, "checks": checks, "detail": True}
+        if checks["database"]["ok"]:
+            try:
+                data["backup"] = await backup_state(db)
+            except Exception:
+                data["backup"] = {"error": "unreadable"}
+    else:
+        data = {"status": status, "checks": {name: _verdict(c) for name, c in checks.items()}}
+    return JSONResponse(status_code=http, content={"data": data, "error": None})
 
 
 @router.get("/version")
@@ -197,3 +242,34 @@ async def version() -> dict[str, Any]:
         },
         "error": None,
     }
+
+
+class BackupReport(BaseModel):
+    """What the backup cron says when it ends: `ok` true or false, and a short word of detail."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    ok: bool
+    detail: str = Field(default="", max_length=200)
+
+
+@router.post("/platform/ops/backup-report")
+async def backup_report(
+    body: BackupReport,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    x_ops_token: Annotated[str | None, Header()] = None,
+) -> dict[str, Any]:
+    """The backup cron reports success or failure (`scripts/report-backup.sh`).
+
+    Protected by a shared secret in `X-Ops-Token` (`OPS_REPORT_TOKEN`), because a cron has no user account.
+    Unset secret: 404, as if the route did not exist. Stores the time of the last success for the operator
+    view of `/ready`; a failure alerts the operators at once, and a success report that stops coming alerts
+    them after `BACKUP_MAX_AGE_HOURS` (services/ops_watch.py). Keeps no path, size or host."""
+    expected = get_settings().ops_report_token
+    if not expected:
+        raise HTTPException(status_code=404, detail="Not Found")
+    if not x_ops_token or not hmac.compare_digest(x_ops_token.encode(), expected.encode()):
+        raise HTTPException(status_code=401, detail="Geçersiz operasyon anahtarı.")
+    state = await record_backup_report(db, ok=body.ok, detail=body.detail)
+    await db.commit()
+    return {"data": {"recorded": True, "last_success_at": state.get("last_success_at")}, "error": None}

@@ -51,6 +51,10 @@ def main() -> None:
             "USE_SQLITE": "true",
             # The journey registers and signs in at once; verification has its own tests.
             "EMAIL_VERIFICATION_REQUIRED": "false",
+            # The journey signs up six people through the open door (the screen and the API). The product's
+            # default is `invite_only`; the invite-only refusal is proved by the second API (below) and the
+            # invite flow end to end by the backend tests (tests/test_pilot_onboarding.py).
+            "REGISTRATION_MODE": "open",
             "LANGGRAPH_CHECKPOINT": "memory",
             "LOG_FORMAT": "plain",
             # No model: the product answers from its templates, as it does without a key.
@@ -64,6 +68,8 @@ def main() -> None:
         }
     )
     if with_model:
+        # The same product with registration closed to strangers: one journey step proves the refusal.
+        env["REGISTRATION_MODE"] = "invite_only"
         # A key that is not a placeholder, aimed at the stub (support/llm_stub.py): the stub answers
         # the boardroom's structured calls and refuses every other call with a 503.
         env["OPENAI_API_KEY"] = "e2e-stub-key-not-a-secret"

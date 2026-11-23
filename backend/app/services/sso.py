@@ -390,6 +390,10 @@ class SSOService:
 
 # ── JIT user provisioning ─────────────────────────────────────────────────────
 
+class SignUpClosed(ValueError):
+    """The provider vouched for an address that has no account, and registration is not open."""
+
+
 async def provision_sso_user(
     oauth_user: OAuthUser,
     db:         Any,
@@ -400,7 +404,9 @@ async def provision_sso_user(
     Rules:
     1. Look up existing user by email
     2. If found → update sso_provider/sso_id, return user
-    3. If not found → create new user (role=ANALYST, no password)
+    3. If not found → create new user (role=ANALYST, no password), but only when REGISTRATION_MODE is
+       `open`. Otherwise `SignUpClosed`: a sign-in provider is not an invitation, so it cannot be a way to
+       provision an account (or, later, a company) that the invite flow would have refused.
     """
     from sqlalchemy import select
 
@@ -434,6 +440,12 @@ async def provision_sso_user(
             user.full_name = oauth_user.full_name
         await db.commit()
         return user
+
+    from app.services import registration
+
+    if not registration.is_open():
+        logger.warning("SSO sign-up refused: registration is %s", registration.mode())
+        raise SignUpClosed(registration.CLOSED_MESSAGE)
 
     # Create new user (JIT provisioning)
     new_user = User(

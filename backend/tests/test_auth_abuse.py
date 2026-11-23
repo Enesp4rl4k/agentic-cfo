@@ -120,7 +120,7 @@ async def test_register_answers_the_same_for_a_new_and_an_existing_address(clien
     other = await register(client, "new@example.com")
     assert same([first, again, other])
     assert first.status_code == 201
-    assert set(first.json()["data"]) == {"accepted", "verification_required"}  # no user id, no role
+    assert set(first.json()["data"]) == {"accepted", "verification_required", "mail_delivery", "mail_notice"}  # no user id, no role
 
 
 async def test_register_takes_the_floor_for_new_and_existing_alike(client, monkeypatch):
