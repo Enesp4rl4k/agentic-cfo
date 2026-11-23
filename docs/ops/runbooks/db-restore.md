@@ -36,7 +36,7 @@ Full commands: PR #96 `docs/ops/runbook.md` section 5. In short:
    (`dc run --rm --no-deps backend python -m app.core.preflight --db`). Then ask one company to open the
    Monday briefing page and compare with the last figure they remember.
 6. **Re-apply erasures** (a restore from before an erasure brings the erased company or person back, KVKK):
-   `dc exec -T backend python scripts/reapply_erasures.py --apply erased.json` (idempotent; `docs/kvkk/yedek-ve-silme.md`).
+   `dc exec -T backend python scripts/reapply_erasures.py --apply < erased.json` (idempotent; `docs/kvkk/yedek-ve-silme.md`).
 7. Tell the companies what period of data may be missing (everything after the archive's timestamp). Uploads
    they made since must be repeated.
 

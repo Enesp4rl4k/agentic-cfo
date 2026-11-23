@@ -12,7 +12,7 @@
 1. Geri yüklemeden **önce** silinenleri dışa aktarın (kişisel veri içermeyen özetler):
    `python scripts/reapply_erasures.py --export > erased.json`. Dosyayı veritabanının dışında saklayın.
 2. Geri yükleyin ([db-restore.md](../ops/runbooks/db-restore.md)).
-3. `python scripts/reapply_erasures.py --apply erased.json`: geri gelen şirketler ve kişiler yeniden silinir (idempotent).
+3. `python scripts/reapply_erasures.py --apply < erased.json`: geri gelen şirketler ve kişiler yeniden silinir (idempotent).
 4. Eski bir yedeği **elle düzenlemeyin**.
 
 Kod: `app/services/privacy/erasure_flow.py:reapply_erased`; test: `tests/test_privacy_breach_and_restore.py`.

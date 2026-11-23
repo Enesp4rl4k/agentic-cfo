@@ -6,7 +6,7 @@ Before restoring, export what was erased, as hashes (no personal data), from the
 
 After the restore, from the same directory:
 
-    python scripts/reapply_erasures.py --apply erased.json
+    python scripts/reapply_erasures.py --apply < erased.json
 
 `--apply` hashes every restored organisation and user id the way the erasure did and erases again the ones whose hash
 is in the file. It is idempotent. The file holds hashes of random ids, not names or addresses.
@@ -42,5 +42,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--export", action="store_true")
-    group.add_argument("--apply", metavar="FILE")
-    sys.exit(asyncio.run(_run(parser.parse_args())))
+    group.add_argument("--apply", action="store_true", help="read the exported JSON from standard input")
+    parsed = parser.parse_args()
+    parsed.erased = json.load(sys.stdin) if parsed.apply else {}  # stdin, not a path taken from the command line
+    sys.exit(asyncio.run(_run(parsed)))
