@@ -265,7 +265,8 @@ def _chunks(items: Sequence[str]) -> Iterator[list[str]]:
 
 # ── Files ────────────────────────────────────────────────────────────────────
 
-def remove_org_files(root: Path, job_ids: Iterable[str], recorded_paths: Iterable[str]) -> int:
+def remove_org_files(root: Path, job_ids: Iterable[str], recorded_paths: Iterable[str],
+                     export_ids: Iterable[str] = ()) -> int:
     """Delete the organisation's files under the local storage root; return how many.
 
     The storage layout is `<root>/uploads/<job>/`, `<root>/reports/<job>/`,
@@ -281,6 +282,8 @@ def remove_org_files(root: Path, job_ids: Iterable[str], recorded_paths: Iterabl
                        root / "board_decks" / f"{jid}.pdf"]
         if root.is_dir():
             candidates += list(root.glob(f"{jid}_*"))
+    for eid in export_ids:  # built from the stored id, whether or not a row recorded the path (a running export)
+        candidates += [root / "exports" / f"{eid}.zip", root / "exports" / f"{eid}.zip.part"]
     for raw in recorded_paths:
         if raw:
             candidates.append(Path(raw) if Path(raw).is_absolute() else Path.cwd() / raw)
@@ -420,6 +423,7 @@ async def _erase(
         select(jobs.c.id, jobs.c.file_path).where(_clause(jobs, org_id, scope, tables))
     )).all()
     paths = [r.file_path for r in job_rows]
+    export_ids = (await db.execute(select(exports.c.id).where(_clause(exports, org_id, scope, tables)))).scalars().all()
     for t in (reports, sources, exports):
         paths += (await db.execute(
             select(t.c.file_path).where(_clause(t, org_id, scope, tables))
@@ -429,7 +433,7 @@ async def _erase(
         from app.config import get_settings
 
         root = Path(get_settings().storage_local_path)
-    removed = remove_org_files(root, [r.id for r in job_rows], paths)
+    removed = remove_org_files(root, [r.id for r in job_rows], paths, export_ids)
 
     # Members who also belong to another organisation keep their account; they
     # lose only this membership, and are moved off it if it was their active one.

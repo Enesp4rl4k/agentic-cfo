@@ -184,7 +184,7 @@ def _add_files(zf: zipfile.ZipFile, budget: Budget, root: Path, jobs: Iterable[A
         if not budget.take(size):
             omitted.append({"job_id": job.id, "reason": "size_limit"})
             continue
-        safe = re.sub(r"[^\w.\- ]", "_", job.filename or resolved.name)[:120] or resolved.name
+        safe = re.sub(r"[^\w.\- ]", "_", job.filename or resolved.name).lstrip(".")[:120] or "file"
         zf.write(resolved, f"files/{job.id}/{safe}")
         included.add(job.id)
     return included, omitted

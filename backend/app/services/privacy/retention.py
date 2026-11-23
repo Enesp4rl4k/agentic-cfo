@@ -12,8 +12,8 @@ decisions are kept (Turkish commercial and tax law has long statutory periods: l
   platform-wide (settings only)
     tokens             password-reset / e-mail-verification tokens, spent or expired invitations    30 days after expiry
     audit_ip           audit-log IP address truncated (/24, /48), browser string removed; row stays 365 days
-    exports            expired export bundles (always)
-  not here: demo guest workspaces (their own hourly job, `DEMO_GUEST_TTL_HOURS`), chat history (Redis, 7 days),
+  not here: expired export bundles (the 24-hour download lifetime, its own hourly job `export_expiry`, never gated
+  by the dry-run flag), demo guest workspaces (their own hourly job, `DEMO_GUEST_TTL_HOURS`), chat history (Redis, 7 days),
   LLM prompts and responses (never stored by this product; the provider's own retention is Q1), soft-deleted rows
   (no table has a soft-delete column).
 
@@ -44,7 +44,7 @@ from app.models.password_reset import PasswordResetToken
 from app.models.privacy_records import RetentionRun
 from app.models.rag_chunk import RagChunk
 from app.models.transaction import Transaction
-from app.services.org_erasure import ERASED, hash_id, remove_org_files
+from app.services.org_erasure import ERASED, hash_id
 from app.services.outbox import SCRUBBED
 
 logger = logging.getLogger(__name__)
@@ -69,23 +69,38 @@ def effective_policy(org: Organization | None) -> dict[str, int]:
     policy = platform_policy()
     chosen = (org.retention_policy if org is not None else None) or {}
     for key in ORG_KEYS:
-        if isinstance(chosen.get(key), int):
-            policy[key] = chosen[key]
+        value = chosen.get(key)
+        if isinstance(value, int) and not isinstance(value, bool):
+            policy[key] = clamp(key, value, policy[key])
     return policy
 
 
+def clamp(key: str, value: int, platform: int) -> int:
+    """A company may only SHORTEN: between the floor and the platform default. Where the platform keeps a thing
+    (0, uploads) the company may choose to purge it, from the floor up; it can never lengthen or switch a purge off."""
+    if platform <= 0:
+        return value if value >= FLOOR_DAYS else platform
+    return min(max(value, FLOOR_DAYS), platform) if platform >= FLOOR_DAYS else platform
+
+
 def validate_choice(choice: dict[str, Any]) -> dict[str, int]:
-    """Whole days, only the per-company keys, and never below the floor (0 = keep, allowed for uploads only)."""
+    """Whole days, only the per-company keys, in [FLOOR_DAYS, the platform default]: a company may shorten, never lengthen.
+    (0 = keep, allowed for uploads only while the platform default is also keep.)"""
     clean: dict[str, int] = {}
     for key, value in choice.items():
         if key not in ORG_KEYS:
             raise ValueError(f"not a company setting: {key}")
         if isinstance(value, bool) or not isinstance(value, int):
             raise ValueError(f"{key} must be a whole number of days")
+        platform = platform_policy()[key]
         if value == 0 and key == "upload_days":
+            if platform > 0:
+                raise ValueError(f"{key} cannot be switched off: the platform default is {platform} days")
             clean[key] = 0
         elif value < FLOOR_DAYS:
             raise ValueError(f"{key} must be at least {FLOOR_DAYS} days" + (" (or 0 to keep)" if key == "upload_days" else ""))
+        elif platform > 0 and value > platform:
+            raise ValueError(f"{key} cannot be longer than the platform default of {platform} days")
         else:
             clean[key] = value
     return clean
@@ -155,11 +170,25 @@ async def _purge_uploads(db: AsyncSession, org_id: str, cutoff: datetime, dry_ru
     from app.config import get_settings
 
     ids = [j.id for j in jobs]
-    remove_org_files(Path(get_settings().storage_local_path), ids, [j.file_path for j in jobs])
+    root = Path(get_settings().storage_local_path).resolve()
+    for job in jobs:
+        _remove_raw_file(root, job.file_path)
     await db.execute(update(AnalysisJob).where(AnalysisJob.org_id == org_id, AnalysisJob.id.in_(ids)).values(file_path=""))
     await db.execute(update(Transaction).where(Transaction.job_id.in_(ids), Transaction.raw_text.is_not(None)).values(raw_text=None))
     await db.execute(delete(RagChunk).where(RagChunk.org_id == org_id, RagChunk.job_id.in_(ids)))
     return len(jobs)
+
+
+def _remove_raw_file(root: Path, recorded: str) -> None:
+    """Delete exactly the uploaded raw file a job recorded: one regular file under the storage root. Reports, board
+    decks, data-source files and every other file of the job are NOT touched (they are other retention classes)."""
+    try:
+        path = (Path(recorded) if Path(recorded).is_absolute() else Path.cwd() / recorded).resolve()
+        path.relative_to(root)
+    except (ValueError, OSError):
+        return
+    if path != root and path.is_file():
+        path.unlink()
 
 
 async def purge_platform(db: AsyncSession, policy: dict[str, int], *, dry_run: bool, now: datetime) -> dict[str, int]:
@@ -217,8 +246,6 @@ async def run_retention(
 ) -> dict[str, Any]:
     """Run the policy over every active company (or the one given) and the platform tables; record counts."""
     from app.config import get_settings
-    from app.services.privacy.export_flow import purge_expired
-
     now = now or datetime.now(UTC)
     dry = get_settings().retention_dry_run if dry_run is None else dry_run
     stmt = select(Organization)
@@ -237,7 +264,6 @@ async def run_retention(
         if org_id is None:
             for key, n in (await purge_platform(db, platform_policy(), dry_run=dry, now=now)).items():
                 totals[key] = totals.get(key, 0) + n
-            totals["exports"] = 0 if dry else await purge_expired(db, now)
         run.counts, run.status = totals, "done"
     except Exception:
         logger.exception("retention run failed")

@@ -7,11 +7,14 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 from typing import Any
 
 from apscheduler.triggers.cron import CronTrigger
 
 logger = logging.getLogger(__name__)
+
+EXPORT_EXPIRY = "export_expiry"
 
 
 async def run_due_erasures() -> None:
@@ -51,6 +54,25 @@ async def run_export_sweeper() -> None:
         logger.error("export sweeper error: %s", exc)
 
 
+async def run_export_expiry() -> None:
+    """Hourly: delete the files of exports whose 24-hour download window is over. Not a retention policy, so it is
+    never gated by RETENTION_DRY_RUN. One ledger row per hour (`scheduled_job_runs`); the work is state-driven."""
+    try:
+        from app.services.privacy.export_flow import purge_expired
+        from app.services.schedule_runner import GLOBAL, run_guarded
+
+        period = datetime.now(UTC).strftime("%Y-%m-%dT%H")
+
+        async def work(db: Any) -> None:
+            n = await purge_expired(db)
+            if n:
+                logger.info("export expiry: %d expired export file(s) deleted", n)
+
+        await run_guarded(EXPORT_EXPIRY, GLOBAL, period, work)
+    except Exception as exc:
+        logger.error("export expiry error: %s", exc)
+
+
 async def run_retention_job() -> None:
     """Daily: the retention purge. With RETENTION_DRY_RUN (the default) it only counts and records the report."""
     try:
@@ -74,6 +96,10 @@ def register_privacy_jobs(
     scheduler.add_job(
         exclusive(run_export_sweeper, "export_sweeper"), CronTrigger(minute=50),
         id="export_sweeper", replace_existing=True, max_instances=1, coalesce=True, misfire_grace_time=1800,
+    )
+    scheduler.add_job(
+        exclusive(run_export_expiry, "export_expiry"), CronTrigger(minute=55),
+        id="export_expiry", replace_existing=True, max_instances=1, coalesce=True, misfire_grace_time=1800,
     )
     scheduler.add_job(
         exclusive(run_retention_job, "retention_purge", ttl=3600), CronTrigger(hour=3, minute=30),

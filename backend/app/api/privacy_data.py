@@ -14,7 +14,6 @@ from __future__ import annotations
 import json
 from collections.abc import Iterator
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -139,11 +138,7 @@ async def export_download(export_id: str, current_user: User = Depends(get_curre
     if row.status != "ready" or not row.file_path or expires is None or expires <= datetime.now(UTC):
         raise HTTPException(status_code=410 if row.status in ("expired", "ready") else 409,
                             detail="Dışa aktarım indirilemez: hazır değil ya da indirme süresi doldu; yenisini isteyin.")
-    path = Path(row.file_path)
-    try:
-        path.resolve().relative_to(export_flow.storage_root().resolve())
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=NOT_FOUND) from exc
+    path = export_flow.export_path(row.id)  # from the stored id under the fixed export root, not from the row's path
     if not path.is_file():
         raise HTTPException(status_code=410, detail="Dışa aktarım dosyası artık yok; yenisini isteyin.")
     row.downloads += 1

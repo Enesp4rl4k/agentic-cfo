@@ -42,6 +42,12 @@ def storage_root() -> Path:
     return Path(get_settings().storage_local_path)
 
 
+def export_path(export_id: str) -> Path:
+    """The ONLY place an export file lives: built from the stored id under the fixed export root, never from a
+    path read back out of a row."""
+    return storage_root() / "exports" / f"{export_id}.zip"
+
+
 def _aware(moment: datetime) -> datetime:
     return moment if moment.tzinfo else moment.replace(tzinfo=UTC)
 
@@ -103,24 +109,60 @@ async def build_export(db: AsyncSession, export_id: str, now: datetime | None = 
         return row.status if row else "missing"
     settings = get_settings()
     root = storage_root()
-    final = root / "exports" / f"{row.id}.zip"
+    final = export_path(row.id)
     part = final.with_name(final.name + ".part")
+    org_id = str(row.org_id)
+    if await org_is_erasing(db, org_id):  # fail closed: nothing is written for a company that is being erased
+        row.status, row.error_code = "failed", "org_erasing"
+        await db.commit()
+        return "failed"
     try:
         part.parent.mkdir(parents=True, exist_ok=True)
         manifest = await export_bundle.build(db, row.org_id, part, root, settings.data_export_max_mb * 1024 * 1024)
         part.replace(final)
+        if await org_is_erasing(db, org_id):  # the erasure began while the bundle was written: it must not survive
+            raise OrgErasingError
         row.file_path, row.size_bytes = str(final), final.stat().st_size
         row.summary = {k: {"rows": d["rows"], "truncated": d["truncated"]} for k, d in manifest["datasets"].items()}
         row.summary["files"] = {"included": manifest["files"]["included"], "omitted": len(manifest["files"]["omitted"])}
         row.status, row.ready_at = "ready", now
         row.expires_at = now + timedelta(hours=settings.data_export_ttl_hours)
-    except Exception:
-        logger.exception("data export %s failed", export_id)
+    except Exception as exc:
+        erasing = isinstance(exc, OrgErasingError)
+        if not erasing:
+            logger.exception("data export %s failed", export_id)
+        await db.rollback()
         part.unlink(missing_ok=True)
         final.unlink(missing_ok=True)
-        row.status, row.error_code = "failed", "build_failed"
-    await db.commit()
+        fresh = await db.get(DataExport, export_id)  # None when the erasure already deleted the row
+        if fresh is None:
+            return "missing"
+        fresh.status, fresh.error_code, fresh.file_path = "failed", "org_erasing" if erasing else "build_failed", None
+        row = fresh
+    try:
+        await db.commit()
+    except Exception:  # the row vanished under an erasure: the file is already gone
+        await db.rollback()
+        final.unlink(missing_ok=True)
+        return "missing"
     return str(row.status)
+
+
+class OrgErasingError(RuntimeError):
+    pass
+
+
+async def org_is_erasing(db: AsyncSession, org_id: str) -> bool:
+    """True when the company is gone, erased, or an erasure request for it is executing right now."""
+    from app.models.erasure_record import OrgErasureRequest
+    from app.services.org_erasure import ERASED
+
+    org = (await db.execute(select(Organization.name).where(Organization.id == org_id))).scalar_one_or_none()
+    if org is None or org == ERASED:
+        return True
+    running = (await db.execute(select(OrgErasureRequest.id).where(
+        OrgErasureRequest.target_org_id == org_id, OrgErasureRequest.status == "executing").limit(1))).first()
+    return running is not None
 
 
 async def build_pending(db: AsyncSession, now: datetime | None = None) -> dict[str, int]:
@@ -139,32 +181,31 @@ async def build_pending(db: AsyncSession, now: datetime | None = None) -> dict[s
 
 
 async def purge_expired(db: AsyncSession, now: datetime | None = None) -> int:
-    """Delete the file of every export whose download window is over; keep the row without the path."""
+    """Delete the file of every export whose download window is over; keep the row without the path.
+
+    Not a retention policy: it is the promised download lifetime, so it does not depend on RETENTION_DRY_RUN. Files
+    are located from the stored id (`export_path`), never from `file_path`.
+    """
     now = now or datetime.now(UTC)
     n = 0
-    for row in (await db.execute(select(DataExport).where(DataExport.status == "ready"))).scalars().all():
-        if row.expires_at is not None and _aware(row.expires_at) <= now:
-            _delete_file(row.file_path)
-            row.status, row.file_path = "expired", None
-            n += 1
-    for row in (await db.execute(select(DataExport).where(DataExport.status == "failed", DataExport.file_path.is_not(None)))).scalars().all():
-        _delete_file(row.file_path)
+    rows = (await db.execute(select(DataExport).where(
+        (DataExport.status == "ready") | (DataExport.status.in_(("failed", "expired")) & DataExport.file_path.is_not(None))
+    ))).scalars().all()
+    for row in rows:
+        if row.status == "ready":
+            if row.expires_at is None or _aware(row.expires_at) > now:
+                continue
+            row.status, n = "expired", n + 1
+        _delete_export_files(row.id)
         row.file_path = None
-    if n:
-        await db.commit()
+    await db.commit()
     return n
 
 
-def _delete_file(path: str | None) -> None:
-    if not path:
-        return
-    try:
-        resolved = Path(path).resolve()
-        resolved.relative_to(storage_root().resolve())  # never delete outside the storage root
-    except (ValueError, OSError):
-        return
-    resolved.unlink(missing_ok=True)
-    resolved.with_name(resolved.name + ".part").unlink(missing_ok=True)
+def _delete_export_files(export_id: str) -> None:
+    final = export_path(export_id)
+    final.unlink(missing_ok=True)
+    final.with_name(final.name + ".part").unlink(missing_ok=True)
 
 
 def to_dict(row: DataExport) -> dict[str, Any]:
