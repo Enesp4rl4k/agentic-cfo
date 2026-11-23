@@ -69,13 +69,13 @@ def register_privacy_jobs(
 ) -> None:
     scheduler.add_job(
         exclusive(run_due_erasures, "erasure_executor"), CronTrigger(minute=40),
-        id="erasure_executor", replace_existing=True, max_instances=1,
+        id="erasure_executor", replace_existing=True, max_instances=1, coalesce=True, misfire_grace_time=1800,
     )
     scheduler.add_job(
         exclusive(run_export_sweeper, "export_sweeper"), CronTrigger(minute=50),
-        id="export_sweeper", replace_existing=True, max_instances=1,
+        id="export_sweeper", replace_existing=True, max_instances=1, coalesce=True, misfire_grace_time=1800,
     )
     scheduler.add_job(
         exclusive(run_retention_job, "retention_purge", ttl=3600), CronTrigger(hour=3, minute=30),
-        id="retention_purge", replace_existing=True, max_instances=1,
+        id="retention_purge", replace_existing=True, max_instances=1, coalesce=True, misfire_grace_time=3600,
     )
