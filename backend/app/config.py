@@ -265,6 +265,11 @@ class Settings(BaseSettings):
     # KVKK org erasure: `hard_delete` stays unreachable through the API until the
     # retention question (plan G19) is decided by the owner/lawyer.
     org_erasure_hard_delete_enabled: bool = False
+    # KVKK erasure: days between the owner's confirmation and the destructive step (0 = immediately); the owner can cancel until then
+    erasure_cooling_off_days: int = 7
+    # KVKK member erasure: key of the HMAC that derives the stable `member-<hex>` pseudonym; empty = BACKEND_SECRET_KEY.
+    # Changing it changes the pseudonym of members erased AFTER the change (earlier ones keep theirs), so set it once.
+    erasure_pseudonym_secret: str = ""
 
     # LLM — set llm_base_url to use DeepSeek or any OpenAI-compatible API
     llm_model: str = "deepseek-chat"

@@ -22,6 +22,7 @@ e-mail address, a token or a file's content into a ticket or chat; use the user 
 | Disk is full | [disk-full.md](disk-full.md) |
 | Restore the database | [db-restore.md](db-restore.md) |
 | Rotate a secret | [rotate-secret.md](rotate-secret.md) |
+| A personal-data breach (KVKK Md. 12) | [data-breach.md](data-breach.md) |
 | Add or remove a platform operator | [platform-operators.md](platform-operators.md) |
 | Onboard a new pilot company | [onboard-company.md](onboard-company.md) |
 | Offboard a company, erase its data | [offboard-and-erasure.md](offboard-and-erasure.md) |

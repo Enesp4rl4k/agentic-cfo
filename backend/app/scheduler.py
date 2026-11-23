@@ -939,6 +939,9 @@ def get_scheduler() -> AsyncIOScheduler:
         if get_settings().demo_mode:
             _add(sched, _demo_guest_ttl_purge, "demo_guest_ttl_purge", CronTrigger(minute=25), grace=GRACE_HOURLY)
 
+    from app.services.privacy.jobs import register_privacy_jobs
+
+    register_privacy_jobs(_scheduler, _exclusive)  # KVKK: erasure executor (and the retention purge)
     return _scheduler
 
 

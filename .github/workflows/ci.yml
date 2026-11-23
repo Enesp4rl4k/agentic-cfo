@@ -196,6 +196,10 @@ jobs:
         # listed in alembic/known_drift.txt and may only shrink.
         run: python ../scripts/schema_drift.py
 
+      - name: Agent-memory erasure runs on Postgres (two tenants, only one erased)
+        working-directory: backend
+        run: python -m pytest tests/test_erasure_postgres.py -q -p no:randomly
+
       - name: Every migration can be rolled back
         working-directory: backend
         run: alembic downgrade base
