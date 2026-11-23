@@ -351,6 +351,10 @@ class Settings(BaseSettings):
     # APScheduler: one process should run each cron; all are additionally
     # wrapped in a Redis NX lock, so this only matters without a broker.
     scheduler_enabled: bool = True
+    # Which process type owns the crons. "api" (default) keeps dev without a
+    # worker working; staging/prod set "worker" so only the arq analysis
+    # worker runs APScheduler and API processes never do batch work.
+    scheduler_process: Literal["api", "worker"] = "api"
     # SSE live subscriptions per worker process. Docstring promised 50 for a
     # long time while nothing enforced it; the endpoint now returns 429.
     sse_max_connections: int = 50
