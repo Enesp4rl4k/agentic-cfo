@@ -106,3 +106,12 @@ export const INVITER_MAY_GRANT: Record<string, readonly string[]> = {
 export function invitableRoles(inviterRole: string | null | undefined): readonly string[] {
   return (inviterRole && INVITER_MAY_GRANT[inviterRole]) || [];
 }
+
+/**
+ * The one owner of a company (one per company). Some settings are the owner's alone: an admin decides
+ * under them, so an admin may read them but not move them (`materiality`, the IP allow-list).
+ * Not a role class: the backend checks `role == "owner"` on those routes, there is no shared set to mirror.
+ */
+export function isOwner(role: string | null | undefined): boolean {
+  return role === "owner";
+}

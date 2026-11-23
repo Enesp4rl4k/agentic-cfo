@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { apiClient } from "@/lib/api/client";
 import { useI18n } from "@/hooks/useI18n";
+import { DeliveryStatusCard } from "@/components/org/DeliveryStatusCard";
 
 type Prefs = {
   slack_webhook_url?: string;
@@ -105,6 +106,8 @@ export default function AlertsSettingsPage() {
       >
         {saving ? a.saving : a.save}
       </button>
+
+      <DeliveryStatusCard />
     </main>
   );
 }

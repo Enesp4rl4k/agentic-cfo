@@ -48,6 +48,26 @@ beforeEach(() => {
 });
 
 describe("MaterialityCard", () => {
+  it("says it could not read the threshold instead of drawing nothing", async () => {
+    api.getMateriality.mockRejectedValue(new Error("boom"));
+    renderWithQuery(<MaterialityCard />);
+    expect(await screen.findByText("Onay eşiği verisi alınamadı.")).toBeInTheDocument();
+  });
+
+  it("lets an admin read the threshold, the basis and the history but not change it", async () => {
+    api.getMateriality.mockResolvedValue(
+      materiality({
+        can_change: false,
+        history: [{ outcome: "acknowledged", decided_at: "2026-03-01T10:00:00Z", reason: null, decided_by: "u1", from_cents: 100_000_00, to_cents: 8_300_00, currency: "TRY" }],
+      }),
+    );
+    renderWithQuery(<MaterialityCard />);
+    expect(await screen.findByText(/Onay eşiğini yalnızca şirketin sahibi değiştirebilir/)).toBeInTheDocument();
+    expect(screen.getByText("Eşik geçmişi")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Öneriyi onayla ve uygula" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Kendi tutarımı gireyim" })).toBeNull();
+  });
+
   it("shows the fixed amount still in force, the proposal with its basis, and applies nothing by itself", async () => {
     api.getMateriality.mockResolvedValue(materiality());
     renderWithQuery(<MaterialityCard />);

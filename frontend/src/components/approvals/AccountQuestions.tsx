@@ -3,10 +3,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { DecisionHistoryToggle } from "@/components/decisions/DecisionHistoryToggle";
 import { useI18n } from "@/hooks/useI18n";
 import { useOrgSettings } from "@/hooks/useOrgSettings";
 import { APPROVAL_AFFECTED_KEYS, WAITING_KEYS } from "@/hooks/useWaitingCounts";
 import { answerAccountQuestion, listAccountQuestions, type AccountQuestion, type AccountSide } from "@/lib/api/accountQuestions";
+import { pairTargetId } from "@/lib/decisionTargets";
 import { formatCurrency } from "@/lib/utils";
 import { formatDay } from "@/components/radar/basis";
 
@@ -62,6 +64,7 @@ export function AccountQuestions() {
           ) : (
             <p className="m-0 text-xs text-muted-foreground">{copy.accountQuestionOwnerOnly}</p>
           )}
+          <DecisionHistoryToggle targetType="statement_pair" targetId={pairTargetId(q)} />
         </Card>
       ))}
       {answer.isError && (

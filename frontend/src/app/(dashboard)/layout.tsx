@@ -175,7 +175,8 @@ function SidebarContent({
 
   const activeBase = pathname === "/" ? "/" : `/${pathname.split("/")[1]}`;
 
-  const navOptions = { hasTrPack, focusMode, sizeProfile };
+  const { data: session } = useSession();
+  const navOptions = { hasTrPack, focusMode, sizeProfile, role: session?.user?.role };
   const groups = visibleNavGroups(NAV_GROUPS, navOptions);
   // Focus mode hides entries from the menu, never from the product: they wait under "Daha fazla".
   const more = focusMode ? hiddenNavItems(NAV_GROUPS, navOptions) : [];
