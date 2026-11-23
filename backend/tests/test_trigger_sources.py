@@ -46,8 +46,8 @@ ORG = "org-trigger-src"
 
 # A dashboard whose base-scenario runway is 2.5 months — the value a
 # `finance.runway_months lt 3` condition is built to catch.
-DASH_LOW_RUNWAY = {"forecast": {"scenarios": {"base": {"runway_months": 2.5}}}}
-DASH_SAFE_RUNWAY = {"forecast": {"scenarios": {"base": {"runway_months": 12.0}}}}
+DASH_LOW_RUNWAY = {"forecast": {"scenarios": {"base": {"runway_months": 2.5}}, "runway": {"status": "computed", "basis": "known", "balance_basis": "known", "as_of": "2026-03-31"}}}
+DASH_SAFE_RUNWAY = {"forecast": {"scenarios": {"base": {"runway_months": 12.0}}, "runway": {"status": "computed", "basis": "known", "balance_basis": "known", "as_of": "2026-03-31"}}}
 
 
 @pytest_asyncio.fixture

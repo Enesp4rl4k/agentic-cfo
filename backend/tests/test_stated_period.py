@@ -85,7 +85,9 @@ class TestThroughThePipeline:
         critical = [a for a in result["forecast"]["alerts"] if a["level"] == "critical"]
         assert len(critical) == 1 and "varsayım" in critical[0]["message"] and "₺90.000,00" in critical[0]["message"]
 
-    async def test_the_same_statement_with_its_period_stated_has_no_assumption(self) -> None:
+    async def test_the_same_statement_with_its_period_stated_has_no_assumption(self, monkeypatch) -> None:
+        # The corpus statement ends in March 2026; the age rule (`aged_basis`) is about the clock, not the period.
+        monkeypatch.setattr("app.services.bank_balance.BURN_WINDOW_DAYS", 10_000)
         result = await run_cfo_pipeline(
             job_id="sample-stated", file_path=str(CORPUS / "banka_ekstresi_donemli_2026.csv"),
             file_type="csv", run_config=CFG,
