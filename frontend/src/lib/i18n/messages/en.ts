@@ -2245,6 +2245,8 @@ export type MessageTree = {
       own: string;
       ownLabel: string;
       reasonLabel: string;
+      loading: string;
+      loadFailed: string;
       ownerOnly: string;
       bounds: string;
       historyTitle: string;
@@ -2788,6 +2790,10 @@ export type MessageTree = {
     fileOptions: Record<string, string>;
     mappingsTitle: string;
     mappingsBody: string;
+    mappingsEmpty: string;
+    mappingsFailed: string;
+    mappingsLoading: string;
+    mappingsLink: string;
     mappingRevoke: string;
     assumedCurrency: string;
     ingestRead: string;
@@ -2971,6 +2977,7 @@ export type MessageTree = {
     historyTitle: string;
     historyEmpty: string;
     historyFailed: string;
+    historyForbidden: string;
     historyOpen: string;
     historyShowing: string;
     showAll: string;
@@ -3309,6 +3316,22 @@ export type MessageTree = {
     unverified: { body: string; resend: string };
   };
   /** The "not found" screen, also what a switched-off legacy dashboard answers with. */
+  ipAllowList: {
+    title: string; intro: string; readOnly: string; loading: string; loadFailed: string; forbidden: string;
+    stateOn: string; stateOff: string; callerIp: string; callerUnknown: string; listTitle: string; listEmpty: string;
+    unsaved: string; toggleLabel: string; addLabel: string; addPlaceholder: string; add: string; addMine: string;
+    remove: string; removeLabel: string; needEntry: string; save: string; saving: string; saved: string;
+    saveFailed: string; revert: string; refusedTitle: string;
+    errors: { invalid: string; catchAll: string; mapped: string; duplicate: string; tooMany: string };
+    lockout: { title: string; intro: string; hint: string; confirm: string; cancel: string };
+  };
+  deliveryStatus: {
+    title: string; intro: string; loading: string; loadFailed: string; forbidden: string; empty: string;
+    channels: { slack: string; webhook: string };
+    failing: string; working: string; lastSuccess: string; noSuccess: string; lastFailure: string; noFailure: string;
+    reason: string; reasonFallback: string;
+  };
+  liveRefusal: { title: string; generic: string; recovery: string };
   notFound: { title: string; body: string; home: string };
 };
 
@@ -5708,6 +5731,8 @@ export const en: MessageTree = {
       own: "Enter my own amount",
       ownLabel: "Amount",
       reasonLabel: "Why (required)",
+      loading: "Loading",
+      loadFailed: "The approval threshold could not be read.",
       ownerOnly: "Only the company's owner can change the approval threshold. You can view it here.",
       bounds: "Must be between {min} and {max}.",
       historyTitle: "Threshold history",
@@ -6410,6 +6435,10 @@ export const en: MessageTree = {
     },
     mappingsTitle: "Remembered statement directions",
     mappingsBody: "Statements in the same format are read with this answer and not asked again. If you remove it, the next upload asks again.",
+    mappingsEmpty: "No statement direction is remembered. When you choose to remember one it is listed here, and you can forget it at any time.",
+    mappingsFailed: "The remembered statement directions could not be read.",
+    mappingsLoading: "Loading",
+    mappingsLink: "Remembered answers and standing rules",
     mappingRevoke: "Forget",
     assumedCurrency: "assumed",
     ingestRead: "{read} rows read: {saved} saved, {held} waiting for your decision, {skipped} summary lines skipped",
@@ -6605,6 +6634,7 @@ export const en: MessageTree = {
     historyTitle: "Decision history",
     historyEmpty: "No decision records for this item.",
     historyFailed: "The decision history could not be read.",
+    historyForbidden: "You are not allowed to see these records.",
     historyOpen: "History of this item",
     historyShowing: "Showing the history of one item",
     showAll: "Show all",
@@ -7002,6 +7032,71 @@ export const en: MessageTree = {
       body: "Your e-mail address is not verified yet. Open the link we sent you, or ask for a new one.",
       resend: "Send the verification link again",
     },
+  },
+  ipAllowList: {
+    title: "IP allow-list",
+    intro: "While it is on, the company can only be entered from the listed addresses; requests from any other address are refused. Only the company owner changes the list.",
+    readOnly: "Only the company owner can change this list. You can view it here.",
+    loading: "Loading",
+    loadFailed: "The IP allow-list could not be read.",
+    forbidden: "Only the company's owner and admins can see the IP allow-list.",
+    stateOn: "Status: on. Only the listed addresses can get in.",
+    stateOff: "Status: off. Any address can get in.",
+    callerIp: "The address the server sees for you: {ip}",
+    callerUnknown: "The address the server sees for you could not be read.",
+    listTitle: "Listed addresses",
+    listEmpty: "No addresses on the list.",
+    unsaved: "There are unsaved changes.",
+    toggleLabel: "Turn the IP allow-list on",
+    addLabel: "Address or network (CIDR)",
+    addPlaceholder: "203.0.113.5 or 10.0.0.0/8",
+    add: "Add to list",
+    addMine: "Add my address ({ip})",
+    remove: "Remove",
+    removeLabel: "Remove {cidr} from the list",
+    needEntry: "A list that is on needs at least one address.",
+    save: "Save",
+    saving: "Saving",
+    saved: "Saved. The change was written to the decision record.",
+    saveFailed: "Not saved: the server could not be reached.",
+    revert: "Undo changes",
+    refusedTitle: "The server refused the change",
+    errors: {
+      invalid: "Not a valid CIDR: '{value}'",
+      catchAll: "0.0.0.0/0 and ::/0 allow everyone; turn the list off instead.",
+      mapped: "Write an IPv4 address as IPv4 (the ::ffff: form is not accepted).",
+      duplicate: "This address is already on the list: {value}",
+      tooMany: "At most {max} addresses or networks.",
+    },
+    lockout: {
+      title: "Not saved: access could be cut off",
+      intro: "What the server says:",
+      hint: "If you save anyway, this is what happens. If you cancel, nothing changes.",
+      confirm: "I understand, save anyway",
+      cancel: "Cancel",
+    },
+  },
+  deliveryStatus: {
+    title: "Last status of notification destinations",
+    intro: "What last happened to your Slack and webhook destinations. The full address is never shown, only the host name.",
+    loading: "Loading",
+    loadFailed: "The delivery status could not be read.",
+    forbidden: "Only the company's owner and admins can see the delivery status.",
+    empty: "No delivery to a notification destination has been tried yet.",
+    channels: { slack: "Slack", webhook: "Webhook destination" },
+    failing: "Failing now",
+    working: "Last attempt succeeded",
+    lastSuccess: "Last successful delivery: {when}",
+    noSuccess: "No successful delivery",
+    lastFailure: "Last failed delivery: {when}",
+    noFailure: "No failed delivery",
+    reason: "Reason: {reason}",
+    reasonFallback: "no reason given",
+  },
+  liveRefusal: {
+    title: "The live connection was closed",
+    generic: "The server closed this connection as not allowed: the company's IP allow-list or your membership may be the cause.",
+    recovery: "The company owner can change the list from an allowed address. If the owner is locked out too, ask your platform administrator to remove the list. If your membership was removed, contact the company's admin.",
   },
   notFound: {
     title: "This page is not available",

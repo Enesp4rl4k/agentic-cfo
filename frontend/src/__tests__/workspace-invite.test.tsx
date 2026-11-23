@@ -20,7 +20,10 @@ vi.mock("@/hooks/useNotifications", () => ({
 vi.mock("@/components/org/SizeProfileCard", () => ({ SizeProfileCard: () => null }));
 vi.mock("@/components/org/MaterialityCard", () => ({ MaterialityCard: () => null }));
 vi.mock("@/components/org/BriefingRecipientsCard", () => ({ BriefingRecipientsCard: () => null }));
+vi.mock("@/components/org/IpAllowListCard", () => ({ IpAllowListCard: () => null }));
+vi.mock("@/components/org/DeliveryStatusCard", () => ({ DeliveryStatusCard: () => null }));
 vi.mock("@/lib/api/semantic", () => ({ rebuildSemantic: vi.fn() }));
+vi.mock("next/link", async () => (await import("./dashboard-mocks")).nextLinkModule);
 
 import WorkspaceSettingsPage from "@/app/(dashboard)/settings/workspace/page";
 

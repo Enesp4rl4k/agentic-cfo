@@ -12,6 +12,8 @@ import { useI18n } from "@/hooks/useI18n";
 import { getJobStatus } from "@/lib/api/cfo";
 import { IngestCounts } from "@/components/held-rows/IngestCounts";
 import { DirectionMappings } from "@/components/held-rows/DirectionMappings";
+import { DecisionHistoryToggle } from "@/components/decisions/DecisionHistoryToggle";
+import { useOrgSettings } from "@/hooks/useOrgSettings";
 import { FileDirectionCard } from "@/components/held-rows/FileDirectionCard";
 import {
   answerFileDirection,
@@ -49,6 +51,7 @@ export default function BekleyenKayitlarPage() {
   const { t } = useI18n();
   const copy = t.heldRows;
   const fmt = useCurrencyFormat();
+  const { org } = useOrgSettings();
   const queryClient = useQueryClient();
   const jobId = useSearchParams()?.get("job") ?? undefined;
   const [failed, setFailed] = useState(false);
@@ -129,26 +132,35 @@ export default function BekleyenKayitlarPage() {
               {copy.currencyConfirm}
             </Button>
           </div>
+          {org && <DecisionHistoryToggle targetType="organization" targetId={org.org_id} kind="base_currency_confirmation" />}
         </Card>
       )}
 
       {fileList.map((file) => (
-        <FileDirectionCard
-          key={`${file.job_id}-${file.file_key}`}
-          file={file}
-          pending={fileAnswer.isPending}
-          canRemember={canRemember}
-          onAnswer={(answer, remember, standing) =>
-            fileAnswer.mutate({ job_id: file.job_id, file_key: file.file_key, answer, remember, ...(standing ? { standing } : {}) })
-          }
-        />
+        <div key={`${file.job_id}-${file.file_key}`} className="space-y-2">
+          <FileDirectionCard
+            file={file}
+            pending={fileAnswer.isPending}
+            canRemember={canRemember}
+            onAnswer={(answer, remember, standing) =>
+              fileAnswer.mutate({ job_id: file.job_id, file_key: file.file_key, answer, remember, ...(standing ? { standing } : {}) })
+            }
+          />
+          <DecisionHistoryToggle targetType="statement_file" targetId={file.file_key} />
+        </div>
       ))}
 
       {!rows.isLoading && !rows.isError && list.length === 0 && fileList.length === 0 && (
         <p className="text-sm text-muted-foreground">{copy.empty}</p>
       )}
 
-      <DirectionMappings mappings={mappings.data ?? []} pending={forget.isPending} canRevoke={canRemember} onRevoke={(id) => forget.mutate(id)} />
+      <DirectionMappings
+        mappings={mappings.data ?? []}
+        status={mappings.isLoading ? "loading" : mappings.isError ? "error" : "ready"}
+        pending={forget.isPending}
+        canRevoke={canRemember}
+        onRevoke={(id) => forget.mutate(id)}
+      />
 
       <ul className="space-y-3">
         {list.map((row) => {
@@ -235,6 +247,7 @@ export default function BekleyenKayitlarPage() {
                     </Button>
                   )}
                 </div>
+                <DecisionHistoryToggle targetType="held_transaction" targetId={row.id} />
               </Card>
             </li>
           );

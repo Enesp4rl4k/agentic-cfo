@@ -2,6 +2,7 @@
 
 import { useOrgSettings } from "@/hooks/useOrgSettings";
 import { useState, FormEvent } from "react";
+import Link from "next/link";
 import { useSession } from "next-auth/react";
 import {
   Building2,
@@ -29,6 +30,8 @@ import { rebuildSemantic } from "@/lib/api/semantic";
 import { useI18n } from "@/hooks/useI18n";
 import { BriefingRecipientsCard } from "@/components/org/BriefingRecipientsCard";
 import { MaterialityCard } from "@/components/org/MaterialityCard";
+import { IpAllowListCard } from "@/components/org/IpAllowListCard";
+import { DeliveryStatusCard } from "@/components/org/DeliveryStatusCard";
 import { SizeProfileCard } from "@/components/org/SizeProfileCard";
 import { PageHead } from "@/components/brand-app/PageHead";
 import { OodaFooter } from "@/components/brand-app/OodaFooter";
@@ -760,6 +763,7 @@ export default function WorkspaceSettingsPage() {
 
       {org && loaded && !error && isAdmin && <SizeProfileCard />}
       {org && loaded && !error && isAdmin && <MaterialityCard />}
+      {org && loaded && !error && isAdmin && <IpAllowListCard />}
       {org && loaded && !error && isAdmin && <BriefingRecipientsCard />}
 
       {org && loaded && !error && (
@@ -774,6 +778,12 @@ export default function WorkspaceSettingsPage() {
       {org && loaded && !error && <SemanticModelPanel isAdmin={isAdmin} />}
 
       {loaded && !error && <AlertPreferencesPanel />}
+      {loaded && !error && isAdmin && <DeliveryStatusCard />}
+      {loaded && !error && isAdmin && (
+        <Link href="/bekleyen-kayitlar#hatirlanan-cevaplar" className="block text-sm underline underline-offset-4">
+          {t.heldRows.mappingsLink}
+        </Link>
+      )}
 
       {/* Members */}
       {loaded && !error && (

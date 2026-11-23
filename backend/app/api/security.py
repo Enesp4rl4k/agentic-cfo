@@ -247,23 +247,28 @@ def check_ip_in_whitelist(ip: str, whitelist: str) -> bool:
 
 @router.get("/security/ip-whitelist")
 async def get_ip_whitelist(
+    request:      Request,
     current_user: User = Depends(get_current_user),
     db:           AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    """Return the org's current IP whitelist configuration."""
+    """Return the org's current IP whitelist configuration, and the caller's own address as the server sees it
+    (owner and admin only: the screen shows it next to the list, so nobody saves a list that excludes themselves)."""
     if await acting_role(db, current_user) not in ("owner", "admin"):
         raise HTTPException(status_code=403, detail="Sadece admin ve owner erişebilir")
+    from app.core.client_ip import client_ip
+
+    caller = client_ip(request)
 
     org_id = getattr(current_user, "org_id", None)
     if not org_id:
-        return {"data": {"enabled": False, "cidrs": []}, "error": None}
+        return {"data": {"enabled": False, "cidrs": [], "caller_ip": caller}, "error": None}
 
     from app.models.organization import Organization
     result = await db.execute(select(Organization).where(Organization.id == str(org_id)))
     org    = result.scalar_one_or_none()
 
     if not org:
-        return {"data": {"enabled": False, "cidrs": []}, "error": None}
+        return {"data": {"enabled": False, "cidrs": [], "caller_ip": caller}, "error": None}
 
     whitelist = org.ip_whitelist or ""
     enabled   = org.ip_whitelist_enabled or False
@@ -272,6 +277,7 @@ async def get_ip_whitelist(
         "data": {
             "enabled": bool(enabled),
             "cidrs":   [c.strip() for c in whitelist.split(",") if c.strip()],
+            "caller_ip": caller,
         },
         "error": None,
     }

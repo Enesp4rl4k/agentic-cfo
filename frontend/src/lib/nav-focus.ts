@@ -1,4 +1,5 @@
 import { isHrefAvailable } from "@/lib/legacy-dashboards";
+import { hasRoleClass, type RoleClass } from "@/lib/roles";
 
 /**
  * Which menu entries a company in focus mode sees (plan v10 §O0).
@@ -21,6 +22,8 @@ export const FOCUS_HREFS: ReadonlySet<string> = new Set([
   "/onay",
   "/takvim",
   "/reports",
+  // Who decided what: read by owner, admin, cfo and smmm (the entry itself is role-gated, see NavItem.cls).
+  "/kararlar",
 ]);
 
 export type SizeProfile = "micro" | "small" | "medium";
@@ -44,13 +47,26 @@ export const PROFILE_NAV: Record<SizeProfile, { focusDefault: boolean; focusHref
   medium: { focusDefault: false, focusHrefs: FOCUS_HREFS },
 };
 
-export type NavOptions = { hasTrPack: boolean; focusMode: boolean; sizeProfile?: SizeProfile | null };
+export type NavOptions = {
+  hasTrPack: boolean;
+  focusMode: boolean;
+  sizeProfile?: SizeProfile | null;
+  /** The signed-in role. An entry that names a role class is drawn only once the role is known and is in it. */
+  role?: string | null;
+};
 
-type NavItem = { href: string; trPack?: boolean };
+type NavItem = { href: string; trPack?: boolean; cls?: RoleClass };
 type NavGroup<T extends NavItem> = { label: string; items: T[] };
 
-function shown(item: NavItem, { hasTrPack, focusMode, sizeProfile }: NavOptions): boolean {
+/** An entry for one role class is not offered to anyone else, and not under "Daha fazla" either. */
+function roleHides(item: NavItem, { role }: NavOptions): boolean {
+  return item.cls !== undefined && !hasRoleClass(role, item.cls);
+}
+
+function shown(item: NavItem, options: NavOptions): boolean {
+  const { hasTrPack, focusMode, sizeProfile } = options;
   if (item.trPack && !hasTrPack) return false;
+  if (roleHides(item, options)) return false;
   if (!isHrefAvailable(item.href)) return false;
   if (!focusMode) return true;
   return (sizeProfile ? PROFILE_NAV[sizeProfile].focusHrefs : FOCUS_HREFS).has(item.href);
@@ -71,7 +87,7 @@ export function hiddenNavItems<G extends NavGroup<NavItem>>(groups: readonly G[]
   const seen = new Set<string>();
   return groups.flatMap((group) => group.items).filter((item) => {
     // A legacy dashboard that is switched off is not "hidden": it does not exist, so it is not offered under "Daha fazla" either.
-    if ((item.trPack && !options.hasTrPack) || !isHrefAvailable(item.href) || shown(item, options) || seen.has(item.href)) return false;
+    if ((item.trPack && !options.hasTrPack) || roleHides(item, options) || !isHrefAvailable(item.href) || shown(item, options) || seen.has(item.href)) return false;
     seen.add(item.href);
     return true;
   });
