@@ -237,6 +237,50 @@ def _degraded_findings(settings: Settings, env: Mapping[str, str]) -> list[Findi
     return out
 
 
+# cgroup memory limit files: v2 first, then v1. Tests point this at a temporary directory.
+_CGROUP_LIMIT_FILES = (
+    Path("/sys/fs/cgroup/memory.max"),
+    Path("/sys/fs/cgroup/memory/memory.limit_in_bytes"),
+)
+_CGROUP_UNLIMITED = 1 << 60   # v1 reports "no limit" as a number near 2**63
+
+
+def cgroup_memory_limit_mb() -> int | None:
+    """The container's memory limit in MB from the cgroup (v2 `memory.max`, v1 `memory.limit_in_bytes`);
+    None when there is none, or the files are absent (Windows, macOS, a bare host): then nothing is said."""
+    for path in _CGROUP_LIMIT_FILES:
+        try:
+            raw = path.read_text(encoding="ascii").strip()
+        except (OSError, UnicodeDecodeError):
+            continue
+        if raw.isdigit() and 0 < int(raw) < _CGROUP_UNLIMITED:
+            return int(raw) // (1024 * 1024)
+        return None   # "max" (v2) or an unlimited v1 value: this file is the answer
+    return None
+
+
+def _parser_memory_findings(settings: Settings, env: Mapping[str, str]) -> list[Finding]:
+    """Parser children must fit in the container (docs/ops/parser-sizing.md): past its memory limit the
+    kernel's OOM killer decides what dies, and it may pick the API process itself, not the child."""
+    limit = cgroup_memory_limit_mb()
+    if limit is None:
+        return []
+    child = max(settings.pdf_child_memory_mb, settings.sheet_child_memory_mb)
+    procs, slots = max(1, settings.parse_process_count), max(1, settings.pdf_parse_concurrency)
+    worst = child * slots * procs
+    if child >= limit:
+        return [_fatal("parser_memory_impossible", (
+            f"A parser child may use {child} MB (PDF_CHILD_MEMORY_MB / SHEET_CHILD_MEMORY_MB) and this container "
+            f"is limited to {limit} MB: the memory limit can never stop a child before the kernel's OOM killer, "
+            f"which may kill the API process. Lower the child limit (docs/ops/parser-sizing.md)."))]
+    if worst > limit:
+        return [_warn("parser_memory_exceeds_container", (
+            f"Parser children can use up to {child} MB x PDF_PARSE_CONCURRENCY {slots} x PARSE_PROCESS_COUNT {procs} "
+            f"= {worst} MB, over this container's {limit} MB limit: a burst of uploads may be ended by the OOM "
+            f"killer, not by the per-child limit. Lower the child limit or the concurrency (docs/ops/parser-sizing.md)."))]
+    return []
+
+
 def check_settings(settings: Settings, environ: Mapping[str, str] | None = None) -> list[Finding]:
     """Every finding for these settings. Pure: logs nothing, raises nothing."""
     env = os.environ if environ is None else environ
@@ -246,6 +290,7 @@ def check_settings(settings: Settings, environ: Mapping[str, str] | None = None)
         *_exposure_findings(settings, env),
         *_mail_findings(settings, env),
         *_degraded_findings(settings, env),
+        *_parser_memory_findings(settings, env),
     ]
     if settings.use_sqlite and app_env(env) in _PRODUCTION_ENVS:
         findings.append(_fatal("sqlite_in_production", f"APP_ENV={app_env(env)} with USE_SQLITE=true: a development database must not hold company data."))

@@ -4,6 +4,8 @@ from __future__ import annotations
 import io
 from typing import Any
 
+from app.services.pdf_escape import rl_text
+
 try:
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import getSampleStyleSheet
@@ -74,7 +76,7 @@ def render_packet(packet: Any) -> tuple[bytes, str]:
     story: list[Any] = []
     for i, ln in enumerate(lines):
         style = styles["Title"] if i == 0 else styles["Normal"]
-        story.append(Paragraph(ln.replace("&", "&amp;").replace("<", "&lt;") or "&nbsp;", style))
+        story.append(Paragraph(rl_text(ln) or "&nbsp;", style))
         story.append(Spacer(1, 3))
     _ = Table  # keep import meaningful for future tabular layout
     doc.build(story)

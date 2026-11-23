@@ -8,8 +8,9 @@ page text, tables, OCR render and Tesseract, and the e-Belge attachment (`pdf_em
 * refuses a file over the upload size cap before starting anything;
 * starts the child in its own process group (session), with an environment that holds no secrets,
   and bounded by `RLIMIT_AS` / `RLIMIT_CPU` set by the child on itself (Linux);
-* runs at most `PDF_PARSE_CONCURRENCY` children at a time;
-* reads the child's stdout with a cap while it arrives (over the cap: kill);
+* runs at most `PDF_PARSE_CONCURRENCY` children at a time PER PROCESS (a waiter is refused as "busy" after
+  `PARSE_QUEUE_WAIT_SECONDS`; the real bound is that times the processes, docs/ops/parser-sizing.md);
+* reads the child's stdout and stderr with a cap while they arrive (fixed-size reads; over the cap: kill);
 * kills the child's whole process group when the deadline passes (a Tesseract grandchild dies with it).
   Deadline: `PDF_PARSE_TIMEOUT_SECONDS`, plus `PDF_OCR_SECONDS_PER_PAGE` for each page the child reports
   it started to OCR, so a long scanned statement is not refused for being long.
@@ -18,6 +19,8 @@ Every refusal, crash, timeout and unreadable output is a result with strategy "f
 `refusal` code in its metadata; `_read_pdf` raises it as `PdfOkunamadi`, whose text says which limit was
 hit and what to do (Turkish, then English, the repo's convention for operator and user texts).
 Never an empty success.
+
+`run_worker` is the one mechanism for every parser child: `sheet_isolation` (.xlsx, CSV) uses it too.
 """
 from __future__ import annotations
 
@@ -32,7 +35,7 @@ import threading
 import time
 from collections import OrderedDict
 from collections.abc import Iterator
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -47,7 +50,10 @@ ISOLATE_PARSER = True
 _WORKER_COMMAND: list[str] | None = None
 _STDOUT_LIMIT = 64 * 1024 * 1024
 _STDERR_KEEP = 2000
+_STDERR_LINE_CAP = 4096          # a stderr line is held at most this long while it has no newline
+_STDERR_TOTAL_LIMIT = 16 * 1024 * 1024
 _OCR_MARK = "@@OCR@@"
+NEWLINE = bytes([10])
 # The child parses attacker-controlled bytes: it gets no secrets (no CMAP_PATH, no keys), only what a parser needs.
 _WORKER_ENV_KEEP = (
     "PATH", "SYSTEMROOT", "TEMP", "TMP", "TMPDIR", "HOME", "LANG", "LC_ALL", "TESSDATA_PREFIX",
@@ -81,6 +87,12 @@ _TEXTS: dict[str, tuple[str, str]] = {
         "The PDF could not be read: the text it produces is far larger than expected. "
         "Split the statement into shorter periods and upload them separately.",
     ),
+    "pdf_busy": (
+        "PDF okunamadı: sistem yoğun, {seconds} saniye içinde boş bir okuyucu bulunamadı. "
+        "Sistem yoğun, tekrar deneyin: birkaç dakika sonra aynı dosyayı yeniden yükleyin.",
+        "The PDF could not be read: the system is busy and no free reader became available within {seconds} seconds. "
+        "Try again in a few minutes by uploading the same file again.",
+    ),
     "pdf_unreadable": (
         "PDF okunamadı: dosya bozuk, şifreli ya da desteklenmeyen bir biçimde olabilir. Dosyayı kaynağından "
         "yeniden indirin ya da PDF olarak yeniden kaydedip yükleyin.",
@@ -112,8 +124,11 @@ class PdfOkunamadi(Exception):
 
 
 def ingest_hata_metni(exc: BaseException) -> str:
-    """The run's failure text for an exception: a refused PDF reads as a sentence, anything else as before."""
-    return exc.user_text if isinstance(exc, PdfOkunamadi) else f"Ingestion error: {exc}"
+    """The run's failure text for an exception: a refused PDF or spreadsheet reads as a sentence, anything else as before."""
+    # a refused spreadsheet reads as a sentence too
+    from app.services.sheet_isolation import SheetOkunamadi
+
+    return exc.user_text if isinstance(exc, (PdfOkunamadi, SheetOkunamadi)) else f"Ingestion error: {exc}"
 
 
 def refused(file_path: str, code: str, **params: Any) -> Any:
@@ -160,19 +175,29 @@ _slots: tuple[int, threading.BoundedSemaphore] | None = None
 _slots_lock = threading.Lock()
 
 
+class ParserBusy(Exception):
+    """No parser slot became free within `PARSE_QUEUE_WAIT_SECONDS`."""
+
+
 @contextlib.contextmanager
 def _slot() -> Iterator[None]:
-    """At most PDF_PARSE_CONCURRENCY children at once; the rest wait here."""
+    """At most PDF_PARSE_CONCURRENCY children at once IN THIS PROCESS (PDF and spreadsheet children share
+    the slots); a waiter gives up after PARSE_QUEUE_WAIT_SECONDS with `ParserBusy`, never hangs."""
     global _slots
     from app.config import get_settings
 
-    size = max(1, get_settings().pdf_parse_concurrency)
+    s = get_settings()
+    size = max(1, s.pdf_parse_concurrency)
     with _slots_lock:
         if _slots is None or _slots[0] != size:
             _slots = (size, threading.BoundedSemaphore(size))
         sem = _slots[1]
-    with sem:
+    if not sem.acquire(timeout=max(0, s.parse_queue_wait_seconds)):
+        raise ParserBusy
+    try:
         yield
+    finally:
+        sem.release()
 
 
 def _kill_group(proc: subprocess.Popen[bytes]) -> None:
@@ -200,13 +225,37 @@ def _command(file_path: str, force_ocr: bool) -> list[str]:
     ]
 
 
-def _run_child(file_path: str, force_ocr: bool) -> Any:
-    from app.config import get_settings
+def split_stderr(pending: bytes, chunk: bytes) -> tuple[list[bytes], bytes]:
+    """Complete lines (each cut at `_STDERR_LINE_CAP`) and the unfinished rest, which never exceeds the cap:
+    a child that writes without a newline cannot grow the parent's buffer."""
+    *lines, rest = (pending + chunk).split(NEWLINE)
+    lines = [line[:_STDERR_LINE_CAP] for line in lines]
+    if len(rest) > _STDERR_LINE_CAP:
+        lines.append(rest[:_STDERR_LINE_CAP])
+        rest = b""
+    return lines, rest
 
-    s = get_settings()
-    backend_dir = Path(__file__).resolve().parents[2]
+
+@dataclass
+class ChildOutcome:
+    """How a supervised child ended. `out` is its stdout, only when status is "ok"."""
+
+    status: str   # ok | busy | overflow | timeout | failed
+    out: bytes = b""
+
+
+def child_environment(backend_dir: Path) -> dict[str, str]:
     env = {k: v for k, v in os.environ.items() if k in _WORKER_ENV_KEEP}
     env["PYTHONPATH"] = str(backend_dir)
+    return env
+
+
+def run_worker(argv: list[str], *, timeout_s: int, ocr_extra_s: int = 0, stdin_data: bytes | None = None,
+               stdout_limit: int | None = None, label: str = "") -> ChildOutcome:
+    """THE way a parser child is run (PDF and spreadsheet alike): a slot (or `busy`), a whitelisted environment,
+    its own process group, a capped stdout and stderr, a deadline that kills the group. Never raises for a
+    child's failure; the caller turns the outcome into its own visible refusal."""
+    backend_dir = Path(__file__).resolve().parents[2]
     kwargs: dict[str, Any] = {}
     if os.name == "posix":
         kwargs["start_new_session"] = True
@@ -214,16 +263,42 @@ def _run_child(file_path: str, force_ocr: bool) -> Any:
         kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
     try:
         with _slot():
-            return _supervise(file_path, force_ocr, s, backend_dir, env, kwargs)
+            return _supervise(argv, timeout_s, ocr_extra_s, stdin_data, stdout_limit or _STDOUT_LIMIT, label, backend_dir, kwargs)
+    except ParserBusy:
+        logger.warning("Parser slots busy; %s refused after the queue wait", label)
+        return ChildOutcome("busy")
     except OSError as exc:
-        logger.error("PDF worker could not be started: %s", exc)
+        logger.error("Parser worker could not be started: %s", exc)
+        return ChildOutcome("failed")
+
+
+def _run_child(file_path: str, force_ocr: bool) -> Any:
+    from app.config import get_settings
+
+    s = get_settings()
+    outcome = run_worker(_command(file_path, force_ocr), timeout_s=s.pdf_parse_timeout_seconds,
+                         ocr_extra_s=s.pdf_ocr_seconds_per_page, label=Path(file_path).name)
+    if outcome.status == "busy":
+        return refused(file_path, "pdf_busy", seconds=s.parse_queue_wait_seconds)
+    if outcome.status == "overflow":
+        return refused(file_path, "pdf_output_too_large")
+    if outcome.status == "timeout":
+        return refused(file_path, "pdf_timeout", seconds=s.pdf_parse_timeout_seconds)
+    if outcome.status != "ok":
+        return refused(file_path, "pdf_unreadable")
+    try:
+        return _from_payload(json.loads(outcome.out.decode("utf-8")))
+    except Exception:
+        logger.warning("PDF worker returned unreadable output for %s", Path(file_path).name)
         return refused(file_path, "pdf_unreadable")
 
 
-def _supervise(file_path: str, force_ocr: bool, s: Any, backend_dir: Path, env: dict[str, str], kwargs: dict[str, Any]) -> Any:
+def _supervise(argv: list[str], timeout_s: int, ocr_extra_s: int, stdin_data: bytes | None, stdout_limit: int,
+               label: str, backend_dir: Path, kwargs: dict[str, Any]) -> ChildOutcome:
     proc = subprocess.Popen(
-        _command(file_path, force_ocr), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        cwd=str(backend_dir), env=env, **kwargs,
+        argv, stdin=subprocess.PIPE if stdin_data is not None else subprocess.DEVNULL,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=str(backend_dir),
+        env=child_environment(backend_dir), **kwargs,
     )
     out = bytearray()
     err = bytearray()
@@ -232,22 +307,46 @@ def _supervise(file_path: str, force_ocr: bool, s: Any, backend_dir: Path, env: 
     def read_stdout() -> None:
         assert proc.stdout is not None
         while chunk := proc.stdout.read(65536):
-            if len(out) + len(chunk) > _STDOUT_LIMIT:
+            if len(out) + len(chunk) > stdout_limit:
                 state["overflow"] = True  # not buffered: the supervisor kills the group
                 return
             out.extend(chunk)
 
-    def read_stderr() -> None:
-        assert proc.stderr is not None
-        for line in iter(proc.stderr.readline, b""):
-            if line.strip() == _OCR_MARK.encode():
-                state["ocr"] += 1
-            else:
-                err.extend(line[:500])
-                del err[:-_STDERR_KEEP]
+    def note_line(line: bytes) -> None:
+        if line.strip() == _OCR_MARK.encode():
+            state["ocr"] += 1
+        else:
+            err.extend(line[:500])
+            del err[:-_STDERR_KEEP]
 
-    readers = [threading.Thread(target=read_stdout, daemon=True), threading.Thread(target=read_stderr, daemon=True)]
-    for t in readers:
+    def read_stderr() -> None:
+        # Fixed-size reads, never readline(): a child that writes without a newline cannot grow this buffer.
+        assert proc.stderr is not None
+        pending = b""
+        total = 0
+        while chunk := proc.stderr.read1(65536):
+            total += len(chunk)
+            if total > _STDERR_TOTAL_LIMIT:
+                state["overflow"] = True
+                return
+            lines, pending = split_stderr(pending, chunk)
+            for line in lines:
+                note_line(line)
+
+    def feed_stdin() -> None:
+        assert proc.stdin is not None and stdin_data is not None
+        try:
+            proc.stdin.write(stdin_data)
+        except OSError:  # the child exited or was killed first
+            pass
+        finally:
+            with contextlib.suppress(OSError):
+                proc.stdin.close()
+
+    threads = [threading.Thread(target=read_stdout, daemon=True), threading.Thread(target=read_stderr, daemon=True)]
+    if stdin_data is not None:
+        threads.append(threading.Thread(target=feed_stdin, daemon=True))
+    for t in threads:
         t.start()
     started = time.monotonic()
     timed_out = False
@@ -256,26 +355,22 @@ def _supervise(file_path: str, force_ocr: bool, s: Any, backend_dir: Path, env: 
             proc.wait(timeout=0.1)
             break
         except subprocess.TimeoutExpired:
-            budget = s.pdf_parse_timeout_seconds + s.pdf_ocr_seconds_per_page * state["ocr"]
+            budget = timeout_s + ocr_extra_s * state["ocr"]
             if state["overflow"] or time.monotonic() - started > budget:
                 timed_out = not state["overflow"]
                 _kill_group(proc)
                 break
-    for t in readers:
+    for t in threads:
         t.join(timeout=5)
     if state["overflow"]:
-        return refused(file_path, "pdf_output_too_large")
+        return ChildOutcome("overflow")
     if timed_out:
-        logger.warning("PDF parse exceeded its budget and its group was killed: %s", Path(file_path).name)
-        return refused(file_path, "pdf_timeout", seconds=s.pdf_parse_timeout_seconds)
+        logger.warning("Parser child exceeded its budget and its group was killed: %s", label)
+        return ChildOutcome("timeout")
     if proc.returncode != 0 or not out:
-        logger.warning("PDF worker failed (exit %s): %s", proc.returncode, err.decode("utf-8", "replace"))
-        return refused(file_path, "pdf_unreadable")
-    try:
-        return _from_payload(json.loads(bytes(out).decode("utf-8")))
-    except Exception:
-        logger.warning("PDF worker returned unreadable output for %s", Path(file_path).name)
-        return refused(file_path, "pdf_unreadable")
+        logger.warning("Parser worker failed (exit %s): %s", proc.returncode, err.decode("utf-8", "replace"))
+        return ChildOutcome("failed")
+    return ChildOutcome("ok", bytes(out))
 
 
 def _from_payload(payload: dict[str, Any]) -> Any:
@@ -318,6 +413,57 @@ def guarded_extract(file_path: str, force_ocr: bool = False) -> Any:
     return result
 
 
+_ATTACHMENT_NOTE = (
+    "PDF'in eki okunamadı; metinden okundu",
+    "The PDF's attachment could not be read; the data was read from the page text instead",
+)
+_ATTACHMENT_NOTE_PARTIAL = (
+    "PDF'in bir eki okunamadı; öteki ekten okundu",
+    "One attachment of the PDF could not be read; the data was read from another attachment",
+)
+_REASONS = {
+    "unsupported_filter": ("desteklenmeyen sıkıştırma", "unsupported compression"),
+    "too_large": ("boyut sınırı aşıldı", "over the size limit"),
+    "unreadable": ("bozuk", "damaged"),
+    "encrypted": ("şifreli", "encrypted"),
+    "unsafe_xml": ("güvenli olmayan XML", "unsafe XML"),
+}
+
+
+def cached_result(file_path: str) -> Any | None:
+    """The parse already made for this file, if any. Never starts a child (safe to call from async code)."""
+    path = Path(file_path)
+    if not path.exists():
+        return None
+    from app.config import get_settings
+
+    st = path.stat()
+    key = (str(path.resolve()), st.st_size, st.st_mtime_ns, False, get_settings().pdf_max_pages)
+    with _cache_lock:
+        return _cache.get(key)
+
+
+def attachment_note(file_path: str) -> str | None:
+    """Turkish then English note when the PDF declared attachments that were not read; None when nothing was lost."""
+    result = cached_result(file_path)
+    unread = (result.metadata or {}).get("attachments_unread") if result is not None else None
+    if not unread:
+        return None
+    tr, en = (_ATTACHMENT_NOTE_PARTIAL if result.embedded_xml else _ATTACHMENT_NOTE)
+    reasons = sorted({r["reason"] for r in unread})
+    why_tr = ", ".join(_REASONS.get(r, (r, r))[0] for r in reasons)
+    why_en = ", ".join(_REASONS.get(r, (r, r))[1] for r in reasons)
+    return f"{tr} ({why_tr}). {en} ({why_en})."
+
+
+def apply_attachment_note(result: Any, file_path: str) -> None:
+    """Put the note on an ingestion result (its detail, and held for review): never a silent fallback."""
+    note = attachment_note(file_path)
+    if note:
+        result.detail = f"{result.detail or ''} [{note}]".strip()
+        result.needs_review = True
+
+
 # ── Child side ───────────────────────────────────────────────────────────────────────────────
 
 def parse_here(file_path: str, force_ocr: bool = False) -> Any:
@@ -327,7 +473,10 @@ def parse_here(file_path: str, force_ocr: bool = False) -> Any:
 
     result = ocr_service._extract_in_process(file_path, force_ocr)
     if "refusal" not in (result.metadata or {}) and Path(file_path).exists():
-        result.embedded_xml = pdf_embedded.read_ebelge_attachments(file_path)
+        scan = pdf_embedded.scan_attachments(file_path)
+        result.embedded_xml = scan.found
+        if scan.unread:
+            result.metadata = {**(result.metadata or {}), "attachments_unread": scan.unread}
     return result
 
 

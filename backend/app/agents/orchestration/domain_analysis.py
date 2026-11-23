@@ -149,16 +149,14 @@ def _read_as_csv(path: str, source_type: str = "") -> str | None:
             return standart_csv(tablo, source_type)[0]
     try:
         if path.lower().endswith((".xlsx", ".xls")):
-            import openpyxl
+            from app.services.ingest.table import satirlari_oku
 
-            wb = openpyxl.load_workbook(io.BytesIO(veri), read_only=True, data_only=True)
-            ws = wb.worksheets[0]
+            ws_rows = satirlari_oku(veri, path.lower().rsplit(".", 1)[-1])[0][1]   # read in the child (sheet_isolation)
             out = io.StringIO()
             w = csv.writer(out)
-            for row in ws.iter_rows(values_only=True):
+            for row in ws_rows:
                 if any(v not in (None, "") for v in row):
                     w.writerow(["" if v is None else v for v in row])
-            wb.close()
             return out.getvalue()
         return veri.decode("utf-8-sig", errors="replace")
     except Exception as exc:

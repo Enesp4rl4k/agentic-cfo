@@ -225,7 +225,7 @@ def test_parser_children_run_at_most_pdf_parse_concurrency_at_a_time(tmp_path, m
         time.sleep(0.2)
         with lock:
             active["now"] -= 1
-        return pdf_isolation.refused("x", "pdf_unreadable")
+        return pdf_isolation.ChildOutcome("failed")
 
     monkeypatch.setattr(pdf_isolation, "_supervise", fake_supervise)
     pdf_isolation._slots = None

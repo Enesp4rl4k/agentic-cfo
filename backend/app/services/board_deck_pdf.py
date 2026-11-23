@@ -32,6 +32,7 @@ from app.core.branding import get_brand
 from app.core.currency_totals import fmt_amount
 from app.core.financial import cents_to_amount
 from app.core.interfaces import IReportExporter
+from app.services.pdf_escape import rl_text
 
 
 def _fmt(cents: int | float, currency: str | None = None) -> str:
@@ -149,8 +150,8 @@ class BoardDeckPDFExporter(IReportExporter):
         story = []
 
         # ── Header ────────────────────────────────────────────────────────────
-        story.append(Paragraph(f"<b>{company_name}</b>", title_style))
-        story.append(Paragraph(f"Yönetim Kurulu Finansal Değerlendirme Raporu · Dönem: {period} · Oluşturulma: {datetime.now().strftime('%d.%m.%Y')}", subtitle_style))
+        story.append(Paragraph(f"<b>{rl_text(company_name)}</b>", title_style))
+        story.append(Paragraph(f"Yönetim Kurulu Finansal Değerlendirme Raporu · Dönem: {rl_text(period)} · Oluşturulma: {datetime.now().strftime('%d.%m.%Y')}", subtitle_style))
         story.append(Spacer(1, 10))
         story.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor("#2563EB"), spaceAfter=14))
 
@@ -190,7 +191,7 @@ class BoardDeckPDFExporter(IReportExporter):
             "nakit akışı operasyonel giderleri karşılayacak düzeydedir. Maliyet optimizasyonu "
             "ve alacak tahsilat sürelerinin yakından takibi önerilmektedir."
         )
-        story.append(Paragraph(cfo_narrative, narrative_style))
+        story.append(Paragraph(rl_text(cfo_narrative), narrative_style))
         story.append(Spacer(1, 14))
 
         # ── P&L Statement Breakdown Table ─────────────────────────────────────
@@ -379,23 +380,22 @@ class BoardDeckPDFBuilder:
         label = deck.get("health_label", "n/a")
 
         story: list[Any] = [
-            Paragraph(f"<b>{company}</b>", h1),
+            Paragraph(f"<b>{rl_text(company)}</b>", h1),
             Paragraph(
-                f"Board Deck · Period {period} · "
+                f"Board Deck · Period {rl_text(period)} · "
                 f"Generated {datetime.now().strftime('%d.%m.%Y')}",
                 sub,
             ),
             Spacer(1, 8),
             HRFlowable(width="100%", thickness=1.2,
                        color=colors.HexColor("#2563EB"), spaceAfter=12),
-            Paragraph(f"Company Health: <b>{score}</b> ({label})", body),
+            Paragraph(f"Company Health: <b>{rl_text(score)}</b> ({rl_text(label)})", body),
             Spacer(1, 10),
         ]
 
         story.append(Paragraph("Executive Summary", h2))
         story.append(Paragraph(
-            str(deck.get("executive_summary", "")).strip()
-            or "No executive summary provided.",
+            rl_text(str(deck.get("executive_summary", "")).strip() or "No executive summary provided."),
             body,
         ))
 
@@ -403,7 +403,7 @@ class BoardDeckPDFBuilder:
         if priorities:
             story.append(Paragraph("Top Priorities", h2))
             for i, p in enumerate(priorities, 1):
-                story.append(Paragraph(f"{i}. {p}", body))
+                story.append(Paragraph(f"{i}. {rl_text(p)}", body))
 
         insights = deck.get("insights", []) or []
         if insights:
@@ -456,7 +456,7 @@ class BoardDeckPDFBuilder:
             def _swot_cell(key: str) -> str:
                 items = swot.get(key) or []
                 bullets = "<br/>".join(
-                    f"• {it.get('text', it) if isinstance(it, dict) else it}"
+                    f"• {rl_text(it.get('text', it) if isinstance(it, dict) else it)}"
                     for it in items
                 ) or "—"
                 return f"<b>{key.capitalize()}</b><br/>{bullets}"
@@ -483,9 +483,9 @@ class BoardDeckPDFBuilder:
             counts = kri.get("counts", {})
             story.append(Paragraph("KRI Posture", h2))
             story.append(Paragraph(
-                f"Score {kri.get('kri_score', '-')} — "
+                rl_text(f"Score {kri.get('kri_score', '-')} — "
                 f"red {counts.get('red', 0)}, amber {counts.get('amber', 0)}, "
-                f"green {counts.get('green', 0)}",
+                f"green {counts.get('green', 0)}"),
                 body,
             ))
 
@@ -493,7 +493,7 @@ class BoardDeckPDFBuilder:
         story.append(HRFlowable(width="100%", thickness=0.5,
                                 color=colors.HexColor("#CBD5E1"), spaceAfter=6))
         story.append(Paragraph(
-            f"Auto-synthesized by {get_brand().name}. "
+            f"Auto-synthesized by {rl_text(get_brand().name)}. "
             "Execute decisions only with board and licensed-advisor approval.",
             ParagraphStyle("BD_Foot", parent=styles["Normal"], fontSize=7.5,
                            leading=10, textColor=colors.HexColor("#94A3B8")),

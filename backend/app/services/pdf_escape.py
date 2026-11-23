@@ -28,6 +28,16 @@ def escape_tree(value: Any) -> Any:
     return value
 
 
+def rl_text(value: Any) -> str:
+    """Text for reportlab's `Paragraph` mini-markup (`<b>`, `<br/>`, `&amp;`): `&`, `<` and `>` escaped.
+
+    A `Paragraph` parses its text as markup, so a company named `<b>x` or `R&D` must be escaped before it is
+    interpolated. Quotes need no escaping in element text. Slice long text BEFORE calling this: a cut after
+    escaping can end inside an entity (`&am`).
+    """
+    return html.escape(str(value), quote=False)
+
+
 def css_string(text: str) -> str:
     r"""The text as the inside of a CSS string literal.
 

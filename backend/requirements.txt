@@ -40,6 +40,7 @@ pdfplumber==0.11.9    # Table-aware PDF extraction (optional but recommended)
 
 # Excel
 openpyxl==3.1.5
+defusedxml==0.7.1    # openpyxl parses an uploaded .xlsx with it (no XML entity expansion); sheet_child refuses to run without it
 
 # PDF generation + templating
 weasyprint==70.0

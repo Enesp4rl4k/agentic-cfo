@@ -173,8 +173,18 @@ rendered environment before trusting a Helm deploy; the supported path is `docke
 | `PDF_MAX_PAGES` | 500 | optional | - | Pages an uploaded PDF may have; more is refused with a message that says so and asks for a shorter period. |
 | `PDF_PARSE_TIMEOUT_SECONDS` | 180 | optional | - | Time the child process may spend reading one PDF's text; past it the child's process group is killed and the upload is refused as unreadable. |
 | `PDF_OCR_SECONDS_PER_PAGE` | 30 | optional | - | Extra time per page that needs OCR (a scanned statement), and the Tesseract timeout for that page. A 400-page scan is not refused for being long. |
-| `PDF_CHILD_MEMORY_MB` | 3072 | optional | - | Address-space limit (`RLIMIT_AS`) of the PDF child process on Linux; the CPU limit is twice the text timeout. |
-| `PDF_PARSE_CONCURRENCY` | 2 | optional | - | Parser child processes running at once in one API or worker process; the rest wait. |
+| `PDF_CHILD_MEMORY_MB` | 512 | optional | FATAL in production if >= the container limit | Address-space limit (`RLIMIT_AS`) of a PDF parser child on Linux; the CPU limit is twice the text timeout. Sizing rule: `docs/ops/parser-sizing.md`. |
+| `PDF_PARSE_CONCURRENCY` | 1 | optional | WARN if child memory x this x `PARSE_PROCESS_COUNT` exceeds the container limit | Parser children (PDF and spreadsheet share the slots) running at once **per process**; the rest wait up to `PARSE_QUEUE_WAIT_SECONDS`. |
+| `PARSE_PROCESS_COUNT` | 2 | optional | - | API worker processes in this container (`uvicorn --workers`; an arq worker container has 1). Used only for the memory-sizing check. |
+| `PARSE_QUEUE_WAIT_SECONDS` | 60 | optional | - | How long an upload waits for a free parser slot before it is refused with "Sistem yoğun, tekrar deneyin". |
+| `SHEET_PARSE_TIMEOUT_SECONDS` | 90 | optional | - | Time the child may spend reading one .xlsx or CSV; past it the group is killed and the upload is refused with a message that says so. |
+| `SHEET_CHILD_MEMORY_MB` | 512 | optional | FATAL in production if >= the container limit | `RLIMIT_AS` of a spreadsheet/CSV child on Linux. |
+| `SHEET_MAX_UNCOMPRESSED_MB` | 128 | optional | - | Total uncompressed size of an .xlsx's zip members: checked from the zip directory before reading and counted again while reading. Over it: refused (zip-bomb defence). |
+| `SHEET_MAX_ZIP_MEMBERS` | 500 | optional | - | Most parts an .xlsx zip may hold. |
+| `SHEET_MAX_ROWS` | 200000 | optional | - | Most rows in one sheet (or CSV). More is refused, never truncated. |
+| `SHEET_MAX_COLUMNS` | 256 | optional | - | Most columns in a row once empty trailing cells are dropped. |
+| `SHEET_MAX_CELLS` | 1000000 | optional | - | Most cells in one file. |
+| `SHEET_MAX_CSV_LINE_CHARS` | 100000 | optional | - | Longest line a CSV may have. |
 | `AUTO_ENQUEUE_ANALYSIS_ON_UPLOAD` | True | optional | - |  |
 | `ALLOW_INLINE_JOB_FALLBACK` | (unset) | optional | FATAL on Postgres |  |
 | `AGENT_AUTO_PROCEED_MIN_CONFIDENCE` | 0.8 | optional | - |  |

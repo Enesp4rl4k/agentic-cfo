@@ -433,6 +433,7 @@ jobs:
           python -m pytest -q -rs
           tests/test_pdf_ocr_end_to_end.py tests/test_pdf_upload_guard.py tests/test_parser_isolation_fitness.py
           tests/test_report_hostile_text.py tests/test_report_render_no_fetch.py
+          tests/test_sheet_isolation.py tests/test_pdf_isolation_followups.py
 
       # requirements.txt is exact pins, constraints.txt pins the rest, and what
       # pip just installed is exactly that set. A new transitive package or a

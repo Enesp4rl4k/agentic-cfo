@@ -71,6 +71,9 @@ def _build_html(
     margin_text = css_string(f"{company_name} · {period} · {generated_at}")
     company_name = html.escape(company_name)
     period = html.escape(period)
+    # Cut BEFORE escaping: a cut after it can end inside an entity ("&am") and print it as text.
+    narrative = escape_tree(str((dashboard.get("pnl") or {}).get("narrative") or "")[:400])
+    forecast_narrative = escape_tree(str((dashboard.get("forecast") or {}).get("narrative") or "")[:300])
     dashboard = escape_tree(dashboard)  # every string the data carries; the f-strings below interpolate it as is
     pnl      = dashboard.get("pnl") or {}
     # Every amount on the page is in the currency the P&L states, or bare when it states none.
@@ -135,10 +138,8 @@ def _build_html(
         </tr>"""
 
     # Narrative
-    narrative = pnl.get("narrative") or ""
     # What the figures leave out: other currencies (not converted), or a company currency not yet confirmed.
     currency_note = str(pnl.get("currency_note") or "")
-    forecast_narrative = forecast.get("narrative") or ""
 
     return f"""<!DOCTYPE html>
 <html lang="tr">
@@ -387,7 +388,7 @@ tr.base-row td {{ font-weight: 700; background: #eff6ff; }}
 </div>
 
 <!-- CFO Narrative -->
-{f'<div class="narrative-box">{narrative[:400]}</div>' if narrative else ""}
+{f'<div class="narrative-box">{narrative}</div>' if narrative else ""}
 {f'<div class="narrative-box" style="border-left-color:#d97706">{currency_note}</div>' if currency_note else ""}
 
 <!-- Main grid: Cash Flow + OpEx -->
@@ -429,7 +430,7 @@ tr.base-row td {{ font-weight: 700; background: #eff6ff; }}
       <thead><tr><th>Senaryo</th><th style="text-align:right">12 Aylık Net</th><th>Nakit Ömrü</th></tr></thead>
       <tbody>{scenario_rows or "<tr><td colspan='3' style='color:#94a3b8'>Tahmin verisi yok</td></tr>"}</tbody>
     </table>
-    {f'<div style="margin-top:0.2cm;font-size:7.5pt;color:#475569;font-style:italic">{forecast_narrative[:300]}</div>' if forecast_narrative else ""}
+    {f'<div style="margin-top:0.2cm;font-size:7.5pt;color:#475569;font-style:italic">{forecast_narrative}</div>' if forecast_narrative else ""}
   </div>
 </div>
 

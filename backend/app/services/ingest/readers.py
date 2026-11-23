@@ -48,11 +48,14 @@ def _read_pdf(file_path: str) -> str:
 
 
 def _read_excel(file_path: str) -> str:
-    from openpyxl import load_workbook
-    wb = load_workbook(file_path, read_only=True, data_only=True)
+    """The workbook as tab-separated text. Opened in the child process (sheet_isolation); a refusal raises."""
+    from app.services.ingest.table import satirlari_oku
+
+    with open(file_path, "rb") as f:
+        data = f.read()
     rows: list[str] = []
-    for sheet in wb.worksheets:
-        for row in sheet.iter_rows(values_only=True):
+    for _title, sheet_rows in satirlari_oku(data, "xlsx" if not file_path.lower().endswith(".xls") else "xls"):
+        for row in sheet_rows:
             cells = [str(c) if c is not None else "" for c in row]
             if any(cells):
                 rows.append("\t".join(cells))
@@ -62,10 +65,21 @@ def _read_excel(file_path: str) -> str:
 def _read_csv(file_path: str) -> str:
     # UTF-8 first, then Windows-1254: a Turkish bank or ERP export is very often
     # the latter, and reading it as UTF-8 only ended in a generic ingestion error.
+    # Size and line length are bounded (sheet_child.check_text_bytes) before the text is decoded.
+    from app.config import get_settings
     from app.services.ingest.table import metin_coz
+    from app.services.sheet_child import SheetLimit, check_text_bytes
+    from app.services.sheet_isolation import SheetOkunamadi, limits_from_settings
 
+    limits = limits_from_settings()
     with open(file_path, "rb") as f:
-        return metin_coz(f.read())
+        data = f.read(limits["max_bytes"] + 1)
+    try:
+        check_text_bytes(data, limits["max_bytes"], limits["max_csv_line_chars"])
+    except SheetLimit as limit:
+        params = {"limit_mb": get_settings().max_upload_size_mb, **limit.params}
+        raise SheetOkunamadi(limit.code, **params) from None
+    return metin_coz(data)
 
 
 def _pdf_embedded_xml(file_path: str) -> list[str]:
