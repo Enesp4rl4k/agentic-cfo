@@ -2,10 +2,12 @@
 
 Use it when pdfminer.six, pdfplumber, PyMuPDF or Pillow is bumped (docs/ops/dependency-pinning.md):
 
-    python scripts/pdf_extraction_snapshot.py gen     corpus/            # once; the same files for both runs
-    python scripts/pdf_extraction_snapshot.py extract corpus/ old.json   # in the old environment
-    python scripts/pdf_extraction_snapshot.py extract corpus/ new.json   # in the new environment
-    diff old.json new.json                                               # empty = nothing moved
+    python scripts/pdf_extraction_snapshot.py gen          # once; the same files for both runs
+    python scripts/pdf_extraction_snapshot.py extract old  # in the old environment
+    python scripts/pdf_extraction_snapshot.py extract new  # in the new environment
+    diff "$TMPDIR/pdf-extraction-snapshot/old.json" "$TMPDIR/pdf-extraction-snapshot/new.json"   # empty = nothing moved
+
+Everything is under `<tempdir>/pdf-extraction-snapshot/`; the script takes no path from its command line.
 
 The corpus is generated (reportlab, PyMuPDF), never downloaded: grid and gridless bank statements with Turkish
 text, an invoice, a sparse page that sends the pipeline to its pdfplumber strategy, rotated text, a TrueType
@@ -19,9 +21,12 @@ from __future__ import annotations
 
 import json
 import sys
+import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+WORK = Path(tempfile.gettempdir()) / "pdf-extraction-snapshot"
+CORPUS = WORK / "corpus"
 sys.path.insert(0, str(HERE.parent))
 
 DESCRIPTIONS = [
@@ -53,7 +58,7 @@ def _ttf() -> str | None:
     return None
 
 
-def generate(out: Path) -> None:
+def generate() -> None:
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import getSampleStyleSheet
@@ -63,6 +68,7 @@ def generate(out: Path) -> None:
     from reportlab.pdfgen import canvas
     from reportlab.platypus import Paragraph, SimpleDocTemplate, Table, TableStyle
 
+    out = CORPUS
     out.mkdir(parents=True, exist_ok=True)
     ttf = _ttf()
     font = "Helvetica"
@@ -141,15 +147,16 @@ def _round(v: float) -> float:
     return round(float(v), 1)
 
 
-def extract(corpus: Path, target: Path) -> None:
+def extract(label: str) -> None:
     import importlib.metadata as md
 
     import pdfplumber
 
     from app.services import ocr_service
 
+    target = WORK / f"{label}.json"
     snapshot: dict[str, object] = {}
-    for pdf in sorted(corpus.glob("*.pdf")):
+    for pdf in sorted(CORPUS.glob("*.pdf")):
         entry: dict[str, object] = {}
         pages = []
         with pdfplumber.open(str(pdf)) as doc:
@@ -176,10 +183,10 @@ def extract(corpus: Path, target: Path) -> None:
 
 
 if __name__ == "__main__":
-    mode = sys.argv[1]
+    mode = sys.argv[1] if len(sys.argv) > 1 else ""
     if mode == "gen":
-        generate(Path(sys.argv[2]))
-    elif mode == "extract":
-        extract(Path(sys.argv[2]), Path(sys.argv[3]))
+        generate()
+    elif mode == "extract" and len(sys.argv) == 3 and sys.argv[2] in ("old", "new"):
+        extract(sys.argv[2])
     else:
         raise SystemExit(__doc__)
