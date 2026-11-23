@@ -3,12 +3,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiClient } from "@/lib/api/client";
 import { useI18n } from "@/hooks/useI18n";
+import { ErasureStates } from "./ErasureStates";
 import { downloadBlob, type ErasureRequestRow, type ExportState } from "./types";
 
-type Props = { isOwner: boolean; initialExport: ExportState | null; coolingOffDays: number };
+type Props = { isOwner: boolean; initialExport: ExportState | null; coolingOffDays: number; supportContact: string | null };
 
 /** Owner-only: the company export (a job) and the erasure request with its cooling-off and its cancel. */
-export function CompanyPrivacy({ isOwner, initialExport, coolingOffDays }: Props) {
+export function CompanyPrivacy({ isOwner, initialExport, coolingOffDays, supportContact }: Props) {
   const { t, locale } = useI18n();
   const c = t.settingsPrivacy.company;
   const [exp, setExp] = useState<ExportState | null>(initialExport);
@@ -126,22 +127,7 @@ export function CompanyPrivacy({ isOwner, initialExport, coolingOffDays }: Props
       <div className="space-y-2">
         <h3 className="font-medium">{c.eraseTitle}</h3>
         <p className="text-sm text-muted-foreground">{c.eraseIntro.replace("{days}", String(coolingOffDays))}</p>
-        {requests.length > 0 && (
-          <div>
-            <h4 className="text-sm font-medium">{c.pendingTitle}</h4>
-            <ul className="space-y-1 text-sm">
-              {requests.map((row) => (
-                <li key={row.request_id} className="flex flex-wrap items-center gap-2">
-                  <span>{row.scope === "org" ? c.kindOrg : c.kindMember}</span>
-                  {row.execute_after && <span className="text-muted-foreground">{day(row.execute_after)}</span>}
-                  {row.cancellable && (
-                    <button type="button" className="underline" onClick={() => void cancel(row)}>{c.eraseCancel}</button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+        {requests.length > 0 && <ErasureStates rows={requests} supportContact={supportContact} day={day} onCancel={(row) => void cancel(row)} />}
         {phrase ? (
           <div className="space-y-2">
             <label className="text-sm font-medium" htmlFor="erase-phrase">{c.erasePhrase.replace("{phrase}", phrase.text)}</label>

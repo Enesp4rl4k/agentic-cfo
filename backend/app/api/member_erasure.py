@@ -42,8 +42,9 @@ logger = logging.getLogger(__name__)
 NOT_FOUND = "Kayıt bulunamadı."
 # What the person or the owner is shown: waiting, running, failed (with its fixed code) or cleaning up. `failed` and
 # `cleanup_pending` used to be invisible; only the stoppable ones can be cancelled (`erasure_flow.STOPPABLE`).
+# `blocked` (the window passed but it may not run; a fixed `blocked_reason`) stays listed so the owner is told.
 LIVE = (erasure_flow.SCHEDULED, erasure_flow.PENDING, erasure_flow.FAILED, erasure_flow.EXECUTING,
-        erasure_flow.CLEANUP_PENDING)
+        erasure_flow.CLEANUP_PENDING, erasure_flow.BLOCKED)
 
 
 class MemberErasureBody(BaseModel):

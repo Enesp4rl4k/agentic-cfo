@@ -23,6 +23,7 @@ function overview(over: Partial<PrivacyOverview> = {}): PrivacyOverview {
     }],
     notices: { privacy_notice: notice("taslak-1", true), terms: notice("taslak-1", false), must_accept: true },
     cooling_off_days: 7,
+    support_contact: null,
     retention: {
       platform: { upload_days: 0, outbox_body_days: 90, notification_days: 180, alert_history_days: 365, token_days: 30, audit_ip_days: 365 },
       effective: { upload_days: 0, outbox_body_days: 90, notification_days: 180, alert_history_days: 365, token_days: 30, audit_ip_days: 365 },
@@ -109,6 +110,60 @@ describe("Veri ve gizlilik", () => {
     await waitFor(() => expect(client.put).toHaveBeenCalledWith("/privacy/retention", {
       policy: { upload_days: null, outbox_body_days: 60, notification_days: null, alert_history_days: null },
     }));
+  });
+
+  describe("erasure request state, owner only", () => {
+    const row = (status: string, over: Record<string, unknown> = {}) => ({
+      request_id: "abcdef12-0000-4000-8000-000000000000", scope: "org", status, execute_after: null, about_me: false,
+      cancellable: false, failure_code: null, blocked_reason: null, ...over,
+    });
+    const serveRows = (data: PrivacyOverview, rows: unknown[]) =>
+      client.get.mockImplementation(async (path: string) => {
+        if (path === "/privacy/overview") return { data: { data } };
+        if (path === "/privacy/erasure-requests") return { data: { data: { requests: rows } } };
+        throw new Error(`unexpected GET ${path}`);
+      });
+    const s = tr.settingsPrivacy.company.states;
+
+    it("says a scheduled erasure is scheduled, with its date, and offers the cancel", async () => {
+      serveRows(overview(), [row("scheduled", { execute_after: "2026-12-01T00:00:00Z", cancellable: true })]);
+      render(<PrivacyPanel />);
+      expect(await screen.findByText(/Planlandı: silme .* tarihinde yapılacak/)).toBeTruthy();
+      expect(screen.getByText(tr.settingsPrivacy.company.eraseCancel)).toBeTruthy();
+      expect(screen.getByText("Referans: abcdef12")).toBeTruthy();
+    });
+
+    it("says a running erasure and one in cleanup cannot be cancelled", async () => {
+      serveRows(overview(), [row("executing"), row("cleanup_pending", { request_id: "99999999-0000-4000-8000-000000000000", failure_code: "cleanup_failed" })]);
+      render(<PrivacyPanel />);
+      expect(await screen.findByText(s.executing)).toBeTruthy();
+      expect(screen.getByText(s.cleanupPending)).toBeTruthy();
+      expect(screen.queryByText(tr.settingsPrivacy.company.eraseCancel)).toBeNull();
+      expect(screen.queryByText(/cleanup_failed/)).toBeNull(); // the internal code is never shown
+    });
+
+    it("tells the owner to contact support when it failed, with the configured contact", async () => {
+      serveRows(overview({ support_contact: "destek@example.test" }), [row("failed", { failure_code: "erase_failed", cancellable: true })]);
+      render(<PrivacyPanel />);
+      expect(await screen.findByText(s.failed)).toBeTruthy();
+      expect(screen.getByText("Destek: destek@example.test")).toBeTruthy();
+      expect(screen.queryByText(/erase_failed/)).toBeNull();
+    });
+
+    it("falls back to the platform administrator when no support contact is configured, also when blocked", async () => {
+      serveRows(overview(), [row("blocked", { blocked_reason: "retries_exhausted" })]);
+      render(<PrivacyPanel />);
+      expect(await screen.findByText(s.blocked)).toBeTruthy();
+      expect(screen.getByText(s.contactNone)).toBeTruthy();
+      expect(screen.queryByText(/retries_exhausted/)).toBeNull();
+    });
+
+    it("shows nothing of it to a member who is not the owner", async () => {
+      serveRows(overview({ role: "analyst" }), [row("failed")]);
+      render(<PrivacyPanel />);
+      expect(await screen.findByText(tr.settingsPrivacy.company.ownerOnly)).toBeTruthy();
+      expect(screen.queryByText(s.failed)).toBeNull();
+    });
   });
 
   it("answers a failed load with a message, not a blank page", async () => {

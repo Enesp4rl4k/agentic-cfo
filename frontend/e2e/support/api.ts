@@ -59,6 +59,21 @@ export async function acceptInvite(request: APIRequestContext, inviteToken: stri
   return res;
 }
 
+/** People who have accepted the current privacy notice in the browser: the app stays closed to them until they do. */
+const acceptedNotice = new Set<string>();
+
+/**
+ * The prompt every new person meets after signing in. The journey accepts it explicitly, once per person, the way a
+ * person does (the button is the only way through); it does not depend on the clock or on anything else.
+ */
+export async function acceptNoticePrompt(page: Page, email: string) {
+  const prompt = page.getByRole("dialog", { name: "Devam etmeden önce lütfen okuyun" });
+  await expect(prompt).toBeVisible({ timeout: 60_000 });
+  await prompt.getByRole("button", { name: "Okudum, kabul ediyorum" }).click();
+  await expect(prompt).toBeHidden({ timeout: 30_000 });
+  acceptedNotice.add(email);
+}
+
 const sessions = new Map<string, Awaited<ReturnType<BrowserContext["cookies"]>>>();
 
 /** Sign in through the login screen, the way a person does; later visits reuse that session. */
@@ -74,6 +89,7 @@ export async function loginInBrowser(page: Page, email: string) {
   await page.locator("#password").fill(PASSWORD);
   await page.locator('button[type="submit"]').click();
   await page.waitForURL((url) => !url.pathname.startsWith("/auth"), { timeout: 60_000 });
+  if (!acceptedNotice.has(email)) await acceptNoticePrompt(page, email);
   sessions.set(email, await page.context().cookies());
 }
 

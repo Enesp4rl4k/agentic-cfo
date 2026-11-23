@@ -7,6 +7,9 @@ export type NoticeStatus = {
   must_accept: boolean;
 };
 
+/** What `GET /privacy/notices` answers; the gate reads `must_accept`, the screens read the rest. */
+export type NoticesState = { privacy_notice: NoticeStatus; terms: NoticeStatus; must_accept: boolean };
+
 export type ExportState = {
   export_id: string;
   status: "queued" | "running" | "ready" | "failed" | "expired";
@@ -38,8 +41,10 @@ export type RetentionView = {
 export type PrivacyOverview = {
   role: string | null;
   third_parties: ThirdParty[];
-  notices: { privacy_notice: NoticeStatus; terms: NoticeStatus; must_accept: boolean };
+  notices: NoticesState;
   cooling_off_days: number;
+  /** The operator's configured support address or link; null when unset. */
+  support_contact: string | null;
   retention: RetentionView;
   export: ExportState | null;
 };
@@ -47,16 +52,28 @@ export type PrivacyOverview = {
 export type ErasureRequestRow = {
   request_id: string;
   scope: "org" | "member";
-  status: "pending" | "scheduled";
+  status: "pending" | "scheduled" | "executing" | "cleanup_pending" | "failed" | "blocked";
   execute_after: string | null;
   about_me: boolean;
   cancellable: boolean;
+  /** Fixed codes for the support desk; never shown to the person as text. */
+  failure_code?: string | null;
+  blocked_reason?: string | null;
 };
 
 /** The server's reason for a refusal, when it sent one. */
 export function detailOf(error: unknown): string | null {
   const detail = (error as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
-  return typeof detail === "string" ? detail : null;
+  if (typeof detail === "string") return detail;
+  // The shared API client rethrows an Error whose message IS the server's detail and which carries the HTTP status.
+  const err = error as { status?: unknown; message?: unknown } | null;
+  return typeof err?.status === "number" && typeof err.message === "string" ? err.message : null;
+}
+
+export function statusOf(error: unknown): number | null {
+  const status = (error as { status?: unknown; response?: { status?: unknown } } | null);
+  const code = status?.status ?? status?.response?.status;
+  return typeof code === "number" ? code : null;
 }
 
 export async function downloadBlob(

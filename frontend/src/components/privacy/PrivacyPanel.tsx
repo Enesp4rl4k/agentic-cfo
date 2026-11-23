@@ -43,7 +43,7 @@ export function PrivacyPanel() {
         onAccepted={() => void load()}
       />
       <MyData coolingOffDays={data.cooling_off_days} locale={locale} />
-      <CompanyPrivacy isOwner={data.role === "owner"} initialExport={data.export} coolingOffDays={data.cooling_off_days} />
+      <CompanyPrivacy isOwner={data.role === "owner"} initialExport={data.export} coolingOffDays={data.cooling_off_days} supportContact={data.support_contact} />
       <section className="space-y-3 rounded-lg border border-border p-4" aria-labelledby="privacy-third">
         <h2 id="privacy-third" className="text-lg font-semibold">{p.thirdParties.title}</h2>
         <p className="text-sm text-muted-foreground">{p.thirdParties.intro}</p>
