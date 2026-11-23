@@ -61,6 +61,17 @@ export type ErasureRequestRow = {
   blocked_reason?: string | null;
 };
 
+/** A link is rendered only when it is an absolute http(s) URL; `javascript:`, `data:` and relative values are not links. */
+export function safeHref(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    return (u.protocol === "https:" || u.protocol === "http:") && u.hostname !== "" ? u.href : null;
+  } catch {
+    return null;
+  }
+}
+
 /** The server's reason for a refusal, when it sent one. */
 export function detailOf(error: unknown): string | null {
   const detail = (error as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;

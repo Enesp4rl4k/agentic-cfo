@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import { Logo } from "@/components/ui/logo";
 import { useI18n } from "@/hooks/useI18n";
-import type { NoticeStatus } from "./types";
+import { safeHref, type NoticeStatus } from "./types";
 
 export type PendingNotice = { key: string; label: string; status: NoticeStatus };
 
@@ -45,8 +45,8 @@ export function NoticePrompt({ pending, busy, error, onAccept, onSignOut }: Prop
             <li key={key} className="space-y-1 p-3.5 text-sm">
               <p className="font-semibold">{label}</p>
               <p className="text-xs text-muted-foreground">{g.version.replace("{v}", status.version)}</p>
-              {status.url ? (
-                <a href={status.url} target="_blank" rel="noreferrer" className="inline-flex min-h-[44px] items-center font-medium text-primary underline underline-offset-4">
+              {safeHref(status.url) ? (
+                <a href={safeHref(status.url) ?? undefined} target="_blank" rel="noreferrer" className="inline-flex min-h-[44px] items-center font-medium text-primary underline underline-offset-4">
                   {g.open}
                 </a>
               ) : (

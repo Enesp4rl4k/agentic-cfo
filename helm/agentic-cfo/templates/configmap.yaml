@@ -15,6 +15,12 @@ data:
   BACKEND_CORS_ORIGINS: "http://localhost:3000,https://{{ (index .Values.ingress.hosts 0).host }}"
   NEXT_PUBLIC_API_URL: "https://{{ (index .Values.ingress.hosts 0).host }}/api"
   NEXTAUTH_URL: "https://{{ (index .Values.ingress.hosts 0).host }}"
+  # E-mailed links (verification, reset, invite) and the app's public address: the preflight refuses localhost.
+  FRONTEND_URL: "https://{{ (index .Values.ingress.hosts 0).host }}"
+  BRAND_APP_URL: "https://{{ (index .Values.ingress.hosts 0).host }}"
+  # REQUIRED: the public https links of the published texts people are asked to accept (preflight: FATAL otherwise).
+  PRIVACY_NOTICE_URL: {{ required "config.privacyNoticeUrl is required (public https link of the privacy notice)" .Values.config.privacyNoticeUrl | quote }}
+  TERMS_URL: {{ required "config.termsUrl is required (public https link of the terms of use)" .Values.config.termsUrl | quote }}
   STORAGE_BACKEND: {{ .Values.config.storageBackend | quote }}
   MAX_UPLOAD_SIZE_MB: {{ .Values.config.maxUploadSizeMb | quote }}
   AUTO_ENQUEUE_ANALYSIS_ON_UPLOAD: {{ .Values.config.autoEnqueueAnalysis | quote }}

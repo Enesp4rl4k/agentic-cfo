@@ -273,3 +273,20 @@ def test_the_notice_links_are_required_in_production_and_only_warned_about_elsew
         assert "no_notice_url" in codes(check_settings(production_settings(**{field: "  "}), CLEAN_ENV), FATAL)  # blank is unset
     assert "no_notice_url" not in codes(check_settings(production_settings(), CLEAN_ENV))
 
+BAD_NOTICE_URLS = ["x", "TBD", "http://", " https://", "https://", "javascript:alert(1)", "/aydinlatma", "ftp://example.test/a", "https://exa mple.test", "https://example.test/a "]
+
+
+def test_a_malformed_notice_link_is_fatal_in_production_and_names_the_setting() -> None:
+    for field, var in (("privacy_notice_url", "PRIVACY_NOTICE_URL"), ("terms_url", "TERMS_URL")):
+        for bad in BAD_NOTICE_URLS:
+            found = [f for f in check_settings(production_settings(**{field: bad}), CLEAN_ENV) if f.code == "no_notice_url"]
+            assert found and found[0].severity == FATAL and var in found[0].message, (field, bad)
+            assert "no_notice_url" in codes(check_settings(production_settings(**{field: bad}), {**CLEAN_ENV, "APP_ENV": "ci"}), WARN), (field, bad)
+        assert "no_notice_url" not in codes(check_settings(production_settings(**{field: "https://example.test/gizlilik"}), CLEAN_ENV))
+
+
+def test_plain_http_is_accepted_only_outside_production() -> None:
+    s = production_settings(privacy_notice_url="http://localhost:3000/aydinlatma")
+    assert "no_notice_url" in codes(check_settings(s, CLEAN_ENV), FATAL)
+    assert "no_notice_url" not in codes(check_settings(s, {**CLEAN_ENV, "APP_ENV": "ci"}))
+

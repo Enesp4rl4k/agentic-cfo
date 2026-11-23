@@ -110,6 +110,19 @@ describe("NoticeGate", () => {
     expect(screen.getByRole("button", { name: tr.noticeGate.signOut })).toBeTruthy();
   });
 
+  it("renders the link only for an http(s) URL, never javascript: or a relative value", async () => {
+    for (const bad of ["javascript:alert(1)", "data:text/html,x", "/aydinlatma", "TBD"]) {
+      client.get.mockResolvedValue({ data: { data: { ...state(true, false), privacy_notice: doc("taslak-1", true, bad) } } });
+      const { unmount } = mount();
+      expect(await screen.findByText(tr.noticeGate.noLink)).toBeTruthy();
+      expect(screen.queryByRole("link")).toBeNull();
+      unmount();
+    }
+    client.get.mockResolvedValue({ data: { data: { ...state(true, false), privacy_notice: doc("taslak-1", true, "https://example.test/metin") } } });
+    mount();
+    expect(await screen.findByRole("link", { name: tr.noticeGate.open })).toBeTruthy();
+  });
+
   it("fails closed when the state cannot be read: retry and sign-out, no app", async () => {
     client.get.mockRejectedValueOnce(new Error("net"));
     mount();

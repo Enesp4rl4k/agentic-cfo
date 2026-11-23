@@ -19,6 +19,12 @@ Production means `USE_SQLITE=false`, or `APP_ENV` set to `production` or `stagin
 `ci` or `test`. A host that forgot it would otherwise run in "warnings only" mode. Outside production a FATAL finding is logged as a warning, so a laptop
 is never blocked. WARN findings are logged in every mode.
 
+**Helm chart.** `helm/agentic-cfo` sets `APP_ENV=production`, derives `FRONTEND_URL` / `BRAND_APP_URL` from the ingress host and
+requires `config.privacyNoticeUrl` and `config.termsUrl` (`helm template` fails without them). The chart is **not** kept
+complete for the preflight: it still offers no way to set `ERASURE_PSEUDONYM_SECRET`, a mail sender, `PLATFORM_OPERATOR_EMAILS`
+or `SUPPORT_CONTACT`, and its deploy step in `.github/workflows/k8s-deploy.yml` is commented out. Run the preflight against the
+rendered environment before trusting a Helm deploy; the supported path is `docker-compose.prod.yml`.
+
 ## What startup does
 
 1. `Settings.validate_production_security()` (existing): insecure default secret, field encryption on
@@ -144,7 +150,7 @@ is never blocked. WARN findings are logged in every mode.
 | `RETENTION_ALERT_HISTORY_DAYS` | 365 | optional | - | Retention: days after which alert history rows are deleted |
 | `PRIVACY_NOTICE_VERSION` | `taslak-1` | optional | - | Version of the privacy notice a person must have accepted; change it to ask everyone again (the text is the owner's documents, linked) |
 | `TERMS_VERSION` | `taslak-1` | optional | - | Version of the terms of use a person must have accepted |
-| `PRIVACY_NOTICE_URL` | (empty) | REQUIRED in production | FATAL when `APP_ENV` is production/staging and unset (warning elsewhere) | Where the privacy notice text lives (a link; the product does not hold legal text). The sign-in prompt asks people to accept it, so it must be openable |
+| `PRIVACY_NOTICE_URL` | (empty) | REQUIRED in production | FATAL when `APP_ENV` is production/staging and unset (warning elsewhere) | Where the privacy notice text lives (an absolute `https` link with a host; `http` is accepted only outside production; the product does not hold legal text). The sign-in prompt asks people to accept it, so it must be openable. Malformed (`TBD`, `x`, a relative path, `javascript:`) counts as unset |
 | `TERMS_URL` | (empty) | REQUIRED in production | FATAL when `APP_ENV` is production/staging and unset (warning elsewhere) | Where the terms of use live (a link); same rule |
 | `ERASURE_PSEUDONYM_SECRET` | (unset) | REQUIRED in production | FATAL when `APP_ENV` is production/staging and unset (warning elsewhere) | KVKK member erasure: key of the HMAC behind the stable `member-<hex>` pseudonym. Its own random value (`openssl rand -hex 32`), set once and never rotated (rotating changes the handle of people erased afterwards); empty falls back to `BACKEND_SECRET_KEY`, which does rotate |
 | `LLM_MODEL` | `deepseek-chat` | optional | - |  |
