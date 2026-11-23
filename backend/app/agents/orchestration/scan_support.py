@@ -15,7 +15,7 @@ _VOLATILE = ("current_value", "evidence", "status")
 
 
 def _digest(parts: object) -> str:
-    return hashlib.sha1(json.dumps(parts, sort_keys=True, default=str, ensure_ascii=True).encode("utf-8")).hexdigest()[:10]
+    return hashlib.sha256(json.dumps(parts, sort_keys=True, default=str, ensure_ascii=True).encode("utf-8")).hexdigest()[:10]
 
 
 def kri_key(kri: dict[str, Any], siblings: list[dict[str, Any]]) -> str:
