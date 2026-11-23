@@ -32,9 +32,7 @@ async def _run(args: argparse.Namespace) -> int:
             rows = (await db.execute(select(OrgErasureRecord.org_hash, OrgErasureRecord.mode))).all()
             sys.stdout.write(json.dumps({str(h): str(m) for h, m in rows}, indent=1) + "\n")
             return 0
-        with open(args.apply, encoding="utf-8") as fh:
-            erased = json.load(fh)
-        sys.stdout.write(json.dumps(await reapply_erased(db, erased)) + "\n")
+        sys.stdout.write(json.dumps(await reapply_erased(db, args.erased)) + "\n")
     return 0
 
 
