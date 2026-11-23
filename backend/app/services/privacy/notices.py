@@ -64,3 +64,17 @@ async def accept(db: AsyncSession, user_id: str, versions: dict[str, str], sourc
             recorded.append(doc)
     await db.commit()
     return recorded
+
+
+async def stage_at_signup(db: AsyncSession, user_id: str, versions: dict[str, str] | None, source: str) -> list[str]:
+    """Add the acceptances a person sent with sign-up or invite-accept to the CALLER's transaction (no commit).
+
+    Only a CURRENT version is recorded: evidence of acceptance is never written for text the person was not shown, and a
+    stale or unknown entry is dropped rather than refusing the sign-up (the screen asks again after sign-in)."""
+    now = current()
+    recorded = []
+    for doc, version in (versions or {}).items():
+        if doc in now and version == now[doc]["version"]:
+            db.add(TermsAcceptance(user_id=user_id, document=doc, version=version, source=source, accepted_at=datetime.now(UTC)))
+            recorded.append(doc)
+    return recorded

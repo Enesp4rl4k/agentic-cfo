@@ -142,6 +142,8 @@ class AcceptInviteRequest(BaseModel):
     full_name: str | None = None
     # Needed to create an account, and to prove an existing one when the caller has no session of it.
     password: str | None = Field(default=None, min_length=8)
+    # The notice and terms versions the person accepted on the invitation page, e.g. {"privacy_notice": "v1", "terms": "v1"}.
+    accepted_notices: dict[str, str] | None = None
 
 
 def _org_dict(org: Organization) -> dict[str, Any]:
@@ -688,6 +690,9 @@ async def accept_invite(
         evidence_refs=[{"type": "org_invite", "id": str(invite.id)}], after={"role": membership.role},
     )
 
+    from app.services.privacy.notices import stage_at_signup
+
+    await stage_at_signup(db, str(user.id), body.accepted_notices, "invite")
     await db.commit()
     await db.refresh(user)
 
