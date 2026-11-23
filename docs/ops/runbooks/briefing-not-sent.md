@@ -22,16 +22,25 @@ releases it (`POST /briefing/monday/release`).
    ```
    `failed: smtp_not_configured`: see [login-and-email.md](login-and-email.md) item 1.
    No row at all for this week: the dispatch did not run or found nothing to send.
-5. **Did the scheduler run?** `dc logs worker | grep -E 'Monday briefing|Scheduler'`. APScheduler skips a run
-   whose start time passed while the process was down: **a worker restarting at 07:00 UTC loses that week's
-   run** (no `misfire_grace_time`, audit item 6.3). `dc logs worker | grep -i 'missed'` shows it.
+5. **Did the scheduler run?** `dc logs worker | grep -E 'Monday briefing|Scheduler|catch-up'`. APScheduler keeps no
+   jobs across a restart, so a tick that fell while the worker was down is never seen by it. The application
+   therefore keeps a ledger (`scheduled_job_runs`: one row per job, company and period) and a catch-up job
+   (30 seconds after start, then every 10 minutes) that runs what was due, is inside its window and not finished:
+   the Monday briefing and the morning brief until the end of that UTC day, the nightly run until 12:00, the
+   hourly KRI scan only within its own hour (older ones are skipped). Check the ledger:
+   ```bash
+   psql_app -c "select job, period, status, attempts, last_error from scheduled_job_runs order by claimed_at desc limit 20;"
+   ```
+   `failed` is retried (up to 5 attempts; the operators get a mail after `JOB_FAILURE_ALERT_AFTER`); `running`
+   older than 20 minutes is a dead process and is taken over. A caught-up briefing mails the operators once.
 6. `/api/v1/ready`: `checks.scheduler` `no_recent_outbox_pass` means nothing is delivering.
 
 ## Fix
 
 - Held: the accountant releases it. Failed for mail configuration: configure mail; failed rows stay failed,
   so queue it again (below).
-- The run was missed: run the dispatch once by hand; it is idempotent for the week (unique outbox key):
+- The run was missed and the window has passed (or 5 attempts failed): run the dispatch once by hand; it is
+  idempotent for the week (ledger row and unique outbox key). Delete nothing; a `done` row makes it a no-op:
   ```bash
   dc exec worker python -c "import asyncio; from app.scheduler import _dispatch_monday_briefings as d; asyncio.run(d())"
   ```
@@ -41,5 +50,6 @@ releases it (`POST /briefing/monday/release`).
 
 ## Not verified
 
-The manual dispatch command and the outbox queries were written from the code, not run. Whether a run
-after a missed one duplicates the in-app notification was not tested.
+The manual dispatch command, the ledger and outbox queries were written from the code, not run on a host.
+Catch-up, double start and a crash in the middle are tested (`tests/test_schedule_catchup.py`); a real restart at
+07:00 with Redis and Postgres and two scheduler processes together were not run.

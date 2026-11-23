@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import type { ChatEvidenceMeta } from "@/components/ui/chat-evidence-chips";
+import { explainRefusal, POLICY_CLOSE, type LiveRefusal } from "@/lib/liveRefusal";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -72,6 +73,14 @@ export function useWSChat(options: UseWSChatOptions = {}) {
   const [messages, setMessages] = useState<WSChatMessage[]>([]);
   const [status,   setStatus]   = useState<WSChatStatus>("idle");
   const [error,    setError]    = useState<string | null>(null);
+  // The server closed the socket as "not allowed" (IP allow-list, removed membership): shown, never retried silently.
+  const [refusal,  setRefusal]  = useState<LiveRefusal | null>(null);
+
+  const explain = useCallback(() => {
+    void explainRefusal().then((sentence) => {
+      if (mountedRef.current && sentence) setRefusal({ sentence });
+    });
+  }, []);
 
   // ── Cleanup ──────────────────────────────────────────────────────────────
 
@@ -121,7 +130,7 @@ export function useWSChat(options: UseWSChatOptions = {}) {
 
       ws.onopen = () => {
         clearTimeout(timeout);
-        if (mountedRef.current) setStatus("connected");
+        if (mountedRef.current) { setStatus("connected"); setRefusal(null); }
 
         // Keepalive ping every 25 seconds
         pingRef.current = setInterval(() => {
@@ -142,11 +151,15 @@ export function useWSChat(options: UseWSChatOptions = {}) {
         if (mountedRef.current) {
           setStatus(e.wasClean ? "closed" : "error");
           if (!e.wasClean) setError("Bağlantı kesildi");
+          if (e.code === POLICY_CLOSE) {
+            setRefusal({ sentence: null });
+            explain();
+          }
         }
         if (pingRef.current) clearInterval(pingRef.current);
       };
     });
-  }, [cleanup, options.url, token]);
+  }, [cleanup, explain, options.url, token]);
 
   // ── Send ──────────────────────────────────────────────────────────────────
 
@@ -166,6 +179,8 @@ export function useWSChat(options: UseWSChatOptions = {}) {
         const msg = err instanceof Error ? err.message : "Bağlantı hatası";
         setError(msg);
         setStatus("error");
+        // A refusal before the handshake finishes has no close code: ask the server why.
+        explain();
         options.onError?.(msg);
         return;
       }
@@ -277,7 +292,7 @@ export function useWSChat(options: UseWSChatOptions = {}) {
         // Ignore parse errors
       }
     };
-  }, [connect, options]);
+  }, [connect, explain, options]);
 
   // ── Clear ─────────────────────────────────────────────────────────────────
 
@@ -298,6 +313,7 @@ export function useWSChat(options: UseWSChatOptions = {}) {
     messages,
     status,
     error,
+    refusal,
     isStreaming: status === "streaming",
     isConnected: status === "connected" || status === "streaming" || status === "done",
     send,

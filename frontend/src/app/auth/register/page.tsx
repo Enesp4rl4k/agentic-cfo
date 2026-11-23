@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, FormEvent } from "react";
+import { useEffect, useState, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
 import {
@@ -11,6 +11,7 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { AuthBrandPanel } from "@/components/auth/AuthBrandPanel";
 import { Logo } from "@/components/ui/logo";
+import { InviteOnlyNotice } from "@/components/auth/InviteOnlyNotice";
 import { useI18n } from "@/hooks/useI18n";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -35,6 +36,23 @@ export default function RegisterPage() {
   const [step, setStep]         = useState<Step>("account");
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState<string | null>(null);
+  // Who may sign up (REGISTRATION_MODE). Unknown (the call failed) shows the form: the API refuses anyway.
+  const [policy, setPolicy]     = useState<{ open: boolean; contact: string | null } | null>(null);
+  // Said by the API when no e-mail can really be delivered (development recording, no mail sender).
+  const [mailNotice, setMailNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${API_BASE}/api/v1/auth/registration`)
+      .then((res) => res.json())
+      .then((body) => {
+        if (!cancelled && body?.data) setPolicy({ open: Boolean(body.data.open), contact: body.data.contact ?? null });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function handleAccountStep(e: FormEvent) {
     e.preventDefault();
@@ -71,6 +89,7 @@ export default function RegisterPage() {
       if (registered?.data?.verification_required) {
         // The account cannot sign in before its address is verified: the workspace is created on the
         // first sign-in after that (the onboarding page does it).
+        setMailNotice(registered?.data?.mail_notice ?? null);
         setStep("verify");
         return;
       }
@@ -108,6 +127,19 @@ export default function RegisterPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  if (policy && !policy.open) {
+    return (
+      <div className="flex min-h-screen">
+        <AuthBrandPanel items={BRAND_FEATURES} />
+        <div className="flex flex-1 flex-col items-center justify-center px-4 py-12 sm:px-8">
+          <div className="w-full max-w-sm">
+            <InviteOnlyNotice contact={policy.contact} />
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -275,6 +307,7 @@ export default function RegisterPage() {
             <div role="status" className="space-y-3 rounded-lg border border-border bg-muted/30 p-4">
               <p className="m-0 text-sm font-semibold">{t.emailVerification.registered.title}</p>
               <p className="m-0 text-sm text-muted-foreground">{t.emailVerification.registered.body}</p>
+              {mailNotice && <p role="alert" className="m-0 text-sm font-medium text-destructive">{mailNotice}</p>}
               <Link href="/auth/verify-email" className="text-sm font-semibold text-primary underline-offset-4 hover:underline">
                 {t.emailVerification.registered.resend}
               </Link>

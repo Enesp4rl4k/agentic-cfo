@@ -20,6 +20,7 @@ vi.mock("@/lib/api/heldRows", async () => (await import("./dashboard-mocks")).he
 vi.mock("@/hooks/useOrgSettings", async () => (await import("./dashboard-mocks")).orgSettingsModule);
 vi.mock("next/link", async () => (await import("./dashboard-mocks")).nextLinkModule);
 vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams("") }));
+vi.mock("@/lib/api/decisionRecords", () => ({ listDecisionEntries: async () => ({ entries: [], total: 0 }) }));
 
 import BekleyenKayitlarPage from "@/app/(dashboard)/bekleyen-kayitlar/page";
 
@@ -273,11 +274,32 @@ describe("hatırlanan ekstre yönleri", () => {
     expect(screen.queryByRole("button", { name: "Unut" })).toBeNull();
   });
 
-  it("shows nothing when no answer is remembered", async () => {
+  it("says that nothing is remembered instead of showing a blank", async () => {
     listFileQuestions.mockResolvedValue({ files: [], canRemember: true });
     listHeldRows.mockResolvedValue([]);
     renderWithQuery(<BekleyenKayitlarPage />);
     expect(await screen.findByText("İncelemenizi bekleyen kayıt yok.")).toBeInTheDocument();
-    expect(screen.queryByText("Hatırlanan ekstre yönleri")).toBeNull();
+    expect(await screen.findByText("Hatırlanan ekstre yönü yok. Bir ekstrenin yönünü hatırlamayı seçtiğinizde burada listelenir ve istediğinizde unutabilirsiniz.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Unut" })).toBeNull();
+  });
+
+  it("says that the remembered answers could not be read", async () => {
+    listFileQuestions.mockResolvedValue({ files: [], canRemember: true });
+    listHeldRows.mockResolvedValue([]);
+    listDirectionMappings.mockRejectedValue(new Error("boom"));
+    renderWithQuery(<BekleyenKayitlarPage />);
+    expect(await screen.findByText("Hatırlanan ekstre yönleri verisi alınamadı.")).toBeInTheDocument();
+  });
+
+  it("opens the decision history of one remembered answer (remembered, overridden, revoked), read-only", async () => {
+    const user = userEvent.setup();
+    listFileQuestions.mockResolvedValue({ files: [], canRemember: false });
+    listHeldRows.mockResolvedValue([]);
+    listDirectionMappings.mockResolvedValue([directionMappingFixture]);
+    renderWithQuery(<BekleyenKayitlarPage />);
+    await screen.findByText("Hatırlanan ekstre yönleri");
+    expect(screen.getByRole("button", { name: "Karar geçmişi" })).toHaveAttribute("aria-expanded", "false");
+    await user.click(screen.getByRole("button", { name: "Karar geçmişi" }));
+    expect(screen.getByRole("button", { name: "Karar geçmişi" })).toHaveAttribute("aria-expanded", "true");
   });
 });

@@ -102,7 +102,7 @@ def test_our_own_pulls_write_an_explicit_type_on_every_row() -> None:
 
 
 async def test_the_stripe_pull_lists_paid_invoices_only_and_writes_the_type_itself(client, monkeypatch) -> None:
-    """The object the pull asks Stripe for decides what it can emit: paid invoices, never refunds/disputes/payouts."""
+    """The objects the pull asks Stripe for decide what it can emit: paid invoices and credit notes, never payouts/fees."""
     import sys
     import types
 
@@ -123,7 +123,12 @@ async def test_the_stripe_pull_lists_paid_invoices_only_and_writes_the_type_itse
             seen.update(kwargs)
             return types.SimpleNamespace(data=[Inv("in_1", 12500), Inv("in_2", None)], has_more=False)
 
-    monkeypatch.setitem(sys.modules, "stripe", types.SimpleNamespace(Invoice=Invoice, api_key=None))
+    class CreditNote:
+        @staticmethod
+        def list(**kwargs):
+            return types.SimpleNamespace(data=[], has_more=False)
+
+    monkeypatch.setitem(sys.modules, "stripe", types.SimpleNamespace(Invoice=Invoice, CreditNote=CreditNote, api_key=None))
     monkeypatch.setattr(get_settings(), "stripe_secret_key", "sk_test_x", raising=False)
     await _login(client, "stripe@example.com")
     from sqlalchemy import select

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Lock } from "lucide-react";
 import { CanButton } from "@/components/ui/can-button";
 import { Card } from "@/components/ui/card";
+import { DecisionHistoryToggle } from "@/components/decisions/DecisionHistoryToggle";
 import { useCan } from "@/hooks/useCan";
 import { useI18n } from "@/hooks/useI18n";
 import { failureMessage } from "@/lib/forbidden";
@@ -92,6 +93,18 @@ export function DonemKilitleri({ now = new Date() }: { now?: Date }) {
         <p className="text-sm">
           {closed.length === 0 ? p.none : `${p.closedLabel}: ${closed.map((c) => c.donem).join(", ")}`}
         </p>
+      )}
+
+      {closed !== null && closed.length > 0 && (
+        <ul className="m-0 list-none space-y-2 p-0">
+          {closed.map((c) => (
+            <li key={c.donem} className="space-y-1">
+              <span className="text-xs font-medium">{c.donem}</span>
+              {/* Who closed the month and on what basis: a recorded decision, read-only. */}
+              <DecisionHistoryToggle targetType="accounting_period" targetId={c.donem} />
+            </li>
+          ))}
+        </ul>
       )}
 
       <div className="flex flex-wrap items-center gap-2">

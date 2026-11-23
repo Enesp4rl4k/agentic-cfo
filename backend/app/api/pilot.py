@@ -1,50 +1,53 @@
 """
 Pilot Program API
 
-POST /api/v1/pilot/invite/generate   — platform operator generates invite codes
-GET  /api/v1/pilot/invite/validate   — validate invite code before registration
-POST /api/v1/pilot/invite/use        — mark invite as used after registration
-GET  /api/v1/pilot/invites           — admin: list all invites + usage stats
-DELETE /api/v1/pilot/invite/{id}     — admin: revoke an invite
+POST /api/v1/pilot/invite/generate   — platform operator invites an e-mail address to open a NEW company
+POST /api/v1/pilot/invite/preview    — what the invitation page needs before sign-up (by secret token)
+GET  /api/v1/pilot/invites           — operator: list invites + state
+DELETE /api/v1/pilot/invite/{id}     — operator: revoke an unused invite
 
-POST /api/v1/pilot/feedback          — submit feedback (auth optional)
-GET  /api/v1/pilot/feedback          — admin: list all feedback
-GET  /api/v1/pilot/feedback/summary  — admin: NPS + rating aggregates
-GET  /api/v1/pilot/status            — public: pilot program status (slots used/total)
+POST /api/v1/pilot/feedback          — submit feedback (auth required)
+GET  /api/v1/pilot/feedback          — operator: list all feedback
+GET  /api/v1/pilot/feedback/summary  — operator: NPS + rating aggregates
+GET  /api/v1/pilot/status            — operator view: registration mode, users, invites
+
+The invite is redeemed by `POST /auth/register` with its token (services/pilot_invites.py describes the
+whole flow). There is no way to read a token back: it is e-mailed once and stored only as a digest.
 """
 from __future__ import annotations
 
 import logging
-import secrets
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.access import require_platform_operator
 from app.api.auth import get_current_user
-from app.config import get_settings
 from app.database import get_db
 from app.models.pilot import PilotInvite, UserFeedback
 from app.models.user import User
+from app.services import mail_capability, outbox, pilot_invites, registration
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-PILOT_MAX_USERS = 5  # overrideable via env
-INVITE_EXPIRE_DAYS = 30
 
 
 # ── Pydantic schemas ──────────────────────────────────────────────────────────
 
 class GenerateInviteRequest(BaseModel):
-    email: str | None = None
-    note: str | None = None
-    count: int = Field(default=1, ge=1, le=20)
-    expire_days: int = Field(default=INVITE_EXPIRE_DAYS, ge=1, le=365)
+    email: EmailStr
+    company_name: str = Field(min_length=2, max_length=200)
+    note: str | None = Field(default=None, max_length=500)
+    expire_days: int | None = Field(default=None, ge=1, le=365)
+
+
+class PreviewRequest(BaseModel):
+    token: str = Field(min_length=8, max_length=128)
 
 
 class FeedbackRequest(BaseModel):
@@ -60,127 +63,88 @@ class FeedbackRequest(BaseModel):
     page_context: str | None = Field(default=None, max_length=100)
 
 
-# ── Pilot status (public) ────────────────────────────────────────────────────
+# ── Pilot status (operators) ─────────────────────────────────────────────────
 
-@router.get("/pilot/status")
-async def pilot_status(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> dict[str, Any]:
-    """Return current pilot program status — public endpoint."""
-    settings = get_settings()
-    max_users = getattr(settings, "pilot_max_users", PILOT_MAX_USERS)
+@router.get("/pilot/status", dependencies=[Depends(require_platform_operator)])
+async def pilot_status(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    """Operator view: the registration mode and how many accounts and open invites there are.
 
-    # Count active users (non-admin)
-    result = await db.execute(
-        select(func.count()).select_from(User).where(User.is_active)
-    )
-    total_users = result.scalar() or 0
-
-    # Count unused invites
-    inv_result = await db.execute(
-        select(func.count()).select_from(PilotInvite).where(
-            # `not Column` and `Column is None` are evaluated by Python, not
-            # SQL: the first raises on SQLAlchemy's __bool__, the second is
-            # always False. Neither ever reached the database.
-            PilotInvite.used.is_(False),
-            or_(
-                PilotInvite.expires_at.is_(None),
-                PilotInvite.expires_at > datetime.now(UTC),
-            ),
+    There is no user cap: in `invite_only` the number of companies is the number of invites an operator
+    issued, and that is the cap."""
+    users = (await db.execute(select(func.count()).select_from(User).where(User.is_active))).scalar() or 0
+    open_invites = (
+        await db.execute(
+            select(func.count()).select_from(PilotInvite).where(
+                PilotInvite.used.is_(False), PilotInvite.token_hash.is_not(None),
+                or_(PilotInvite.expires_at.is_(None), PilotInvite.expires_at > datetime.now(UTC)),
+            )
         )
-    )
-    available_slots = inv_result.scalar() or 0
-
+    ).scalar() or 0
     return {
         "data": {
-            "pilot_active": True,
-            "max_users": max_users,
-            "current_users": total_users,
-            "slots_remaining": max(0, max_users - total_users),
-            "available_invites": available_slots,
-            "accepting_new_users": total_users < max_users,
+            "registration_mode": registration.mode(),
+            "current_users": users,
+            "available_invites": open_invites,
+            "mail_delivery": mail_capability.delivery(),
         },
         "error": None,
     }
 
 
-# ── Invite management (admin) ─────────────────────────────────────────────────
+# ── Invite management (operators) ────────────────────────────────────────────
 
 @router.post("/pilot/invite/generate", status_code=201, dependencies=[Depends(require_platform_operator)])
-async def generate_invites(
+async def generate_invite(
     body: GenerateInviteRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    """Admin: generate one or more invite codes."""
-    expires = datetime.now(UTC) + timedelta(days=body.expire_days)
-    codes = []
+    """Operator: invite one address to create a new company. The link goes out by e-mail; it is not returned.
 
-    for _ in range(body.count):
-        code = secrets.token_urlsafe(16)  # 22 chars, URL-safe
-        invite = PilotInvite(
-            code=code,
-            email=body.email if body.count == 1 else None,
-            note=body.note,
-            expires_at=expires,
+    With no mail sender configured nothing is created and the answer says so (503): an invite nobody can
+    receive would only look like a success."""
+    try:
+        invite = await pilot_invites.issue(
+            db, operator_id=str(current_user.id), email=str(body.email), company_name=body.company_name,
+            note=body.note, expire_days=body.expire_days,
         )
-        db.add(invite)
-        codes.append({"code": code, "expires_at": expires.isoformat()})
-
+    except pilot_invites.PilotInviteError as err:
+        raise HTTPException(err.status_code, detail=err.detail) from None
     await db.commit()
-    logger.info("Pilot: %d invite(s) generated by %s", body.count, current_user.email)
-
-    return {"data": {"invites": codes, "count": len(codes)}, "error": None}
-
-
-@router.get("/pilot/invite/validate")
-async def validate_invite(
-    code: str,
-    db: AsyncSession = Depends(get_db),
-) -> dict[str, Any]:
-    """Public: check if an invite code is valid."""
-    result = await db.execute(
-        select(PilotInvite).where(PilotInvite.code == code)
-    )
-    invite = result.scalar_one_or_none()
-
-    if not invite:
-        return {"data": {"valid": False, "reason": "Geçersiz davet kodu."}, "error": None}
-    if invite.used:
-        return {"data": {"valid": False, "reason": "Bu davet kodu zaten kullanılmış."}, "error": None}
-    if invite.expires_at and invite.expires_at < datetime.now(UTC):
-        return {"data": {"valid": False, "reason": "Davet kodunun süresi dolmuş."}, "error": None}
-
+    outbox.kick()
+    logger.info("Pilot: invite %s issued by operator %s", invite.id, current_user.id)
     return {
         "data": {
-            "valid": True,
             "invite_id": invite.id,
             "email": invite.email,
-            "note": invite.note,
+            "company_name": invite.company_name,
+            "expires_at": invite.expires_at.isoformat() if invite.expires_at else None,
+            "email_sent": True,  # handed to the outbox; its delivery is recorded there
+            **mail_capability.fields(),
         },
         "error": None,
     }
 
 
-@router.post("/pilot/invite/use")
-async def use_invite(
-    code: str,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> dict[str, Any]:
-    """Mark an invite as used after successful registration."""
-    result = await db.execute(
-        select(PilotInvite).where(
-            PilotInvite.code == code, PilotInvite.used.is_(False)
-        )
-    )
-    invite = result.scalar_one_or_none()
-    if not invite:
-        raise HTTPException(400, detail="Geçersiz veya kullanılmış davet kodu.")
+@router.post("/pilot/invite/preview")
+async def preview_invite(body: PreviewRequest, db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    """The invitation page's first call: whose invitation, for which company, in what state.
 
-    invite.used = True
-    invite.used_by_user_id = current_user.id   # was a query parameter: burn any invite for anyone
-    invite.used_at = datetime.now(UTC)
-    await db.commit()
-    return {"data": {"used": True}, "error": None}
+    The token is the secret (e-mailed to the invitee); whoever holds it may read this. A POST, so the
+    token is in the body and not in a URL that logs and proxies keep."""
+    invite = await pilot_invites.find(db, body.token)
+    current = pilot_invites.state(invite)
+    if invite is None or current == "unknown":
+        return {"data": {"state": "unknown"}, "error": None}
+    return {
+        "data": {
+            "state": current,
+            "email": invite.email,
+            "company_name": invite.company_name,
+            "registration_closed": registration.mode() == "closed",
+        },
+        "error": None,
+    }
 
 
 @router.get("/pilot/invites", dependencies=[Depends(require_platform_operator)])
@@ -188,25 +152,24 @@ async def list_invites(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    """Admin: list all invite codes with usage info."""
-    result = await db.execute(
-        select(PilotInvite).order_by(PilotInvite.created_at.desc())
-    )
-    invites = result.scalars().all()
+    """Operator: every invite with its state. No token and no link: those exist only in the e-mail."""
+    result = await db.execute(select(PilotInvite).order_by(PilotInvite.created_at.desc()))
     return {
         "data": [
             {
                 "id": i.id,
                 "code": i.code,
                 "email": i.email,
+                "company_name": i.company_name,
                 "note": i.note,
+                "state": pilot_invites.state(i),
                 "used": i.used,
                 "used_by": i.used_by_user_id,
                 "used_at": i.used_at.isoformat() if i.used_at else None,
                 "expires_at": i.expires_at.isoformat() if i.expires_at else None,
                 "created_at": i.created_at.isoformat(),
             }
-            for i in invites
+            for i in result.scalars().all()
         ],
         "error": None,
     }
@@ -218,12 +181,12 @@ async def revoke_invite(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    """Admin: revoke an unused invite."""
+    """Operator: revoke an unused invite (its link stops working)."""
     invite = await db.get(PilotInvite, invite_id)
     if not invite:
         raise HTTPException(404, detail="Davet bulunamadı.")
     if invite.used:
-        raise HTTPException(400, detail="Kullanılmış davet kodu iptal edilemez.")
+        raise HTTPException(400, detail="Kullanılmış davet iptal edilemez.")
     await db.delete(invite)
     await db.commit()
     return {"data": {"revoked": True}, "error": None}
@@ -345,7 +308,7 @@ async def feedback_summary(
     detractors = sum(1 for s in nps_scores if s <= 6)
     nps = round(((promoters - detractors) / len(nps_scores)) * 100) if nps_scores else None
 
-    def _avg(values: list[int]) -> float | None:
+    def _avg(values: list[int | None]) -> float | None:
         filtered = [v for v in values if v is not None]
         return round(sum(filtered) / len(filtered), 2) if filtered else None
 

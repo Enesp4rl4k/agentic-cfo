@@ -7,13 +7,15 @@ import {
   Activity, ArrowRightLeft, BarChart2, Building2, CalendarDays, Cpu, CreditCard, Crown, DollarSign, Download, FileCheck, FileSearch, FileText, Filter, Layers, LayoutDashboard, Link2, Megaphone, MessageSquare, Newspaper, PieChart, Receipt, Rocket, Shield, ShieldAlert, ShieldCheck, TrendingUp, Upload, Users, Waves, Zap,
 } from "lucide-react";
 import type { MessageTree } from "@/lib/i18n";
+import type { RoleClass } from "@/lib/roles";
 
 export type MenuGroupKey = keyof MessageTree["menu"]["groups"];
 export type MenuItemKey = keyof MessageTree["menu"]["items"];
 
 export const NAV_GROUPS: {
   label: MenuGroupKey;
-  items: { href: string; labelKey: MenuItemKey; icon: typeof Rocket; trPack?: boolean }[];
+  // `cls`: the entry is drawn only for roles of that class (the server stays the authority and answers 403 on its own).
+  items: { href: string; labelKey: MenuItemKey; icon: typeof Rocket; trPack?: boolean; cls?: RoleClass }[];
 }[] = [
   {
     // The weekly loop in the order it is lived: documents, route, decision, report (#64).
@@ -37,7 +39,8 @@ export const NAV_GROUPS: {
       { href: "/iliskili-taraf", labelKey: "iliskiliTaraf",  icon: Users },
       { href: "/pnl", labelKey: "dashboard",      icon: LayoutDashboard },
       { href: "/upload", labelKey: "upload",         icon: Upload },
-      { href: "/kararlar", labelKey: "kararlar",     icon: ShieldCheck },
+      // The company-wide decision log is read by owner, admin, cfo and smmm (decision_records.py: WRITER_ROLES).
+      { href: "/kararlar", labelKey: "kararlar",     icon: ShieldCheck, cls: "writer" },
     ],
   },
   {

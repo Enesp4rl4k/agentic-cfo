@@ -18,6 +18,18 @@ from typing import Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
+
+from app.services.schedule_runner import (
+    GLOBAL,
+    HOURLY_KRI_SCAN,
+    MONDAY_BRIEFING,
+    MORNING_BRIEF,
+    NIGHTLY_INTELLIGENCE,
+    RunReport,
+    period_for,
+    run_guarded,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +38,7 @@ _scheduler: AsyncIOScheduler | None = None
 
 
 def _exclusive(
-    fn: Callable[..., Awaitable[None]],
+    fn: Callable[..., Awaitable[object]],
     name: str,
     ttl: int = 1800,
 ) -> Callable[..., Awaitable[None]]:
@@ -214,67 +226,70 @@ def monday_briefing_key(org_id: str) -> str:
     return f"monday_briefing:{org_id}"
 
 
-async def _dispatch_monday_briefings() -> None:
+async def _dispatch_monday_briefings(now: datetime | None = None) -> RunReport:
     """Plan v10 §O4: Monday Morning Briefing dispatch.
 
-    Every Monday at 07:00 UTC:
+    Every Monday at 07:00 UTC, and again by `schedule_catch_up` when that moment was missed:
     1. Assembles deterministic 3-sentence briefing from radar facts.
     2. Stores in Redis cache with 7-day TTL.
     3. Emits InAppNotification to the organization.
-    """
-    import json
 
+    One run per (organisation, Monday): the ledger row (`services/job_runs.py`) is claimed first and
+    finished in the same transaction as the notification and the outbox rows, so a restart, a second
+    scheduler or a crash in the middle neither loses nor repeats a briefing. The e-mails also carry an
+    outbox key per recipient and briefing, a second guard against a double send.
+    """
     from sqlalchemy import select
 
     from app.database import engine, get_session_factory
-    from app.models.in_app_notification import InAppNotification
     from app.models.organization import Organization
-    from app.services.briefing_delivery import enqueue_briefing_emails
-    from app.services.monday_briefing import assemble_monday_briefing
     from app.services.outbox import deliver_pending
 
-    logger.info("Scheduler: starting Monday morning briefing dispatch")
+    moment = now or datetime.now(UTC)
+    period = period_for(MONDAY_BRIEFING, moment)
+    report = RunReport()
+    logger.info("Scheduler: Monday morning briefing dispatch for %s", period)
     async with get_session_factory(engine())() as db:
-        orgs = (await db.execute(select(Organization))).scalars().all()
-        for org in orgs:
-            try:
-                anchor = datetime.now(UTC).date()
-                briefing = await assemble_monday_briefing(db, org.id, anchor_date=anchor)
-                if not briefing.has_data:
-                    continue  # nothing known about this company: no briefing, no invented calm
-                # E-mail goes through the outbox: once per recipient, held for an accountant.
-                await enqueue_briefing_emails(db, org.id, briefing, anchor_date=anchor)
-                # Redis cache
-                try:
-                    from app.worker import get_arq_pool
+        org_ids = [str(o) for o in (await db.execute(select(Organization.id))).scalars().all()]
+    for org_id in org_ids:
+        await run_guarded(
+            MONDAY_BRIEFING, org_id, period, functools.partial(_monday_briefing_for_org, org_id, moment.date()), report
+        )
+    if report.done:
+        async with get_session_factory(engine())() as db:
+            await deliver_pending(db)
+            await db.commit()
+    logger.info("Scheduler: Monday morning briefing dispatch completed (%s)", report)
+    return report
 
-                    pool = await get_arq_pool()
-                    await pool.set(
-                        monday_briefing_key(org.id), json.dumps(briefing.to_dict()), ex=7 * 86400
-                    )
-                except Exception as exc:
-                    logger.debug(
-                        "Could not cache monday briefing in Redis for org %s: %s", org.id, exc
-                    )
 
-                # In-app notification
-                notif = InAppNotification(
-                    org_id=org.id,
-                    level="info",
-                    domain="cfo",
-                    source="monday_briefing",
-                    message=f"{briefing.sentence_radar} {briefing.sentence_action}",
-                    action="route",
-                    priority_score=0.8,
-                )
-                db.add(notif)
-            except Exception as err:
-                logger.warning("Failed to generate Monday briefing for org %s: %s", org.id, err)
+async def _monday_briefing_for_org(org_id: str, anchor: Any, db: Any) -> None:
+    import json
 
-        await db.commit()
-        await deliver_pending(db)
-        await db.commit()
-    logger.info("Scheduler: Monday morning briefing dispatch completed")
+    from app.models.in_app_notification import InAppNotification
+    from app.services.briefing_delivery import enqueue_briefing_emails
+    from app.services.monday_briefing import assemble_monday_briefing
+
+    briefing = await assemble_monday_briefing(db, org_id, anchor_date=anchor)
+    if not briefing.has_data:
+        return  # nothing known about this company: no briefing, no invented calm
+    # E-mail goes through the outbox: once per recipient, held for an accountant.
+    await enqueue_briefing_emails(db, org_id, briefing, anchor_date=anchor)
+    db.add(
+        InAppNotification(
+            org_id=org_id, level="info", domain="cfo", source="monday_briefing",
+            message=f"{briefing.sentence_radar} {briefing.sentence_action}",
+            action="route", priority_score=0.8,
+        )
+    )
+    # Redis cache: a convenience copy, best effort (the screen recomputes from the radar).
+    try:
+        from app.worker import get_arq_pool
+
+        pool = await get_arq_pool()
+        await pool.set(monday_briefing_key(org_id), json.dumps(briefing.to_dict()), ex=7 * 86400)
+    except Exception as exc:
+        logger.debug("Could not cache monday briefing in Redis for org %s: %s", org_id, exc)
 
 
 async def _deliver_outbox() -> None:
@@ -340,25 +355,30 @@ def morning_brief_key(org_id: str) -> str:
     return f"morning_brief:{org_id}"
 
 
-async def _generate_morning_brief(org_id: str | None = None) -> None:
+async def _generate_morning_brief(org_id: str | None = None, now: datetime | None = None) -> RunReport:
     """One brief per organisation — for `org_id`, or for every organisation
     with a completed job in the last 24 hours when called by the scheduler.
 
     It used to be one brief for everyone: the last ten completed jobs of all
     organisations averaged into a single summary, sent to the LLM, and stored
     under one key that an unauthenticated route returned. Each company now gets
-    a brief built only from its own jobs.
+    a brief built only from its own jobs. Per organisation and day it runs once
+    (the ledger of `services/job_runs.py`), so the catch-up after a restart cannot repeat it.
     """
     from sqlalchemy import select
 
     from app.database import engine, get_session_factory
     from app.models.analysis_job import AnalysisJob, JobStatus
 
+    report = RunReport()
     if org_id is not None:
         await _generate_morning_brief_for_org(org_id)
-        return
+        report.done += 1
+        return report
 
-    cutoff = datetime.now(UTC) - timedelta(hours=24)
+    moment = now or datetime.now(UTC)
+    period = period_for(MORNING_BRIEF, moment)
+    cutoff = moment - timedelta(hours=24)
     async with get_session_factory(engine())() as db:
         org_ids = (
             await db.execute(
@@ -372,11 +392,13 @@ async def _generate_morning_brief(org_id: str | None = None) -> None:
             )
         ).scalars().all()
     for oid in org_ids:
-        try:
-            await _generate_morning_brief_for_org(str(oid))
-        except Exception:
-            # One organisation's failure must not cost the others their brief.
-            logger.exception("Scheduler: morning brief failed for org=%s", oid)
+        # One organisation's failure must not cost the others their brief (run_guarded records it).
+        await run_guarded(MORNING_BRIEF, str(oid), period, functools.partial(_morning_brief_work, str(oid)), report)
+    return report
+
+
+async def _morning_brief_work(org_id: str, _db: Any) -> None:
+    await _generate_morning_brief_for_org(org_id)
 
 
 async def _generate_morning_brief_for_org(org_id: str) -> None:
@@ -504,7 +526,7 @@ async def _generate_morning_brief_for_org(org_id: str) -> None:
             logger.warning("Could not store morning brief in Redis: %s", exc)
 
 
-async def _nightly_intelligence_run() -> None:
+async def _nightly_intelligence_run(now: datetime | None = None) -> RunReport:
     """
     Nightly Intelligence Run — Her gece 02:00 UTC'de çalışır.
 
@@ -513,7 +535,8 @@ async def _nightly_intelligence_run() -> None:
     2. AlertRouter ile karar ver (dedup + severity scoring)
     3. NotificationService ile teslim et (Slack + email + in-app)
 
-    Org başına max 1 run — idempotent (aynı fingerprint tekrar teslim edilmez).
+    Org başına gün başına en fazla 1 run: `services/job_runs.py` defteri (yeniden başlatma sonrası
+    telafi çalışması aynı geceyi ikinci kez teslim etmez).
     """
     from sqlalchemy import select
 
@@ -522,33 +545,28 @@ async def _nightly_intelligence_run() -> None:
     from app.services.notification_service import NotificationService
 
     logger.info("Scheduler: starting nightly intelligence run")
-    cutoff = datetime.now(UTC) - timedelta(hours=48)
+    moment = now or datetime.now(UTC)
+    period = period_for(NIGHTLY_INTELLIGENCE, moment)
+    report = RunReport()
+    cutoff = moment - timedelta(hours=48)
 
     async with get_session_factory(engine())() as db:
-        # Get all orgs
-        org_result = await db.execute(select(Organization))
-        orgs = org_result.scalars().all()
+        org_ids = [str(o) for o in (await db.execute(select(Organization.id))).scalars().all()]
+    if not org_ids:
+        logger.info("Scheduler: no organizations found — skipping nightly run")
+        return report
 
-        if not orgs:
-            logger.info("Scheduler: no organizations found — skipping nightly run")
-            return
+    notification_svc = NotificationService()
 
-        notification_svc = NotificationService()
+    async def one_org(org_id: str, db: Any) -> None:
+        org = await db.get(Organization, org_id)
+        if org is not None:
+            await _process_org_nightly(org=org, db=db, cutoff=cutoff, notification_svc=notification_svc)
 
-        for org in orgs:
-            try:
-                await _process_org_nightly(
-                    org=org,
-                    db=db,
-                    cutoff=cutoff,
-                    notification_svc=notification_svc,
-                )
-            except Exception as exc:
-                logger.error(
-                    "Nightly run failed for org=%s: %s", org.id, exc, exc_info=True
-                )
-
-        logger.info("Scheduler: nightly intelligence run completed for %d orgs", len(orgs))
+    for org_id in org_ids:
+        await run_guarded(NIGHTLY_INTELLIGENCE, org_id, period, functools.partial(one_org, org_id), report)
+    logger.info("Scheduler: nightly intelligence run completed (%s)", report)
+    return report
 
 
 async def _process_org_nightly(org, db, cutoff, notification_svc) -> None:
@@ -821,135 +839,87 @@ async def _demo_guest_ttl_purge() -> None:
         logger.error("Demo TTL purge hatasi: %s", exc)
 
 
+# misfire_grace_time (seconds): how late a tick may still run when the event loop was busy or blocked.
+# It does NOT cover a restart: APScheduler keeps no jobs across one, so a process that was down at 07:00
+# never sees that tick at all. That case is `_schedule_catch_up` below (ledger + windows,
+# services/schedule_runner.py). The numbers are therefore sized to "a stall", per job class:
+GRACE_TICK = 240       # every 5 minutes: the next tick is the retry
+GRACE_HOURLY = 1800    # hourly: late by up to half an hour is still this hour's work
+GRACE_DAILY = 3600     # daily/weekly: an hour of stall still runs it; beyond that catch-up decides
+# coalesce=True everywhere: a backlog of missed ticks of one job runs once, never in a burst.
+# max_instances=1 everywhere: a slow run is never overlapped by the next tick of the same job.
+
+
+def _add(
+    scheduler: AsyncIOScheduler, fn: Callable[..., Awaitable[object]], job_id: str, trigger: Any, *,
+    grace: int, ttl: int = 1800,
+) -> None:
+    scheduler.add_job(
+        _exclusive(fn, job_id, ttl=ttl), trigger, id=job_id, replace_existing=True,
+        max_instances=1, coalesce=True, misfire_grace_time=grace,
+    )
+
+
 def get_scheduler() -> AsyncIOScheduler:
     """Return the singleton scheduler (create if needed).
 
     Every job is wrapped in `_exclusive`: several uvicorn workers each start
     their own APScheduler, and one cron tick must run once — not once per
-    process.
+    process. The jobs that matter to a company (briefing, morning brief, nightly run, KRI scan) are
+    additionally guarded by the run ledger and caught up after a restart.
     """
     global _scheduler
     if _scheduler is None:
         _scheduler = AsyncIOScheduler(timezone="UTC")
+        sched = _scheduler
 
-        # Daily at 06:00 UTC — scan recent jobs for anomalies
-        _scheduler.add_job(
-            _exclusive(_scan_recent_jobs, "daily_anomaly_scan"),
-            CronTrigger(hour=6, minute=0),
-            id="daily_anomaly_scan",
-            replace_existing=True,
-            max_instances=1,
-        )
-
-        # Weekly on Monday 07:00 UTC — summary log
-        _scheduler.add_job(
-            _exclusive(_weekly_summary, "weekly_summary"),
-            CronTrigger(day_of_week="mon", hour=7, minute=0),
-            id="weekly_summary",
-            replace_existing=True,
-            max_instances=1,
-        )
-
+        _add(sched, _scan_recent_jobs, "daily_anomaly_scan", CronTrigger(hour=6, minute=0), grace=GRACE_DAILY)
+        # Weekly on Monday 07:00 UTC — the Monday briefing and the summary log (caught up: MONDAY_BRIEFING)
+        _add(sched, _weekly_summary, "weekly_summary", CronTrigger(day_of_week="mon", hour=7, minute=0),
+             grace=GRACE_DAILY)
         # Daily at 07:00 UTC — morning CEO brief (stored in Redis)
-        _scheduler.add_job(
-            _exclusive(_generate_morning_brief, "morning_brief"),
-            CronTrigger(hour=7, minute=0),
-            id="morning_brief",
-            replace_existing=True,
-            max_instances=1,
-        )
-
+        _add(sched, _generate_morning_brief, "morning_brief", CronTrigger(hour=7, minute=0), grace=GRACE_DAILY)
         # Nightly at 02:00 UTC — full intelligence run + notifications
-        _scheduler.add_job(
-            _exclusive(
-                _nightly_intelligence_run, "nightly_intelligence_run", ttl=3600
-            ),
-            CronTrigger(hour=2, minute=0),
-            id="nightly_intelligence_run",
-            replace_existing=True,
-            max_instances=1,
-        )
-
+        _add(sched, _nightly_intelligence_run, "nightly_intelligence_run", CronTrigger(hour=2, minute=0),
+             grace=GRACE_DAILY, ttl=3600)
         # FAZ-2: Daily at 08:00 UTC — re-analyze active orgs automatically
-        _scheduler.add_job(
-            _exclusive(_daily_active_org_analysis, "daily_active_org_analysis"),
-            CronTrigger(hour=8, minute=0),
-            id="daily_active_org_analysis",
-            replace_existing=True,
-            max_instances=1,
-        )
-
-        # PROACTIVE: Every hour — KRI scan + alert dispatch
-        _scheduler.add_job(
-            _exclusive(_hourly_proactive_kri_scan, "hourly_proactive_kri_scan"),
-            CronTrigger(minute=15),   # Her saatin 15. dakikasında
-            id="hourly_proactive_kri_scan",
-            replace_existing=True,
-            max_instances=1,
-        )
-
+        _add(sched, _daily_active_org_analysis, "daily_active_org_analysis", CronTrigger(hour=8, minute=0),
+             grace=GRACE_DAILY)
+        # PROACTIVE: Every hour (:15) — KRI scan + alert dispatch (a stale one is skipped, never queued up)
+        _add(sched, _hourly_proactive_kri_scan, "hourly_proactive_kri_scan", CronTrigger(minute=15),
+             grace=GRACE_HOURLY)
         # ERP SYNC: hourly check; each integration is pulled when its own
         # interval (daily or weekly, chosen on the integrations page) is due.
-        _scheduler.add_job(
-            _exclusive(_daily_erp_sync, "daily_erp_sync"),
-            CronTrigger(minute=30),
-            id="daily_erp_sync",
-            replace_existing=True,
-            max_instances=1,
-        )
-
+        _add(sched, _daily_erp_sync, "daily_erp_sync", CronTrigger(minute=30), grace=GRACE_HOURLY)
         # DQ-5: Hourly — check and run due SyncSchedules (ERP/OB/eFatura)
-        _scheduler.add_job(
-            _exclusive(_run_scheduled_syncs, "scheduled_data_syncs"),
-            CronTrigger(minute=45),   # Her saatin 45. dakikasında
-            id="scheduled_data_syncs",
-            replace_existing=True,
-        )
-
+        _add(sched, _run_scheduled_syncs, "scheduled_data_syncs", CronTrigger(minute=45), grace=GRACE_HOURLY)
         # RAG maintenance: her 2 saatte bir eksik chunk indexlerini tamamla.
-        _scheduler.add_job(
-            _exclusive(_rag_backfill_maintenance, "rag_backfill_maintenance"),
-            CronTrigger(minute=5, hour="*/2"),
-            id="rag_backfill_maintenance",
-            replace_existing=True,
-            max_instances=1,
-        )
-
+        _add(sched, _rag_backfill_maintenance, "rag_backfill_maintenance", CronTrigger(minute=5, hour="*/2"),
+             grace=GRACE_DAILY)
         # P4: hourly — `schedule` trigger rules, evaluated once per UTC day
         # (the date is the idempotency key, so a missed midnight still runs).
-        _scheduler.add_job(
-            _exclusive(_trigger_schedule_tick, "trigger_schedule_tick", ttl=3000),
-            CronTrigger(minute=10),
-            id="trigger_schedule_tick",
-            replace_existing=True,
-            max_instances=1,
-        )
-
-        # USAGE: Nightly at 03:00 UTC — prune old usage_events (>90 days)
+        _add(sched, _trigger_schedule_tick, "trigger_schedule_tick", CronTrigger(minute=10), grace=GRACE_HOURLY,
+             ttl=3000)
         # C9: every 5 minutes - the outbox sends pending messages and records each outcome.
-        _scheduler.add_job(
-            _exclusive(_deliver_outbox, "outbox_delivery", ttl=240),
-            CronTrigger(minute="*/5"),
-            id="outbox_delivery",
-            replace_existing=True,
-            max_instances=1,
-        )
-
+        _add(sched, _deliver_outbox, "outbox_delivery", CronTrigger(minute="*/5"), grace=GRACE_TICK, ttl=240)
         # O5: daily, before the Monday briefing (07:00) - the forecast log.
-        _scheduler.add_job(
-            _exclusive(_record_radar_forecasts, "radar_forecast_log"),
-            CronTrigger(hour=5, minute=30),
-            id="radar_forecast_log",
-            replace_existing=True,
-            max_instances=1,
-        )
+        _add(sched, _record_radar_forecasts, "radar_forecast_log", CronTrigger(hour=5, minute=30), grace=GRACE_DAILY)
+        # USAGE: Nightly at 03:00 UTC — prune old usage_events (>90 days)
+        _add(sched, _nightly_usage_prune, "nightly_usage_prune", CronTrigger(hour=3, minute=0), grace=GRACE_DAILY)
 
-        _scheduler.add_job(
-            _exclusive(_nightly_usage_prune, "nightly_usage_prune"),
-            CronTrigger(hour=3, minute=0),
-            id="nightly_usage_prune",
-            replace_existing=True,
-            max_instances=1,
+        # Restart safety: shortly after start and every 10 minutes, run what was due, is inside its window
+        # and has no finished ledger row (also retries a run that failed or whose process died).
+        start_in = datetime.now(UTC) + timedelta(seconds=30)
+        sched.add_job(
+            _schedule_catch_up, IntervalTrigger(minutes=10, start_date=start_in), id="schedule_catch_up",
+            replace_existing=True, max_instances=1, coalesce=True, misfire_grace_time=GRACE_TICK,
+            next_run_time=start_in,
+        )
+        # Operator alerts (failed backup, failing destinations, preflight warnings): at start, then every 15 minutes.
+        sched.add_job(
+            _ops_watch, IntervalTrigger(minutes=15, start_date=start_in), id="ops_watch",
+            replace_existing=True, max_instances=1, coalesce=True, misfire_grace_time=GRACE_TICK,
+            next_run_time=start_in,
         )
 
         # DDIA Ch.1/Ch.7: a claim without an expiry is not a claim. Every 10
@@ -960,24 +930,13 @@ def get_scheduler() -> AsyncIOScheduler:
 
         if get_settings().reaper_enabled:
             # TTL (9 min) < interval (10 min): the lock is free by the next tick.
-            _scheduler.add_job(
-                _exclusive(_run_stuck_job_reaper, "stuck_job_reaper", ttl=540),
-                CronTrigger(minute="*/10"),
-                id="stuck_job_reaper",
-                replace_existing=True,
-                max_instances=1,
-            )
+            _add(sched, _run_stuck_job_reaper, "stuck_job_reaper", CronTrigger(minute="*/10"), grace=GRACE_TICK,
+                 ttl=540)
 
         # D4: hourly — konuk demo workspace'leri TTL dolunca purge (auto-reset).
         # demo_mode kapalıysa hiç kaydedilmez (production'da cron tetiklenmez).
         if get_settings().demo_mode:
-            _scheduler.add_job(
-                _exclusive(_demo_guest_ttl_purge, "demo_guest_ttl_purge"),
-                CronTrigger(minute=25),
-                id="demo_guest_ttl_purge",
-                replace_existing=True,
-                max_instances=1,
-            )
+            _add(sched, _demo_guest_ttl_purge, "demo_guest_ttl_purge", CronTrigger(minute=25), grace=GRACE_HOURLY)
 
     from app.services.privacy.jobs import register_privacy_jobs
 
@@ -985,24 +944,48 @@ def get_scheduler() -> AsyncIOScheduler:
     return _scheduler
 
 
-async def _hourly_proactive_kri_scan() -> None:
+async def _schedule_catch_up() -> None:
+    """Run the due-but-unfinished runs of the jobs in `schedule_runner.SPECS` (never raises)."""
+    try:
+        from app.services.schedule_runner import catch_up
+
+        await catch_up()
+    except Exception:
+        logger.exception("schedule catch-up failed")
+
+
+async def _ops_watch() -> None:
+    """Tell the platform operators about what only a person can fix (never raises)."""
+    try:
+        from app.services.ops_watch import watch
+
+        await watch()
+    except Exception:
+        logger.exception("ops watch failed")
+
+
+async def _hourly_proactive_kri_scan(now: datetime | None = None) -> RunReport:
     """
     Saatlik KRI tarama ve proaktif alert dispatch.
     Her org icin Risk Kernel calistirir, esik asiminda cascade + alert.
+
+    Once per hour (ledger period = the hour); a failed scan is retried within the same hour by the
+    catch-up, an older one is skipped (`services/schedule_runner.py` windows).
     """
-    try:
+    report = RunReport()
+
+    async def scan(db: Any) -> None:
         from app.agents.orchestration.proactive_alerts import get_proactive_orchestrator
-        from app.database import engine, get_session_factory
-        async with get_session_factory(engine())() as db:
-            orchestrator = get_proactive_orchestrator(db=db)
-            result       = await orchestrator.run_scheduled_scan()
-            if result.get("total_alerts", 0) > 0:
-                logger.info(
-                    "Proactive KRI scan: orgs=%d alerts=%d",
-                    result.get("scanned", 0), result.get("total_alerts", 0),
-                )
-    except Exception as exc:
-        logger.error("Hourly proactive scan hatasi: %s", exc)
+
+        orchestrator = get_proactive_orchestrator(db=db)
+        result = await orchestrator.run_scheduled_scan()
+        if result.get("total_alerts", 0) > 0:
+            logger.info(
+                "Proactive KRI scan: orgs=%d alerts=%d", result.get("scanned", 0), result.get("total_alerts", 0),
+            )
+
+    await run_guarded(HOURLY_KRI_SCAN, GLOBAL, period_for(HOURLY_KRI_SCAN, now), scan, report)
+    return report
 
 
 async def _trigger_schedule_tick() -> None:

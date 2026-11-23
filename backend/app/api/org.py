@@ -14,7 +14,6 @@ DELETE /api/v1/org/invites/{id}    — cancel invite (admin+)
 from __future__ import annotations
 
 import logging
-import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -25,17 +24,20 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import is_platform_operator
 from app.api.auth import _bearer, get_current_user
+from app.config import get_settings
 from app.core.email_address import normalize_email
 from app.database import get_db
 from app.models.decision import DecidedVia, DecisionKind
 from app.models.organization import Organization, OrgInvite, OrgMembership
 from app.models.password_reset import PasswordResetToken
 from app.models.user import User, UserRole
-from app.services import email_verification
+from app.services import email_verification, mail_capability, registration
 from app.services.acting_role import acting_role
 from app.services.decisions import record_decision
 from app.services.org_identity_decision import identity_view, record_identity_change
+from app.services.org_provisioning import create_organisation, regional_defaults, slugify
 from app.services.secret_tokens import hash_token, new_token
 
 router = APIRouter()
@@ -46,12 +48,7 @@ INVITE_EXPIRE_DAYS = 7
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _slugify(name: str) -> str:
-    slug = name.lower().strip()
-    slug = re.sub(r"[^\w\s-]", "", slug)
-    slug = re.sub(r"[\s_-]+", "-", slug)
-    slug = slug.strip("-")
-    return slug[:80]
+_slugify = slugify  # kept: older callers and tests import the private name
 
 
 # `get_current_user` serves users out of a 60-second cache, so `current_user` is
@@ -222,11 +219,7 @@ def _member_dict(u: User, role: str) -> dict[str, Any]:
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
-def _regional_defaults(country_code: str) -> dict[str, Any]:
-    cc = country_code.upper()
-    if cc == "TR":
-        return {"country_code": "TR", "base_currency": "TRY", "locale": "tr-TR", "regional_packs": ["tr"]}
-    return {"country_code": cc, "base_currency": "USD", "locale": "en-US", "regional_packs": []}
+_regional_defaults = regional_defaults  # kept: tests and the demo seed import the private name
 
 
 @router.post("/org/create", status_code=status.HTTP_201_CREATED)
@@ -235,36 +228,25 @@ async def create_org(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    """Create a new organization. The calling user becomes the owner."""
+    """Create a new organization. The calling user becomes the owner.
+
+    Outside `REGISTRATION_MODE=open` a company comes from a pilot invite (services/pilot_invites.py), not
+    from here: this route is then for platform operators only, so there is one supported way in."""
+    if not registration.is_open() and not is_platform_operator(
+        current_user.email, get_settings().platform_operator_emails
+    ):
+        raise HTTPException(status_code=403, detail=registration.refusal_message())
     if current_user.org_id:
         raise HTTPException(
             status_code=400,
             detail="Zaten bir organizasyona üyesiniz. Yeni bir org oluşturmak için önce ayrılın.",
         )
 
-    # Generate unique slug
     if body.slug and body.slug.lower().startswith("demo-"):
         raise HTTPException(status_code=422, detail="'demo-' öneki ayrılmıştır; başka bir kısa ad seçin.")
-    base_slug = body.slug or _slugify(body.name)
-    if base_slug.startswith("demo-"):
-        base_slug = f"org-{base_slug}"  # the demo prefix is reserved for guest workspaces
-    slug = base_slug
-    counter = 1
-    while True:
-        exists = await db.execute(select(Organization).where(Organization.slug == slug))
-        if not exists.scalar_one_or_none():
-            break
-        slug = f"{base_slug}-{counter}"
-        counter += 1
-
-    org = Organization(
-        name=body.name,
-        slug=slug,
-        description=body.description,
-        **_regional_defaults(body.country_code),
+    org = await create_organisation(
+        db, name=body.name, slug=body.slug, description=body.description, country_code=body.country_code
     )
-    db.add(org)
-    await db.flush()  # get org.id before commit
 
     # Set user as owner of the new org. `current_user` may be a cached instance
     # from a closed session — mutating it raises "not persistent within this
@@ -467,6 +449,10 @@ async def invite_member(
             ),
         )
 
+    if mail_capability.delivery() == "not_configured":
+        # No sender: an invitation would be a row nobody can receive. Say so, create nothing.
+        raise HTTPException(status_code=503, detail=mail_capability.INVITE_NOT_SENT)
+
     # Check member limit
     count = len([u for u, _ in await _org_members(db, str(org.id)) if u.is_active])
     if count >= org.max_members:
@@ -496,7 +482,6 @@ async def invite_member(
     # The e-mail is an outbox row of the immediate class (no release; the link is the only content),
     # written in the invitation's own transaction and delivered, retried and recorded by the outbox
     # sender: a failure shows on the row, never silently.
-    from app.config import get_settings
     from app.services import outbox, outbox_immediate
 
     frontend = get_settings().frontend_url.rstrip("/")
@@ -524,6 +509,7 @@ async def invite_member(
             "role":       invite.role,
             "expires_at": invite.expires_at.isoformat(),
             "email_sent": bool(email_sent),
+            **mail_capability.fields(),
         },
         "error": None,
     }

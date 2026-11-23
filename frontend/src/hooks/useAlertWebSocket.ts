@@ -20,6 +20,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
+import { explainRefusal, POLICY_CLOSE, type LiveRefusal } from "@/lib/liveRefusal";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -51,6 +52,8 @@ interface UseAlertWebSocketReturn {
   unreadCount:      number;
   acknowledgeAlert: (alertId: string) => void;
   clearAll:         () => void;
+  /** The server closed the feed as "not allowed" (IP allow-list, removed membership); the hook stops retrying. */
+  refusal:          LiveRefusal | null;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -76,6 +79,7 @@ export function useAlertWebSocket(orgId: string | null | undefined): UseAlertWeb
   const [status, setStatus]       = useState<WSAlertStatus>("idle");
   const [alerts, setAlerts]       = useState<AlertMessage[]>([]);
   const [unreadCount, setUnread]  = useState(0);
+  const [refusal, setRefusal]     = useState<LiveRefusal | null>(null);
 
   const wsRef         = useRef<WebSocket | null>(null);
   const retryCount    = useRef(0);
@@ -119,6 +123,7 @@ export function useAlertWebSocket(orgId: string | null | undefined): UseAlertWeb
     ws.onopen = () => {
       if (!mountedRef.current) return;
       retryCount.current = 0;
+      setRefusal(null);
       setStatus("connected");
     };
 
@@ -156,8 +161,27 @@ export function useAlertWebSocket(orgId: string | null | undefined): UseAlertWeb
       if (!mountedRef.current) return;
       setStatus(event.wasClean ? "closed" : "error");
 
+      // 1008: the server will not talk to this person (IP allow-list, membership). Retrying cannot help and
+      // would hammer the server; say why instead. The close frame has no reason, so the server is asked.
+      if (event.code === POLICY_CLOSE) {
+        setRefusal({ sentence: null });
+        void explainRefusal().then((sentence) => {
+          if (mountedRef.current && sentence) setRefusal({ sentence });
+        });
+        return;
+      }
+
       // Don't reconnect on clean close
       if (event.wasClean || event.code === 4001) return;
+
+      // An abnormal close before the handshake finished is how a refused connect looks to a browser (no code):
+      // if a plain request is refused too, this is a refusal and not a network blip, so stop retrying.
+      void explainRefusal().then((sentence) => {
+        if (!mountedRef.current || !sentence) return;
+        if (retryTimer.current) clearTimeout(retryTimer.current);
+        retryTimer.current = null;
+        setRefusal({ sentence });
+      });
 
       // Exponential backoff
       const delay = Math.min(
@@ -193,11 +217,11 @@ export function useAlertWebSocket(orgId: string | null | undefined): UseAlertWeb
 
   // Reconnect when token changes (e.g. refresh)
   useEffect(() => {
-    if (orgId && token && status === "closed") {
+    if (orgId && token && status === "closed" && !refusal) {
       retryCount.current = 0;
       connect();
     }
-  }, [token, orgId, status, connect]);
+  }, [token, orgId, status, refusal, connect]);
 
   const acknowledgeAlert = useCallback((alertId: string) => {
     // Optimistic update
@@ -217,5 +241,5 @@ export function useAlertWebSocket(orgId: string | null | undefined): UseAlertWeb
     setUnread(0);
   }, []);
 
-  return { status, alerts, unreadCount, acknowledgeAlert, clearAll };
+  return { status, alerts, unreadCount, acknowledgeAlert, clearAll, refusal };
 }

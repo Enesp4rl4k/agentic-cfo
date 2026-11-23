@@ -454,9 +454,12 @@ async def company_rows(db: AsyncSession, org_id: str, period: Period | None = No
     written into the first open month, and a correction pair booked there, count in that
     month; adjacent periods therefore add up to their union.
     """
+    from app.services.own_transfers import confirmed_leg_ids
     from app.services.reconciliation import rows_settling_items
 
     effective = await effective_base_of(db, org_id)
+    # Both legs of a transfer between the company's own accounts that a person confirmed are in no figure.
+    transfer_legs = await confirmed_leg_ids(db, org_id)
 
     assumed = getattr(CanonicalTransaction, "currency_assumed", None)  # PR #110 adds it; use it when present
     rows = (await db.execute(
@@ -479,6 +482,7 @@ async def company_rows(db: AsyncSession, org_id: str, period: Period | None = No
         ).where(
             CanonicalTransaction.org_id == org_id,
             CanonicalTransaction.ledger_status != EXCLUDED,
+            *([CanonicalTransaction.id.not_in(transfer_legs)] if transfer_legs else []),
         ).order_by(CanonicalTransaction.transaction_date, CanonicalTransaction.id)
     )).all()
     settling = await rows_settling_items(db, org_id)
