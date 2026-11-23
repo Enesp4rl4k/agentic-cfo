@@ -56,13 +56,18 @@ async def test_ready_on_a_healthy_development_stack_needs_no_login() -> None:
         res = await client.get("/api/v1/ready")
     body = res.json()["data"]
     assert res.status_code == 200 and body["status"] == "ready"
-    assert body["checks"]["database"]["ok"] is True
-    assert body["checks"]["migrations"]["code"] == "skipped_sqlite"
-    assert body["checks"]["redis"]["code"] == "redis_disabled"
+    # Anonymous: verdicts only (details are for operators, see test_operator_ops.py).
+    assert body["checks"]["database"] == "ok" and body["checks"]["migrations"] == "ok"
+    assert body["checks"]["redis"] == "skipped"
 
 
-async def test_an_overdue_pending_message_and_a_recent_failure_degrade_readiness() -> None:
+async def test_an_overdue_pending_message_and_a_recent_failure_degrade_readiness(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.config import get_settings
+    from tests.api_helpers import kullanici
+
+    monkeypatch.setattr(get_settings(), "platform_operator_emails", "ops@tiphys.io")
     async with bellek_istemcisi() as client:
+        operator, _, _ = await kullanici(client, "ops@tiphys.io", role="analyst")
         async with client._maker() as db:  # type: ignore[attr-defined]
             db.add_all([
                 message("old-pending", PENDING, timedelta(minutes=40)),
@@ -71,8 +76,10 @@ async def test_an_overdue_pending_message_and_a_recent_failure_degrade_readiness
                 message("failed-last-week", FAILED, timedelta(days=7)),
             ])
             await db.commit()
-        res = await client.get("/api/v1/ready")
+        res = await client.get("/api/v1/ready", headers=operator)
+        anonymous = (await client.get("/api/v1/ready")).json()["data"]
     outbox = res.json()["data"]["checks"]["outbox"]
+    assert anonymous["checks"]["outbox"] == "degraded" and "pending_overdue" not in str(anonymous)
     assert res.status_code == 200  # advisory: the API still serves
     assert res.json()["data"]["status"] == "degraded"
     assert outbox["pending_overdue"] == 1 and outbox["failed_24h"] == 1
@@ -88,7 +95,7 @@ async def test_a_failing_database_is_not_ready_and_leaks_no_text(monkeypatch: py
     assert res.status_code == 503
     assert res.json()["data"]["status"] == "not_ready"
     assert "password" not in res.text and "db.internal" not in res.text
-    assert res.json()["data"]["checks"]["migrations"]["code"] == "database_down"
+    assert res.json()["data"]["checks"]["migrations"] == "skipped"  # not asked: the database is down
 
 
 async def test_a_database_behind_the_code_is_not_ready(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -101,7 +108,8 @@ async def test_a_database_behind_the_code_is_not_ready(monkeypatch: pytest.Monke
     async with bellek_istemcisi() as client:
         res = await client.get("/api/v1/ready")
     assert res.status_code == 503
-    assert res.json()["data"]["checks"]["migrations"]["code"] == "behind"
+    assert res.json()["data"]["checks"]["migrations"] == "fail"
+    assert "073_x" not in res.text and "074_materiality" not in res.text  # the revision is for operators
 
 
 def test_only_a_failed_required_check_is_a_503() -> None:

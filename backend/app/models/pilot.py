@@ -1,7 +1,9 @@
 """
 Pilot program models — PilotInvite and UserFeedback.
 
-PilotInvite: pre-generated invite codes that gate registration.
+PilotInvite: an invitation, issued by a platform operator to one e-mail address, that lets that person
+register and become the owner of a new company (`company_name`). The secret token is e-mailed to the
+address and kept only as a SHA-256 digest (`token_hash`); `code` is a non-secret reference for the list.
 UserFeedback: post-analysis NPS + rating + open comment.
 """
 from __future__ import annotations
@@ -38,7 +40,12 @@ class PilotInvite(Base):
     def _normalise_email(self, _key: str, value: str | None) -> str | None:
         return normalize_email(value) if value else value
 
-    note: Mapped[str | None] = mapped_column(String(500), nullable=True)   # admin note (e.g. company name)
+    note: Mapped[str | None] = mapped_column(String(500), nullable=True)   # admin note
+    # The company the invited person will own, and the digest of the e-mailed token (NULL: an invite
+    # from before tokens were hashed; it can no longer be redeemed). `issued_by` is the operator's user id.
+    company_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True, index=True)
+    issued_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
 
     used: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     used_by_user_id: Mapped[str | None] = mapped_column(String(36), nullable=True)

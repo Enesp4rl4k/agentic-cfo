@@ -181,11 +181,12 @@ async def test_pilot_administration_is_for_platform_operators_only(client, monke
 
     monkeypatch.setattr(settings, "platform_operator_emails", " Ops@Tiphys.io , other@x.com")
     ops, _, _ = await kullanici(client, "ops@tiphys.io", role="analyst")
-    assert (await client.post(f"{P}/pilot/invite/generate", headers=ops, json={})).status_code == 201
+    invite = {"email": "owner@newco.com", "company_name": "Yeni Şirket"}
+    assert (await client.post(f"{P}/pilot/invite/generate", headers=ops, json=invite)).status_code == 201
     assert (await client.get(f"{P}/pilot/invites", headers=ops)).status_code == 200
     assert (await client.get(f"{P}/pilot/feedback", headers=ops)).status_code == 200
     # still refused for the company owner
-    assert (await client.post(f"{P}/pilot/invite/generate", headers=owner, json={})).status_code == 403
+    assert (await client.post(f"{P}/pilot/invite/generate", headers=owner, json=invite)).status_code == 403
 
 
 # -- 6. the morning brief -----------------------------------------------------

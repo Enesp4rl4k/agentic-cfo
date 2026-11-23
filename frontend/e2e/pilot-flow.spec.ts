@@ -641,4 +641,17 @@ test.describe("Pilot flow", () => {
       await close();
     }
   });
+
+  test("with registration invite-only a stranger is refused", async ({ request }) => {
+    // The second API runs REGISTRATION_MODE=invite_only on the journey's database. Nobody without an
+    // invitation can sign up there, whether or not the address exists, and nothing is created.
+    const policy = await request.get(`${API_WITH_MODEL}/auth/registration`);
+    expect((await policy.json()).data).toMatchObject({ mode: "invite_only", open: false });
+    const stranger = `yabanci-${Date.now()}@example.com`;
+    for (const email of [stranger, OWNER]) {
+      const res = await request.post(`${API_WITH_MODEL}/auth/register`, { data: { email, password: PASSWORD } });
+      expect(res.status(), await res.text()).toBe(403);
+      expect((await res.json()).error).toContain("yalnızca davetle");
+    }
+  });
 });

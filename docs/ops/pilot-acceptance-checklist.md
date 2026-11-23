@@ -8,7 +8,8 @@ explains the reasons and ratings. "Blocker" lines are the ones the audit rated G
 
 - [ ] Hosting provider chosen and the VPS exists in Turkey (D8). Evidence: the contract.
 - [ ] Domain, `APP_DOMAIN` and `API_DOMAIN` resolve to the VPS (`dig +short`). Evidence: command output.
-- [ ] **Blocker:** registration policy decided and applied (D1; today it is open). Evidence: `/auth/register` behaviour.
+- [x] Registration policy decided and applied (D1: closed, invitation only; `REGISTRATION_MODE=invite_only`, PR #139). Evidence: `POST /auth/register` without an invite answers 403 on the host; the register page says "yalnızca davetle".
+- [ ] The first operator account exists (`scripts/issue_pilot_invite.py`, [runbooks/onboard-company.md](runbooks/onboard-company.md)). Evidence: the operator signs in and `GET /api/v1/pilot/invites` answers 200.
 - [ ] Mail provider chosen, SPF, DKIM and DMARC pass (D2). Evidence: "show original" of a received invitation ([mail.md](mail.md)).
 - [ ] Backup destination chosen, in Turkey, separate from the VPS provider (D3). Evidence: `rclone lsd` output.
 - [ ] Alert channel chosen: an uptime monitor on `/api/v1/ready` and a backup heartbeat ping (D4). Evidence: a test alert received.
@@ -17,6 +18,7 @@ explains the reasons and ratings. "Blocker" lines are the ones the audit rated G
 
 ## B. The host is configured
 
+- [ ] `APP_ENV` is set (production) and `REGISTRATION_MODE` is not `open` (the host says so on `/api/v1/version` and `/auth/registration`). Evidence: both responses.
 - [ ] `.env` is mode 600, not in git, and passes the preflight: `dc run --rm --no-deps backend python -m app.core.preflight --db`
       exits 0 with no `FATAL`. Evidence: output ([configuration.md](configuration.md)).
 - [ ] No `WARN` left that you have not decided to accept: mail sender, LLM key, `SENTRY_DSN`, `TRUSTED_PROXY_COUNT=1`,
@@ -35,10 +37,10 @@ explains the reasons and ratings. "Blocker" lines are the ones the audit rated G
 
 ## D. Operations
 
-- [ ] **Blocker:** an alert actually reaches the owner when `/api/v1/ready` fails and when the backup does not run. Evidence: a deliberate test.
+- [ ] **Blocker:** an alert actually reaches the owner when `/api/v1/ready` fails (external monitor) and when the backup does not run (`OPS_REPORT_TOKEN` set, `scripts/report-backup.sh failed` called once on purpose: an `[Tiphys] Yedekleme başarısız` mail arrives at an operator). Evidence: a deliberate test.
 - [ ] The Monday briefing arrived by e-mail at a test company, on a Monday, from the scheduler (not by hand) ([runbooks/briefing-not-sent.md](runbooks/briefing-not-sent.md)). Evidence: the mail and `worker` log line.
-- [ ] A worker restart at 07:00 UTC does not lose the briefing (`misfire_grace_time`; audit 6.3) or the owner accepts the risk in writing.
-- [ ] Verification, reset and invitation mail each reached a real mailbox ([runbooks/login-and-email.md](runbooks/login-and-email.md)). Evidence: three received mails.
+- [ ] A worker restart at 07:00 UTC does not lose the briefing: restart the worker on a Monday between 07:00 and 07:10 and see the briefing arrive within about 11 minutes (catch-up; audit 6.3; ledger `scheduled_job_runs`). Evidence: the mail and the `catch-up` log line.
+- [ ] Verification, reset, organisation-invitation and pilot-invitation mail each reached a real mailbox ([runbooks/login-and-email.md](runbooks/login-and-email.md)). Evidence: three received mails.
 - [ ] The IP allow-list break-glass was run once on a test company ([runbooks/ip-allowlist-lockout.md](runbooks/ip-allowlist-lockout.md)). Evidence: the decision record.
 - [ ] The owner has read every page in [runbooks/](runbooks/) and knows where the commands are.
 

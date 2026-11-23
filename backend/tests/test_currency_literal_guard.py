@@ -63,6 +63,7 @@ ALLOWED: dict[str, str] = {
     "app/api/risk.py": "risk request fields documented as TRY per month",
     # ── Bootstrap, fixtures and stubs ─────────────────────────────────────────────────────────────────
     "app/api/org.py": "regional bootstrap for a new org (TR gets TRY) and the stored-default echo",
+    "app/services/org_provisioning.py": "regional bootstrap for a new org (TR gets TRY): moved here from api/org.py",
     "app/services/org_membership.py": "a new Turkish org is created with TRY",
     "app/services/demo_seeder.py": "the demo company's seed rows are lira",
     "app/services/eval_harness.py": "evaluation test cases with fixed sample answers",

@@ -3,7 +3,10 @@
 Everything the application sends (verification, password reset, invitations, the Monday briefing, delivery-failure
 notices) goes through the outbox (`services/outbox.py`) and one SMTP sender (`services/outbox_transport.py`).
 Nothing is configured by default: with no `SMTP_USER` and `SMTP_PASSWORD` every message ends as a failed outbox row
-with the reason `smtp_not_configured`, and startup warns. See [runbooks/login-and-email.md](runbooks/login-and-email.md).
+with the reason `smtp_not_configured`. Because registration is by invitation and verification is required, the
+server **refuses to start** under `APP_ENV=production|staging` without a sender (`mail_required_no_sender`); under
+other environments it warns. In development the sender is a recorded no-op and every answer says
+`mail_delivery: dev_recorded`. See [runbooks/login-and-email.md](runbooks/login-and-email.md).
 
 ## Settings
 
