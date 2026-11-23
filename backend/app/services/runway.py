@@ -446,9 +446,10 @@ def compute_runway(
     # critical/attention boundary, so the text never contradicts the class.
     runway = round(exact, 1)
     # Only a measured, current balance over measured months may be critical: an old or thinly proven balance, an
-    # open account-identity question (the cash is the newest of statements that may be one account) and an edge
-    # tolerance in the burn months are assumptions, and an assumption is capped at "warning" (never "kritik").
-    proven = not opening.get("uncertain") and opening.get("basis") != "assumed" and basis_tag == "known"
+    # open account-identity question (the cash is the newest of statements that may be one account) are
+    # assumptions about the BALANCE, and an assumed balance is capped at "warning" (never "kritik"). An edge
+    # tolerance in the burn months is said in the text ("ay tam sayıldı (varsayım)") but does not cap the class.
+    proven = not opening.get("uncertain") and opening.get("basis") != "assumed"
     level = level_for_months(runway, proven=proven)
     if balance <= 0:
         verdict = (

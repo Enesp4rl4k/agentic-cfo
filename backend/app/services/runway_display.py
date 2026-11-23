@@ -66,7 +66,7 @@ class RunwayView:
         if self.scenario:
             return level_for_months(self.months, proven=False)
         if self.from_block:
-            return "warning" if self.block_level == "critical" and not self.proven else self.block_level
+            return self.block_level  # the block already capped it for an assumed balance / open identity question
         return level_for_months(self.months, proven=self.proven)
 
     @property

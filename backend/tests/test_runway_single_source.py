@@ -239,12 +239,12 @@ def test_the_boundary_follows_the_printed_figure_in_one_place() -> None:
     assert level_for_months(1.5, proven=False) == "warning" and level_for_months(None) is None
 
 
-def test_an_assumption_in_the_burn_months_is_capped_like_an_assumed_balance() -> None:
+def test_an_edge_tolerance_in_the_burn_months_is_said_but_does_not_cap_the_class() -> None:
     series = _series()
     series[0]["assumed"] = [{"edge": "start", "days": 2}]
     block = compute_runway(_opening(7_500_00, 3), {"monthly_series": series}, "TRY")
-    assert block["basis"] == "assumed" and block["level"] == "warning"
-    assert runway_for_display(_forecast(block)).level == "warning"
+    assert block["basis"] == "assumed" and block["balance_basis"] == "known" and block["level"] == "critical"
+    assert "(varsayım)" in block["message"] and runway_for_display(_forecast(block)).level == "critical"
 
 
 def test_a_scenario_row_is_never_critical() -> None:
