@@ -61,6 +61,11 @@ class OrgErasureRequest(Base):
     cancelled_by_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Why a scheduled erasure did not run (a fixed code, never free text): e.g. "sole_owner".
     blocked_reason: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # Executor bookkeeping: when it claimed the request, why the last attempt failed (a fixed code, never free text),
+    # and the counts of what ran after the commit (the Redis sweep; the hash-chained record cannot hold them).
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    failure_code: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    post_commit_counts: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
 
 class OrgErasureRecord(Base):

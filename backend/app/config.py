@@ -293,6 +293,9 @@ class Settings(BaseSettings):
     privacy_notice_url: str = ""
     # Where the terms of use live (a link)
     terms_url: str = ""
+    # KVKK member erasure: key of the HMAC that derives the stable `member-<hex>` pseudonym; empty = BACKEND_SECRET_KEY.
+    # Changing it changes the pseudonym of members erased AFTER the change (earlier ones keep theirs), so set it once.
+    erasure_pseudonym_secret: str = ""
 
     # LLM — set llm_base_url to use DeepSeek or any OpenAI-compatible API
     llm_model: str = "deepseek-chat"

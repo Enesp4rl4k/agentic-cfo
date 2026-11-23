@@ -46,7 +46,14 @@ the cooling-off; it then becomes a tombstone under a stable pseudonym and the co
    or anonymise the customer in Stripe), `erp_integrations` / `connector_connections` (the grants are gone here but still
    valid at the provider: revoke them there), and the LLM provider keeps prompts under its own terms (Q1).
 8. **Caches.** The erasure also removes the company's Redis keys, chat history and agent memory; `_ephemeral.redis_failed: 1`
-   in the record means Redis was down: those keys expire by themselves within 7 days.
+   on the request row (`post_commit_counts`; the hash-chained record cannot hold what runs after its commit) means Redis was down: those keys expire by themselves within 7 days.
+   Redis is swept once, after the database commit; the agent memory is erased inside the transaction.
+9. **A failed erasure.** If the agent-memory delete (or anything else in the transaction) fails, the whole erasure is
+   rolled back, nothing is reported as done, and the request shows `status = failed` with a fixed `failure_code`
+   (`agent_memory_delete_failed`, `erase_failed`, `interrupted`). The hourly executor retries it by itself; fix the cause
+   and it completes, or the owner may still cancel it. A request stuck in `executing` for over 2 hours is released to
+   `failed` (`interrupted`) and retried. Cancel and the executor meet only in conditional UPDATEs: cancel answers 409
+   once the executor has claimed the request.
 
 ## Where personal data lives
 
