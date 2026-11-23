@@ -1477,6 +1477,11 @@
             ],
             "title": "Runway Basis"
           },
+          "runway_cash_gone": {
+            "default": false,
+            "title": "Runway Cash Gone",
+            "type": "boolean"
+          },
           "runway_level": {
             "anyOf": [
               {
@@ -2335,6 +2340,11 @@
             "title": "Beyond Horizon",
             "type": "boolean"
           },
+          "cash_gone": {
+            "default": false,
+            "title": "Cash Gone",
+            "type": "boolean"
+          },
           "currency": {
             "anyOf": [
               {
@@ -2468,6 +2478,11 @@
             "default": "/upload",
             "title": "Upload Path",
             "type": "string"
+          },
+          "watch": {
+            "default": false,
+            "title": "Watch",
+            "type": "boolean"
           }
         },
         "required": [

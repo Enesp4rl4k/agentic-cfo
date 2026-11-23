@@ -165,6 +165,7 @@ def execute_nl_query(
         view = runway_for_display(forecast)
         value = view.months
         context["runway_basis"] = view.text()
+        context["runway_class"] = view.class_name
         context["note"] = PROMPT_RULE
         context["scenario"] = "Baz"
         context["twelve_month_net"] = base.get("twelve_month_net")

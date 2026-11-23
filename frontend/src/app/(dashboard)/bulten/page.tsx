@@ -80,6 +80,7 @@ function BriefingRunway({ briefing }: Readonly<{ briefing: MondayBriefing }>) {
       months={briefing.runway_months ?? null}
       text={briefing.runway_line}
       attention={briefing.runway_attention}
+      cashGone={briefing.runway_cash_gone}
       uploadHref={briefing.runway_attention && briefing.runway_basis === "assumed" ? "/upload" : null}
       copy={t.cashRadar}
       locale={org?.locale || "tr-TR"}

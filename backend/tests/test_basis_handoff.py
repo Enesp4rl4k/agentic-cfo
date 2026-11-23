@@ -124,7 +124,8 @@ async def test_an_open_account_identity_question_caps_the_alert_too(db, monkeypa
 async def test_the_kri_alert_carries_the_forecasts_basis(kind, db):
     forecast = {"scenarios": {"base": {"runway_months": 2.0}}, "runway": block(kind)}
     (kri,) = [k for k in cfo_kri({}, forecast) if k["name"] == "Nakit Ömrü"]
-    assert kri["basis"] == block(kind)["basis"]
+    # known only when the runway is proven (an open identity question is an assumption too)
+    assert kri["basis"] == ("known" if kind == "known" else "assumed")
     orch = ProactiveAlertOrchestrator(db=db)
     alert = await orch._create_kri_alert("org-1", kri, "critical")
     assert isinstance(alert, AlertEvent)

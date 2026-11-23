@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.services.agent_bus import QueryType, get_agent_bus
+from app.services.runway import level_for_months
 
 logger = logging.getLogger(__name__)
 
@@ -370,9 +371,11 @@ class CHRONegotiationResponder(AgentNegotiator):
         chro_data:     dict[str, Any],
         runway_months: float,
         months_ahead:  int = 3,
+        runway_proven: bool = True,
     ) -> dict[str, Any]:
         """
-        Ise alim plani sorusuna cevap hazirla.
+        Ise alim plani sorusuna cevap hazirla. `runway_proven`: the runway rests on a known balance (an assumed one
+        is capped at the warning band, like everywhere else).
         Nakit durumuna gore dinamik olarak uyarlanir.
         """
         open_roles     = chro_data.get("open_critical_roles", 0) or 0
@@ -390,13 +393,15 @@ class CHRONegotiationResponder(AgentNegotiator):
             }
 
         # Nakit durumuna gore plan
-        if runway_months < 3:
+        # The band is the service's (`runway.level_for_months`); the figure is the caller's declared runway.
+        band = level_for_months(runway_months, proven=runway_proven)
+        if band == "critical":
             # Kritik: tum ise alimi durdur
             planned_hires   = 0
             deferrable      = True
             deferrable_months = 6
             recommendation  = "Tum ise alimlar 6 ay ertelenebilir. Kritik roller icin freelance degerlendir."
-        elif runway_months < 6:
+        elif band == "warning":
             # Dikkatli: sadece kritik roller
             planned_hires   = max(0, round(open_roles * 0.3))
             deferrable      = True

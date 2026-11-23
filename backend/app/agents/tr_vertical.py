@@ -136,7 +136,8 @@ def _board_deck_from(
             if isinstance(a, dict) and a.get("action")
         ][:4],
         "insights": insights,
-        "cfo_data": {"pnl": pnl, "runway_months": runway, "runway_basis": runway_view.text()},
+        "cfo_data": {"pnl": pnl, "runway_months": runway, "runway_basis": runway_view.text(),
+                     "runway_class": runway_view.class_name},
         "kri_posture": {
             "kri_score": round(cfo.get("min_confidence", 1.0) * 10, 1),
             "counts": {

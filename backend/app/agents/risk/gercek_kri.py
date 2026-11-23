@@ -20,6 +20,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.services.runway import RUNWAY_CRITICAL_MONTHS, RUNWAY_WARNING_MONTHS
+from app.services.runway_display import runway_for_display
+
 # Uploaded KRI categories → cascade simulator triggers. Categories without a
 # natural trigger are listed without one; nothing is forced into a scenario.
 _KATEGORI_TETIK: dict[str, str] = {
@@ -50,20 +53,24 @@ _OLCULMEDI = {"trend": None, "trajectory_months": None}
 def cfo_kri(pnl: dict[str, Any] | None, forecast: dict[str, Any] | None) -> list[dict[str, Any]]:
     pnl = pnl or {}
     out: list[dict[str, Any]] = []
-    runway = _num((((forecast or {}).get("scenarios") or {}).get("base") or {}).get("runway_months"))
+    # The runway's class is the service's (`runway_display`): the block's own level, capped at "warning" unless the
+    # balance is known and current. red = critical, amber = warning; nothing here has a threshold of its own.
+    view = runway_for_display(forecast)
     rw = (forecast or {}).get("runway")
+    runway = view.months
     if runway is not None:
-        st = _status(runway, 6.0, 3.0, higher_is_worse=False)
+        st = {"critical": "red", "warning": "amber"}.get(view.level or "", "green")
         out.append({
             "name": "Nakit Ömrü", "category": "financial", "current_value": round(runway, 1), "unit": "ay",
-            "threshold_amber": 6.0, "threshold_red": 3.0, "higher_is_worse": False,
+            "threshold_amber": float(RUNWAY_WARNING_MONTHS), "threshold_red": float(RUNWAY_CRITICAL_MONTHS),
+            "higher_is_worse": False,
             "status": st, "source": "CFO tahmini (baz senaryo)",
-            "evidence": f"Baz senaryoda nakit ömrü {runway:.1f} ay",
+            "evidence": f"Baz senaryoda nakit ömrü {view.text()}",
+            "level": view.level, "attention": view.attention,
             # The runway block's basis is not dropped here: an alert built on this KRI states it.
-            "basis": (rw or {}).get("basis"),
+            "basis": "known" if view.proven else "assumed",
             "identity_uncertain": bool((rw or {}).get("identity_uncertain")),
-            "basis_note": (rw or {}).get("message") if (rw or {}).get("basis") != "known"
-            or (rw or {}).get("identity_uncertain") else None,
+            "basis_note": (rw or {}).get("message") if not view.proven else None,
             "cascade_trigger": "cash_crisis" if st != "green" else None,
             "cascade_params": {"runway_months": runway},
         })

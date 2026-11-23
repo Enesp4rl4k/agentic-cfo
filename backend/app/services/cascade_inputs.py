@@ -36,10 +36,10 @@ class RunwayBasis:
 
     @property
     def proven(self) -> bool:
-        """True only when the cash and the burn are measured with nothing assumed and no open identity question."""
+        """True when the cash is a known, current balance with no open identity question: the service's own rule for
+        'critical' (`runway.level_for_months`). An edge tolerance in the burn months is said in `message`, not capped."""
         return (
             self.status in (COMPUTED, NOT_BURNING)
-            and self.basis == "known"
             and self.balance_basis == "known"
             and not self.identity_uncertain
         )

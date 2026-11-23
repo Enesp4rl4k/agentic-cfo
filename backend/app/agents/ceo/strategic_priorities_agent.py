@@ -65,8 +65,8 @@ def _build_priorities_from_risks(
         })
 
     # ── CFO-only priorities ────────────────────────────────────────────────────
-    runway = fin.get("cash_runway_months")
-    if runway is not None and runway <= 3 and not any(
+    runway_view = view_from_fin(fin)
+    if runway_view.attention and not any(
         "runway" in p["title"].lower() for p in priorities
     ):
         priorities.append({

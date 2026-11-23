@@ -251,7 +251,6 @@ class TestThresholds:
 
     def test_critical_thresholds_more_severe_than_warning(self):
         assert THRESHOLDS["gross_margin_critical"] < THRESHOLDS["gross_margin_warning"]
-        assert THRESHOLDS["cashflow_runway_critical"] < THRESHOLDS["cashflow_runway_warning"]
         assert THRESHOLDS["budget_variance_warning"] < THRESHOLDS["budget_variance_critical"]
 
     def test_revenue_decline_thresholds_are_negative(self):
@@ -262,7 +261,7 @@ class TestThresholds:
         expected = {
             "gross_margin_critical", "gross_margin_warning",
             "net_margin_critical", "net_margin_warning",
-            "cashflow_runway_critical", "cashflow_runway_warning",
+            # the runway has no threshold here: its class is `services/runway.level_for_months`
             "revenue_mom_decline_critical", "revenue_mom_decline_warning",
             "budget_variance_warning", "budget_variance_critical",
             "tax_payment_days_warning",

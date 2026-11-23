@@ -30,6 +30,9 @@ from app.services.runway import (
     RUNWAY_MIN_MONTHS,
     can_project,
     compute_runway,
+    is_proven,
+    level_for_months,
+    months_phrase,
     opening_cash_for,
     runway_alert,
 )
@@ -270,7 +273,8 @@ def _build_forecast_alerts(
             alerts.append(measured)
 
     pessimistic_runway = scenarios["pessimistic"].get("runway_months")
-    if pessimistic_runway is not None and pessimistic_runway <= 6:
+    # A scenario is an assumption: whatever class its figure has, it is at most a warning (`proven=False`).
+    if level_for_months(pessimistic_runway, proven=False):
         alerts.append({
             "level": "warning",
             "basis": "scenario",
@@ -380,9 +384,10 @@ def _build_scenario_explanation(
 
 def _runway_detail(runway: dict[str, Any]) -> str:
     if runway["runway_months"] is not None:
-        from app.services.runway import under_a_month
-
-        return under_a_month(runway["runway_months"]) or f"{runway['runway_months']} ay"
+        return months_phrase(
+            runway["runway_months"], balance_cents=runway.get("opening_cash_cents"),
+            basis="known" if is_proven(runway) else "assumed",
+        )
     return {
         "computed": "36 aydan uzun",
         "not_burning": "nakit azalmıyor",

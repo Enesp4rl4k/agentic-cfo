@@ -76,7 +76,6 @@ def _build_html(
 
     base_scenario = (forecast.get("scenarios") or {}).get("base") or {}
     runway_view = runway_for_display(forecast)
-    runway = runway_view.months
     base_scenario.get("twelve_month_net", 0)
 
     cf_alerts = cashflow.get("alerts") or []
@@ -349,7 +348,7 @@ tr.base-row td {{ font-weight: 700; background: #eff6ff; }}
   {'<div class="alert-badge alert-critical">⚠ ' + str(critical_count) + ' Kritik Uyarı</div>' if critical_count > 0 else '<div class="alert-badge alert-ok">✓ Kritik Uyarı Yok</div>'}
   {'<div class="alert-badge alert-warning">▲ ' + str(warning_count) + ' Uyarı</div>' if warning_count > 0 else ''}
   {'<div class="alert-badge alert-anomaly">◆ ' + str(anom_critical + anom_high) + ' Yüksek Anomali</div>' if (anom_critical + anom_high) > 0 else ''}
-  {'<div class="alert-badge alert-warning">⏳ Nakit Ömrü: ' + runway_view.text() + '</div>' if runway and runway < 12 else ''}
+  {'<div class="alert-badge alert-warning">⏳ Nakit Ömrü: ' + runway_view.text() + (' — izlemede' if runway_view.watch else '') + '</div>' if runway_view.in_sight else ''}
 </div>
 
 <!-- KPI Strip -->

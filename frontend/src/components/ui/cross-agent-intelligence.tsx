@@ -53,10 +53,17 @@ function detectCrossInsights(
 
   // ── 1. Talent-Cash Cascade ────────────────────────────────────────────────
   // CFO low cash + CHRO high attrition + CTO low velocity
-  const runwayMonths =
-    numMetric(semanticMetrics, "finance.runway_months") ??
-    ((forecast as Record<string, unknown>)?.scenarios as Record<string, Record<string, number>> | null)?.base?.runway_months ??
-    99;
+  // The runway's class is the server's (`forecast.runway.level`: critical only for a known, current balance). This
+  // component has no threshold of its own: an unknown or unmeasured runway fires none of the rules below.
+  const runwayBlock = (forecast as Record<string, unknown> | null)?.runway as
+    | { status?: string; level?: "critical" | "warning" | null; watch?: boolean; runway_months?: number | null }
+    | null
+    | undefined;
+  const runwayClass = runwayBlock?.status === "computed" ? (runwayBlock.level ?? null) : null;
+  const runwayMonths = runwayBlock?.runway_months ?? null;
+  // The low-key band above the warning class (server flag): the burn and hiring insights keep showing there, as
+  // "medium" and never as an alert; the talent-cash cascade needs a class.
+  const runwayWatch = runwayBlock?.status === "computed" && runwayBlock.watch === true;
   const attrition = chro?.attrition as Record<string, number> | null;
   const attritionRate =
     numMetric(semanticMetrics, "people.attrition_rate") ??
@@ -66,10 +73,10 @@ function detectCrossInsights(
   const roas = numMetric(semanticMetrics, "growth.overall_roas");
   const ctoScore = (cto?.cto_summary as Record<string, number> | null)?.overall_health_score ?? 10;
 
-  if (runwayMonths < 6 && attritionRate > 0.20 && ctoScore < 6) {
+  if (runwayClass && runwayMonths !== null && attritionRate > 0.20 && ctoScore < 6) {
     insights.push({
       id: "talent-cash-cascade",
-      severity: "critical",
+      severity: runwayClass === "critical" ? "critical" : "high",
       title: "Yetenek-Nakit Kaskadı",
       description: `Nakit ${runwayMonths.toFixed(1)} aylık runway, %${(attritionRate*100).toFixed(0)} attrition ve düşük mühendislik hızı aynı anda gerçekleşiyor. Üçünün bir arada olması öncelikli ele alınması gereken bir durum.`,
       domains: ["CFO", "CHRO", "CTO"],
@@ -136,10 +143,10 @@ function detectCrossInsights(
 
   // ── 4. Cash Burn Warning ──────────────────────────────────────────────────
   const operatingCF = cashflow?.operating ?? 0;
-  if (operatingCF < 0 && runwayMonths < 9) {
+  if (operatingCF < 0 && (runwayClass || runwayWatch) && runwayMonths !== null) {
     insights.push({
       id: "cash-burn-warning",
-      severity: runwayMonths < 3 ? "critical" : "high",
+      severity: runwayClass === "critical" ? "critical" : runwayClass ? "high" : "medium",
       title: "Nakit Yakma Uyarısı",
       description: `İşletme nakit akışı negatif ve ${runwayMonths.toFixed(1)} aylık runway kaldı. Mevcut hızda büyük bir düzeltme gerekiyor.`,
       domains: ["CFO"],
@@ -151,7 +158,7 @@ function detectCrossInsights(
   // ── 5. Hiring Freeze Risk ─────────────────────────────────────────────────
   // CFO tight cash + CHRO headcount growth
   const headcount = (chro?.headcount as Record<string, number> | null)?.total_headcount ?? 0;
-  if (runwayMonths < 9 && headcount > 0 && chro) {
+  if ((runwayClass || runwayWatch) && runwayMonths !== null && headcount > 0 && chro) {
     insights.push({
       id: "hiring-freeze-signal",
       severity: "medium",

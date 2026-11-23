@@ -270,7 +270,8 @@ class TestForecastNarrativeTemplate:
     def test_short_runway_triggers_risk(self):
         result = _forecast_narrative_template(_forecast(runway=2))
         risk_severities = [r.severity for r in result.risks]
-        assert "critical" in risk_severities
+        # a pessimistic scenario is an assumption: a short runway there is at most "high", never "critical"
+        assert "high" in risk_severities and "critical" not in risk_severities
 
     def test_no_risk_for_healthy_forecast(self):
         # Build a forecast with no short runways in any scenario

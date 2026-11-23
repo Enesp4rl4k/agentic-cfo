@@ -39,7 +39,71 @@ RUNWAY_LONG_MONTHS = 36  # beyond this the figure is stated as "longer than", no
 # first thing said (briefing, radar, alert), known or assumed, because a low runway is important news even when it
 # rests on an old statement.
 RUNWAY_ATTENTION_MONTHS = RUNWAY_CRITICAL_MONTHS
+RUNWAY_WATCH_MONTHS = 12  # at or under this the runway is worth watching; it is not an alert class
+RUNWAY_COMFORT_MONTHS = 18  # beyond this the cash position is a strength
 DAYS_PER_MONTH = 30
+
+
+def level_for_months(months: float | None, *, proven: bool = True) -> str | None:
+    """THE runway class: "critical", "warning" or None. Every module that needs a severity for a runway asks here.
+
+    The class follows the figure as printed (one decimal), so 3.04 reads "3,0 ay" and is on the boundary the text
+    shows. Only a KNOWN, CURRENT balance (`proven`) may be critical; an assumed one is capped at "warning"."""
+    if months is None:
+        return None
+    shown = round(float(months), 1)
+    if shown <= RUNWAY_CRITICAL_MONTHS:
+        return "critical" if proven else "warning"
+    return "warning" if shown <= RUNWAY_WARNING_MONTHS else None
+
+
+def is_proven(block: dict[str, Any]) -> bool:
+    """The runway block rests on a KNOWN, current balance over measured months (no assumption of any kind)."""
+    return (
+        block.get("basis") == "known" and block.get("balance_basis") != "assumed"
+        and not block.get("identity_uncertain")
+    )
+
+
+def is_attention(months: float | None) -> bool:
+    """A computed runway at or under the critical boundary, whatever its basis (it is said first, never as 'kritik')."""
+    return months is not None and round(float(months), 1) <= RUNWAY_ATTENTION_MONTHS
+
+
+def is_within(months: float | None, limit: float) -> bool:
+    """The runway, at the precision it is shown at, is at or under `limit` months (None = unknown: never)."""
+    return months is not None and round(float(months), 1) <= limit
+
+
+def is_watch(months: float | None) -> bool:
+    """The low-key band between the warning class and a year (RUNWAY_WARNING_MONTHS < months <= RUNWAY_WATCH_MONTHS):
+    worth watching, NEVER an alert (no severity, no 'DİKKAT'/'KRİTİK', nothing sent)."""
+    if months is None:
+        return False
+    shown = round(float(months), 1)
+    return RUNWAY_WARNING_MONTHS < shown <= RUNWAY_WATCH_MONTHS
+
+
+def is_in_sight(months: float | None) -> bool:
+    """A class or the watch band: everything that was ever shown for a runway of a year or less."""
+    return level_for_months(months, proven=False) is not None or is_watch(months)
+
+
+def watch_phrase(months: float, *, en: bool = False) -> str:
+    """The neutral wording of the watch band: 'Nakit pisti 8,0 ay — izlemede' / 'Cash runway 8.0 months — on watch'."""
+    if en:
+        return f"Cash runway {months:.1f} months — on watch"
+    return f"Nakit pisti {months:.1f}".replace(".", ",") + " ay — izlemede"
+
+
+def is_comfortable(months: float | None) -> bool:
+    """Beyond RUNWAY_COMFORT_MONTHS the cash position is a strength (None = unknown: never)."""
+    return months is not None and round(float(months), 1) > RUNWAY_COMFORT_MONTHS
+
+
+def level_severity(level: str | None) -> str | None:
+    """The class as the severity vocabulary of alerts and risks: critical -> critical, warning -> high."""
+    return {"critical": "critical", "warning": "high"}.get(level or "")
 
 
 def under_a_month(months: float) -> str | None:
@@ -51,6 +115,33 @@ def under_a_month(months: float) -> str | None:
         return None
     days = round(months * DAYS_PER_MONTH)
     return f"1 aydan az ({'yaklaşık ' + str(days) + ' gün' if days >= 1 else '2 günden az'})"
+
+
+CASH_GONE_TR = "nakit bitmiş"
+CASH_GONE_ASSUMED_TR = "son ekstreye göre nakit bitmiş görünüyor"
+CASH_GONE_EN = "cash has run out"
+CASH_GONE_ASSUMED_EN = "cash appears to have run out per the last statement"
+
+
+def cash_gone(balance_cents: int | None) -> bool:
+    """The balance is known and already at or below zero (an unknown balance is never 'gone')."""
+    return balance_cents is not None and balance_cents <= 0
+
+
+def cash_gone_phrase(basis: str | None, *, en: bool = False) -> str:
+    """'Nakit bitmiş' for a known balance, the assumed wording for an assumed one (tr, or en)."""
+    known = basis == "known"
+    if en:
+        return CASH_GONE_EN if known else CASH_GONE_ASSUMED_EN
+    return CASH_GONE_TR if known else CASH_GONE_ASSUMED_TR
+
+
+def months_phrase(months: float, *, balance_cents: int | None = None, basis: str | None = "known") -> str:
+    """A runway of `months` in words: cash already gone, under a month, or the figure. Never 0 months of cash left
+    that reads like 'a day or two' when the cash is already gone."""
+    if cash_gone(balance_cents):
+        return cash_gone_phrase(basis)
+    return under_a_month(months) or f"{months:g} ay"
 
 
 UPLOAD_PROMPT = "Güncel durumu görmek için yeni ekstre yükleyin."
@@ -193,6 +284,8 @@ def _block(status: str, message: str, opening: dict[str, Any] | None, **extra: A
         # RUNWAY_ATTENTION_MONTHS (known or assumed), which is said first and styled apart from neutral cards.
         "reasons": balance_reasons(opening),
         "attention": False,
+        "watch": False,  # 6 < months <= 12: shown neutrally ("izlemede"), never an alert
+        "cash_gone": False,  # a computed runway whose balance is already at or below zero: said as "nakit bitmiş"
         "upload_path": UPLOAD_PATH,
         "avg_monthly_net_cents": None,
         "runway_months": None,
@@ -374,17 +467,17 @@ def compute_runway(
     # The class is decided by the figure AS PRINTED (one decimal): 3.04 months reads "3,0 ay" and is the
     # critical/attention boundary, so the text never contradicts the class.
     runway = round(exact, 1)
-    level = (
-        "critical" if runway <= RUNWAY_CRITICAL_MONTHS
-        else "warning" if runway <= RUNWAY_WARNING_MONTHS
-        else None
-    )
-    if opening.get("uncertain") and level == "critical":
-        level = "warning"  # the cash is the newest of statements that may be one account: not measured
-    if opening.get("basis") == "assumed" and level == "critical":
-        level = "warning"  # only a measured, current balance may raise a critical alert (stale and thin proofs are assumed)
+    # Only a measured, current balance over measured months may be critical: an old or thinly proven balance, an
+    # open account-identity question (the cash is the newest of statements that may be one account) are
+    # assumptions about the BALANCE, and an assumed balance is capped at "warning" (never "kritik"). An edge
+    # tolerance in the burn months is said in the text ("ay tam sayıldı (varsayım)") but does not cap the class.
+    proven = not opening.get("uncertain") and opening.get("basis") != "assumed"
+    level = level_for_months(runway, proven=proven)
     if balance <= 0:
-        verdict = "Kasa bakiyesi sıfırın altında: nakit bitmiş."
+        verdict = (
+            "Kasa bakiyesi sıfır ya da altında: nakit bitmiş." if proven
+            else f"Son ekstreye göre kasa bakiyesi sıfır ya da altında: {CASH_GONE_ASSUMED_TR}."
+        )
     elif beyond:
         verdict = f"Bu hızla nakit {RUNWAY_LONG_MONTHS} aydan uzun yeter."
     else:
@@ -404,6 +497,8 @@ def compute_runway(
         beyond_horizon=beyond,
         level=level,
         attention=not beyond and runway <= RUNWAY_ATTENTION_MONTHS,
+        cash_gone=cash_gone(balance),
+        watch=not beyond and is_watch(runway),
     ) | {"currency": currency, "reasons": [*balance_reasons(opening), *(
         [{"code": "edge_tolerance", "text": assumed_text.strip()}] if assumed_text else [])]}
 
@@ -458,17 +553,20 @@ def runway_line(block: dict[str, Any]) -> str:
         )
     if block["beyond_horizon"]:
         head = f"Nakit pisti {RUNWAY_LONG_MONTHS} aydan uzun"
-    elif not block["opening_cash_cents"] or block["opening_cash_cents"] <= 0:
-        head = "Kasa bakiyesi sıfırın altında: nakit bitmiş"
+    elif cash_gone(block["opening_cash_cents"]):
+        head = "Kasa bakiyesi sıfır ya da altında: nakit bitmiş" if is_proven(block) else (
+            "Son ekstreye göre nakit bitmiş görünüyor (kasa bakiyesi sıfır ya da altında)")
     else:
         m = block["runway_months"]
         head = "Nakit pisti " + (under_a_month(m) or "yaklaşık " + f"{m:.1f}".replace(".", ",") + " ay")
+        head += " — izlemede" if block.get("watch") else ""
     # Certainty decides the word, prominence the position: known and low -> "KRİTİK"; low on an assumption
     # -> "DİKKAT: Son ekstreye göre ..." (never "kritik", never "kanıtlı"); both are said first.
     if block.get("level") == "critical":
         level = "KRİTİK: "
     elif block.get("attention"):
-        level, head = "DİKKAT: Son ekstreye göre ", head[0].lower() + head[1:]
+        level, head = ("DİKKAT: ", head) if head.startswith("Son ekstreye") else (
+            "DİKKAT: Son ekstreye göre ", head[0].lower() + head[1:])
     else:
         level = {"warning": "Uyarı: "}.get(block.get("level") or "", "")
     out = (

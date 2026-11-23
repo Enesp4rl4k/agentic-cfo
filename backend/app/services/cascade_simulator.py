@@ -35,6 +35,8 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
+from app.services.runway import RUNWAY_WARNING_MONTHS
+
 logger = logging.getLogger(__name__)
 
 
@@ -354,7 +356,7 @@ class CascadeSimulator:
         Nakit ömrü kritik eşiğin altına düştüğünde tüm domainlere etkisi.
         runway_months: kalan nakit ömrü (ay)
         """
-        severity = max(0.0, min(1.0, (6.0 - runway_months) / 6.0))  # 6ay → 0, 0ay → 1
+        severity = max(0.0, min(1.0, (RUNWAY_WARNING_MONTHS - runway_months) / RUNWAY_WARNING_MONTHS))  # warning boundary → 0, 0ay → 1
 
         impacts: list[DomainImpact] = []
         burn = self.monthly_burn or 0.0
@@ -372,7 +374,7 @@ class CascadeSimulator:
                 f"Aylık burn rate ₺{burn:,.0f}."
             ),
             quantified_impact={
-                "cash_shortfall_try": round(burn * max(0, 6 - runway_months)),
+                "cash_shortfall_try": round(burn * max(0, RUNWAY_WARNING_MONTHS - runway_months)),
                 "burn_rate_monthly_try": round(burn),
                 "runway_months": round(runway_months, 1),
             },
@@ -761,7 +763,7 @@ class CascadeSimulator:
             given = kwargs.get("runway_months")
             runway = float(given) if given is not None else float(self.runway_months or 0.0)
             base_impacts = self._simulate_cash_crisis(runway)
-            trigger_desc = f"Nakit ömrü {runway:.1f} ay — kritik eşiğin altında"
+            trigger_desc = f"Nakit ömrü {runway:.1f} ay (senaryo girdisi)"
         elif trigger == TriggerType.REVENUE_DROP:
             drop = float(kwargs["drop_pct"])
             base_impacts = self._simulate_revenue_drop(drop)

@@ -252,7 +252,10 @@ function ScenarioTable({
   scenarios,
   activeScenario,
   onSelect,
+  cashGoneText = null,
 }: {
+  /** Said instead of a month count when the balance is already at or below zero. */
+  cashGoneText?: string | null;
   scenarios: Record<string, ForecastScenario>;
   activeScenario: string;
   onSelect: (key: string) => void;
@@ -327,7 +330,9 @@ function ScenarioTable({
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums text-sm text-muted-foreground">
                     {s.runway_months != null
-                      ? s.runway_months < 1
+                      ? cashGoneText
+                        ? cashGoneText
+                        : s.runway_months < 1
                         ? t.forecast.runway.underMonth
                         : table.monthsShort.replace("{count}", String(s.runway_months))
                       : runwayKnown(s.runway_basis)
@@ -478,6 +483,9 @@ export default function ForecastPage() {
 
   const forecast = dashboard!.forecast;
   const scenarios = forecast.scenarios ?? {};
+  const cashGoneText = forecast.runway?.cash_gone
+    ? (forecast.runway.basis === "assumed" ? t.forecast.runway.cashGoneAssumed : t.forecast.runway.cashGone)
+    : null;
   const base = scenarios.base;
   const opt  = scenarios.optimistic;
   const pes  = scenarios.pessimistic;
@@ -519,7 +527,9 @@ export default function ForecastPage() {
               value={fmt(base.twelve_month_net)}
               sub={
                 base.runway_months != null
-                  ? base.runway_months < 1
+                  ? cashGoneText
+                    ? cashGoneText
+                    : base.runway_months < 1
                     ? t.forecast.runway.underMonth
                     : kpi.runway.replace("{count}", String(base.runway_months))
                   : runwayKnown(forecast.runway?.status)
@@ -578,6 +588,7 @@ export default function ForecastPage() {
         scenarios={scenarios}
         activeScenario={activeScenario}
         onSelect={setActiveScenario}
+        cashGoneText={cashGoneText}
       />
 
       {/* Monthly breakdown for selected scenario */}

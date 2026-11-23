@@ -196,6 +196,8 @@ export const tr: MessageTree = {
     runwayAttention: "Dikkat",
     runwayUploadLink: "Yeni ekstre yükle",
     runwayUnderMonth: "1 aydan az",
+    runwayCashGone: "Nakit bitmiş",
+    runwayCashGoneAssumed: "Son ekstreye göre nakit bitmiş görünüyor",
   },
   takvim: {
     title: "Ödeme takvimi",
@@ -1597,6 +1599,8 @@ export const tr: MessageTree = {
       heading: "Nakit pisti",
       uploadLink: "Yeni ekstre yükle",
       underMonth: "1 aydan az",
+      cashGone: "Nakit bitmiş",
+      cashGoneAssumed: "Son ekstreye göre nakit bitmiş görünüyor",
     },
   },
   integrations: {
