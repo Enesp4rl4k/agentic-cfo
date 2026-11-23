@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any
+from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
@@ -77,13 +77,13 @@ def init_sentry(settings: Any) -> bool:
             ],
 
             # PII filtreleme — hassas veri Sentry'ye gitmesin
-            before_send=_filter_sensitive_data,
+            before_send=cast(Any, _filter_sensitive_data),
 
             # Request veri ayarları: gövde yok, yerel değişken yok, PII yok.
             send_default_pii=False,  # Email, IP gibi PII'ları otomatik gönderme
             max_request_body_size="never",
             include_local_variables=False,
-            before_breadcrumb=_scrub_breadcrumb,
+            before_breadcrumb=cast(Any, _scrub_breadcrumb),
 
             # Release tracking (CI'da GIT_COMMIT env var set edilir)
             release=getattr(settings, "app_version", None) or os.environ.get("GIT_SHA") or None,
