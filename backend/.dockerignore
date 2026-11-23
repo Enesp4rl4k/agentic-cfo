@@ -53,6 +53,7 @@ docs/
 *.rst
 *.txt
 !requirements.txt
+!constraints.txt
 
 # Alembic (migrations run separately, not baked into image)
 # Uncomment if you run migrations via CI/CD, not inside container:
