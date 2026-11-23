@@ -59,6 +59,7 @@ from app.services.ingest.rows import (
     _tablo_ekstresi,
     _try_parse_csv,
 )
+from app.services.pdf_isolation import ingest_hata_metni
 
 logger = logging.getLogger(__name__)
 
@@ -596,4 +597,4 @@ async def _belgeyi_oku(
 
     except Exception as exc:
         logger.exception("Data ingestion failed for job=%s", state.get("job_id"))
-        return SkillResult(ok=False, detail=f"Ingestion error: {exc}", halt=True)
+        return SkillResult(ok=False, detail=ingest_hata_metni(exc), halt=True)

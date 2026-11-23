@@ -415,6 +415,25 @@ jobs:
           pip install -r requirements.txt -c constraints.txt
           pip install -c constraints.txt "ruff==0.16.4" mypy pytest-asyncio pytest-cov
 
+      # tests/test_pdf_ocr_end_to_end.py runs the scanned-PDF path (PyMuPDF render, Pillow, Tesseract)
+      # only where the binary and the Turkish and English models exist; the production image has them.
+      - name: Install Tesseract (OCR path test)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends tesseract-ocr tesseract-ocr-tur tesseract-ocr-eng
+
+      # The PDF parsing guards and the OCR path, run on their own and not through the pipe of "Run tests", so a
+      # failure here is a red step. REQUIRE_TESSERACT makes the OCR test fail instead of skip when the
+      # binary or the Turkish/English models are missing.
+      - name: PDF isolation, report escaping and OCR path tests
+        working-directory: backend
+        env:
+          REQUIRE_TESSERACT: "1"
+        run: >
+          python -m pytest -q -rs
+          tests/test_pdf_ocr_end_to_end.py tests/test_pdf_upload_guard.py tests/test_parser_isolation_fitness.py
+          tests/test_report_hostile_text.py tests/test_report_render_no_fetch.py
+
       # requirements.txt is exact pins, constraints.txt pins the rest, and what
       # pip just installed is exactly that set. A new transitive package or a
       # version that moved fails here, not silently in the next run.

@@ -14,7 +14,7 @@ The lock is a plain version list for Python 3.12 on Linux (it includes `uvloop`,
 
 ## Bump one dependency deliberately
 
-1. Read the changelog. Do not take a major version here without a migration plan (Sentry 3.x, LangChain 0.3, Pillow 13 and WeasyPrint 70 are such cases).
+1. Read the changelog. Do not take a major version here without a migration plan (Sentry 3.x and LangChain 0.3 are such cases; Pillow 13 and WeasyPrint 70 were taken deliberately in the PDF-parser security PR, see below).
 2. Edit the one line in `backend/requirements.txt`.
 3. Regenerate the lock on Linux with Python 3.12 (a throwaway `python:3.12-slim` container or a CI job; not a Windows or macOS environment, whose resolution differs). Install **without** `-c`, so pip resolves the new set, then freeze it:
 
@@ -25,8 +25,34 @@ The lock is a plain version list for Python 3.12 on Linux (it includes `uvloop`,
    (`tr` normalises names to lower case with hyphens; `pip freeze` writes `name==version` lines.) Replace the package lines of `constraints.txt`, keep its header, update the "Origin" line. Only the packages in your diff and their dependencies should change; if dozens of lines move, something floated and needs a look.
 4. Run the suite: `pytest tests/`, `mypy --config-file mypy_strict.ini`, `ruff check app/`, and the pins test with `CHECK_INSTALLED_PINS=1`.
 5. **Numerical libraries (`numpy`, `scipy`, `scikit-learn`, `statsmodels`, `pandas`, `patsy`, `joblib`):** also re-run the forecast and eval golden tests (`pytest -m eval` and the forecast/anomaly tests) and compare the outputs, not only pass or fail. A change in a forecast figure needs a human to say it is expected.
+5b. **PDF libraries (`pdfminer.six`, `pdfplumber`, `pymupdf`, `pillow`):** the suite generates its PDFs and has no real bank-statement fixture, so it cannot see a change in extracted text. Run `backend/scripts/pdf_extraction_snapshot.py` (usage in its docstring) in the old and the new environment and diff the two JSON files; any difference in text, tables or word boxes is a finding to read, not to merge past. For the 0.11.3 -> 0.11.9 / 20231228 -> 20251230 bump the diff was empty on the seven-file synthetic corpus.
 6. **Crypto and auth (`cryptography`, `bcrypt`, `passlib`, `python-jose`, `ecdsa`, `rsa`):** confirm login, token issue and verify, and the connector-secret decrypt of an existing ciphertext still work.
 7. Commit `requirements.txt` and `constraints.txt` together, one dependency (or one coherent group) per PR.
+
+## Known advisories and why they are, or are not, reachable
+
+Checked against OSV / the GitHub Advisory Database on 2026-11-23 for every version in `constraints.txt`
+(`POST https://api.osv.dev/v1/querybatch` with the 137 pins). Re-run it when the lock changes. The first four rows were
+reachable from a company's upload and were fixed by upgrading; the rest are open and are listed so that a change
+which makes one of them reachable is noticed in review.
+
+| Package (locked) | Advisories | Status |
+|---|---|---|
+| `pdfminer.six` 20231228 -> **20251230** | GHSA-wf5f-4jwr-ppcp (CVE-2025-64512, HIGH, fixed 20251107); GHSA-f83h-ghpp-7wcc (CVE-2025-70559, HIGH, fixed 20251230) | **Reachable** (pdfplumber runs on uploaded PDFs, `app/services/ocr_service.py` strategy 2). Fixed. The CMap loader now reads JSON, not pickle; `tests/test_pdf_upload_guard.py` fails if `pickle` returns to `pdfminer.cmapdb` or the version drops below 20251230. |
+| `pdfplumber` 0.11.3 -> **0.11.9** | none of its own; pins `pdfminer.six==20251230` | 0.11.9 is the first release that pins a fixed pdfminer (0.11.10 and later need Pillow >= 13, also met now). |
+| `Pillow` 12.3.0 -> **13.0.0** | 40+ advisories, all fixed in 13.0.0 (5 CRITICAL: GHSA-332p-7hrc-92wf, GHSA-5x8w-8jj5-q52h, GHSA-8g5g-8vmr-9782, GHSA-v9pv-5gc8-w2m6, GHSA-w889-685w-c8fh; the rest HIGH/MODERATE, mostly TIFF/EPS/GIF/PDF-writer codecs) | **Not reachable from user bytes**: users upload pdf/xlsx/csv/xml only (`upload_service.ALLOWED_EXTENSIONS`), no raw image file is accepted, and the only `Image.open` is on the PNG PyMuPDF has just rendered (`ocr_service._try_tesseract_ocr`, `formats=["PNG"]`, pixel ceiling `MAX_RENDER_PIXELS`). Upgraded anyway: the release only removes APIs the repo does not call, and pdfplumber 0.11.10+ requires it. |
+| `weasyprint` 69.0 -> **70.0** | GHSA-jf6q-chmf-3h3v (CVE-2026-55073, MODERATE, SSRF through `write_pdf(xmp_metadata=..., stylesheets=...)` ignoring `url_fetcher`); GHSA-r543-q48m-4c9j (CVE-2026-106443, HIGH, EPS images reach Ghostscript) | The first needs those two `write_pdf` arguments, which no caller passes. The second needs Ghostscript, which the backend image does not install. Reachability of fetching in general was real (company names reached HTML unescaped) and is closed independently: every render passes `app/services/pdf_fetch.deny_fetcher()` (`tests/test_report_render_no_fetch.py`). Fixed by upgrade. |
+| `python-jose` 3.5.0 | GHSA-3qf3-8w2g-rqmx (CVE-2024-33663, CRITICAL, algorithm confusion with ECDSA/PEM public keys; no fixed release) | **Not reachable today**: the only use is `jwt.decode(token, secret, algorithms=["HS256"])` with a symmetric secret (`app/services/auth.py:27,94`). Becomes reachable if anyone verifies with an asymmetric key or lets the header choose the algorithm. Replacement is a follow-up. |
+| `ecdsa` 0.19.2 | GHSA-wj6h-64fc-37mp (CVE-2024-23342, HIGH, Minerva timing side channel; no fixed release) | **Not reachable**: pulled in by python-jose only; nothing here signs with ECDSA. |
+| `langchain` 0.2.17, `langchain-core` 0.2.43, `langchain-openai` 0.1.25, `langchain-text-splitters` 0.2.4, `langgraph` 0.1.19, `langsmith` 0.1.147 | 17 distinct advisories, e.g. GHSA-c67j-w6g6-q2cm (CRITICAL, serialization injection in `dumps/load`), GHSA-6qv9-48xg-fc7f, GHSA-pjwx-r37v-7724, GHSA-qh6h-p6c9-ff54 (`load_prompt`), GHSA-m42m-m8cr-8m58 (XXE in text splitters), GHSA-g48c-2wqr-h844 (msgpack checkpoint loading), GHSA-f4xh-w4cj-qxq8 (LangSmith TracingMiddleware file read) | **Mostly not reachable**: the code uses LangGraph `StateGraph` with Memory/SQLite/Postgres checkpointers, `ChatOpenAI` only inside `app/platform/model_gateway.py`, `OpenAIEmbeddings` in `rag_service`, and none of `langchain_core.load`, `load_prompt`, prompt templates built from user text, HTML/XML splitters, `TracingMiddleware` or LangSmith prompt pull. Reachable only if (a) an attacker can write checkpoint rows (langgraph msgpack) or (b) any of the listed APIs is adopted. The 0.3 upgrade is a follow-up. |
+
+Defence in depth for uploaded PDFs, independent of any parser version. Every parser of an uploaded PDF's bytes (PyMuPDF text, pdfplumber
+tables, the OCR render with Pillow, Tesseract, the e-Belge attachment) runs in a child process (`app/services/pdf_isolation.py`; its code is
+`ocr_service.py` and `pdf_embedded.py`, and `tests/test_parser_isolation_fitness.py` fails if any other module imports a parser). The child gets no
+secrets, its own process group (killed whole on timeout), `RLIMIT_AS` and `RLIMIT_CPU`, a capped stdout, and a semaphore bounds how many run at once.
+Limits are settings: `MAX_UPLOAD_SIZE_MB`, `PDF_MAX_PAGES` (500), `PDF_PARSE_TIMEOUT_SECONDS` (180), `PDF_OCR_SECONDS_PER_PAGE` (30, added per OCR page),
+`PDF_CHILD_MEMORY_MB`, `PDF_PARSE_CONCURRENCY`. A refusal, crash or timeout is a visible "PDF okunamadi" that names the limit and what to do, never an empty
+success. The XML of an e-Belge is parsed by `app.core.xml_safety` (stdlib parser, DTD and ENTITY refused before parsing; refused again inside the child).
 
 ## Frontend
 

@@ -20,6 +20,7 @@ from functools import partial
 from typing import Any
 
 from app.core.currency_totals import fmt_compact
+from app.services.pdf_escape import css_string, escape_tree
 from app.services.runway_display import runway_for_display
 
 logger = logging.getLogger(__name__)
@@ -65,6 +66,12 @@ def _build_html(
     period: str,
     generated_at: str,
 ) -> str:
+    # The company name and period are typed by a person. In the page margin they sit inside a CSS string
+    # (a quote or backslash would end it, `</style>` would end the sheet), in the body inside HTML.
+    margin_text = css_string(f"{company_name} · {period} · {generated_at}")
+    company_name = html.escape(company_name)
+    period = html.escape(period)
+    dashboard = escape_tree(dashboard)  # every string the data carries; the f-strings below interpolate it as is
     pnl      = dashboard.get("pnl") or {}
     # Every amount on the page is in the currency the P&L states, or bare when it states none.
     cur = pnl.get("currency")
@@ -118,19 +125,19 @@ def _build_html(
     for key in ["pessimistic", "base", "optimistic"]:
         sc = scenarios.get(key) or {}
         net12 = sc.get("twelve_month_net", 0)
-        label = html.escape(str(sc.get("label", key)))
+        label = str(sc.get("label", key))
         row_class = "base-row" if key == "base" else ""
         scenario_rows += f"""
         <tr class="{row_class}">
           <td>{label} <span style="color:#64748b">(senaryo — varsayım)</span></td>
           <td class="{_sign_class(net12)}">{fmt_lira(net12)}</td>
-          <td>{html.escape(_scenario_runway(forecast, key))}</td>
+          <td>{_scenario_runway(forecast, key)}</td>
         </tr>"""
 
     # Narrative
     narrative = pnl.get("narrative") or ""
     # What the figures leave out: other currencies (not converted), or a company currency not yet confirmed.
-    currency_note = html.escape(str(pnl.get("currency_note") or ""))
+    currency_note = str(pnl.get("currency_note") or "")
     forecast_narrative = forecast.get("narrative") or ""
 
     return f"""<!DOCTYPE html>
@@ -142,7 +149,7 @@ def _build_html(
   size: A4;
   margin: 1.2cm 1.5cm;
   @bottom-center {{
-    content: "{company_name} · {period} · {generated_at}";
+    content: "{margin_text}";
     font-size: 7pt;
     color: #94a3b8;
   }}
@@ -456,6 +463,8 @@ def generate_executive_report(
 
     try:
         from weasyprint import HTML
+
+        from app.services.pdf_fetch import deny_fetcher
     except (ImportError, OSError) as exc:
         # OSError, not ImportError, is what a missing Pango/GObject raises —
         # it slipped past and became an unhandled 500 (plan v7 §P0 / W3).
@@ -481,7 +490,7 @@ def generate_executive_report(
     )
 
     try:
-        pdf_bytes = HTML(string=html_content).write_pdf()
+        pdf_bytes = HTML(string=html_content, url_fetcher=deny_fetcher()).write_pdf()
         logger.info("Executive report PDF generated: %d bytes", len(pdf_bytes))
         return pdf_bytes
     except Exception as exc:

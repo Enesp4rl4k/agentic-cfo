@@ -268,7 +268,8 @@ class PDFEngine:
 
         try:
             from jinja2 import Template
-            tmpl = Template(template_str)
+            # autoescape: a company name or an alert message is text, never markup.
+            tmpl = Template(template_str, autoescape=True)
             return tmpl.render(**context)
         except ImportError as exc:
             raise PDFRenderError("PDF şablon motoru (Jinja2) kurulu değil.") from exc
@@ -288,6 +289,8 @@ class PDFEngine:
         """
         try:
             from weasyprint import HTML
+
+            from app.services.pdf_fetch import deny_fetcher
         except (ImportError, OSError) as exc:
             # OSError: the package is there but its system libraries (Pango,
             # GObject) are not — importing it fails before any rendering.
@@ -295,7 +298,7 @@ class PDFEngine:
                 "PDF motoru (WeasyPrint) bu sunucuda çalışmıyor: paket ya da sistem kütüphaneleri eksik."
             ) from exc
         try:
-            return HTML(string=html).write_pdf()  # type: ignore[no-any-return]
+            return HTML(string=html, url_fetcher=deny_fetcher()).write_pdf()  # type: ignore[no-any-return]
         except Exception as exc:
             logger.error("WeasyPrint render failed: %s", exc)
             raise PDFRenderError(f"PDF oluşturulamadı: {exc}") from exc
