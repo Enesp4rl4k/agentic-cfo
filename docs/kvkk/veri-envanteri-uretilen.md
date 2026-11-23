@@ -8,7 +8,7 @@
 
 ## Tables
 
-62 tables hold or may hold personal data (64 tables exist).
+65 tables hold or may hold personal data (67 tables exist).
 
 | Table | Whose | Purpose | Columns (category) | Retention class | On organisation erasure | Third parties |
 |---|---|---|---|---|---|---|
@@ -32,6 +32,7 @@
 | `compliance_certifications` | member | a signed compliance certification | `certifier_name` (identity), `certifier_role` (free_text), `statements` (free_text) | books | deleted | - |
 | `connector_connections` | company | a connected external system | `config_json` (free_text), `last_error` (free_text), `secret_enc` (credential) | account | deleted | - |
 | `counterparty_aliases` | counterparty | two spellings declared one supplier | `alias_name` (identity), `alias_token` (pseudonym), `canonical_name` (identity), `canonical_token` (pseudonym), `created_by` (pseudonym), `revoked_by` (pseudonym) | account | deleted | - |
+| `data_exports` | anyone | a company-wide export bundle (the file holds the whole company's data) | `file_path` (free_text), `requested_by` (pseudonym) | operational | deleted | - |
 | `data_sources` | anyone | an additional uploaded file | `file_path` (free_text), `filename` (free_text), `label` (free_text) | books | deleted | - |
 | `decision_logs` | member | the decision journal | `created_by` (pseudonym), `outcome_note` (free_text), `rationale` (free_text) | operational | deleted | - |
 | `decisions` | member | who decided what (append-only decision record) | `after` (free_text), `before` (free_text), `decided_by` (pseudonym), `reason` (free_text) | books | kept, columns scrubbed | - |
@@ -63,12 +64,14 @@
 | `rag_chunks` | anyone | document text chunks and their embeddings for chat evidence | `chunk_text` (document), `embedding` (document) | books | deleted | llm_provider |
 | `related_parties` | counterparty | related parties of the company | `created_by` (pseudonym), `name` (identity), `normalized_name` (identity), `note` (free_text), `tax_id` (tax_id) | account | deleted | - |
 | `reports` | counterparty | generated reports (files and JSON) | `data` (free_text), `file_path` (free_text) | books | deleted | - |
+| `retention_runs` | company | one row per run of the retention job: counts only | - | proof | kept (proof, no personal data) | - |
 | `smmm_hesap_kurallari` | counterparty | an accountant's account-code rules | `anahtar` (identity) | books | deleted | - |
 | `smmm_muhasebeci` | accountant | an accountant's portal profile | `firma_adi` (identity), `il` (free_text), `oda_no` (tax_id), `telefon` (contact), `unvan` (identity), `vergi_no` (tax_id) | account | deleted | - |
 | `smmm_musteri_kayit` | counterparty | an accountant's client list | `firma_adi` (identity), `il` (free_text), `notlar` (free_text), `vergi_no` (tax_id) | account | deleted | - |
 | `smmm_onay_kayitlari` | counterparty | accountant approvals and corrections | `created_by_user_id` (pseudonym), `duzeltme_aciklama` (free_text), `onay_neden` (free_text), `onay_notu` (free_text), `onaylayan_user_id` (pseudonym), `orijinal_kayit` (free_text), `tx_description` (free_text) | books | kept, columns scrubbed | - |
 | `sync_runs` | anyone | connector sync runs | `error_message` (free_text) | operational | deleted | - |
 | `sync_schedules` | company | scheduled syncs | `last_error` (free_text), `source_config` (free_text) | account | deleted | - |
+| `terms_acceptances` | member | which notice and terms version a person accepted, and when | `user_id` (pseudonym) | account | deleted | - |
 | `transactions` | counterparty | income and expense lines read from documents | `counterparty` (identity), `description` (free_text), `payment_note` (free_text), `raw_text` (document), `vendor` (identity) | books | kept, columns scrubbed | llm_provider |
 | `trigger_definitions` | company | automation rules | `action_params` (free_text), `condition` (free_text) | account | deleted | - |
 | `trigger_runs` | anyone | results of automation rules | `action_result` (free_text), `event_ref` (free_text) | operational | deleted | - |

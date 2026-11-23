@@ -22,11 +22,11 @@ PR #68 (`docs/kvkk-document-set`) sahibindir ve düzenlenmedi. Üretilmiş harit
 
 5. **"Silme/dışa aktarma işlevi yok" (acik-konular §4, aydınlatma taslağındaki mühendis notu):** bugün **şirketin tamamı**
    için iki adımlı silme var (`org_erasure`, PR'dan önce de) ve bu iş **kişi** silmeyi, soğuma süresini, iptali ve
-   operatör yolunu ekledi. Kişi bazlı **dışa aktarma** ve şirket dışa aktarımı ikinci PR'da. Karşı taraf adına göre arama/silme hâlâ yok (Q9).
-6. **Saklama:** #68 "hiçbir tabloda otomatik silme yok" diyor; bu bugün de doğru (saklama işi ikinci PR). Kodda ise
-   `RETENTION_POLICY` (compliance_gdpr.py) farklı sayılar yazıyor (işlemler 2 yıl, denetim kaydı 5 yıl) ve `/compliance/retention-report`
+   operatör yolunu ekledi. Kişi bazlı **dışa aktarma** (`GET /privacy/my-data`) ve şirket dışa aktarımı (owner, iş olarak, süreli indirme) eklendi. Karşı taraf adına göre arama/silme hâlâ yok (Q9).
+6. **Saklama:** #68 "hiçbir tabloda otomatik silme yok" diyor; saklama işi artık var ama varsayılan olarak yalnız rapor üretir (`RETENTION_DRY_RUN=true`). Kodda ise `RETENTION_POLICY`
+   (compliance_gdpr.py) farklı sayılar yazıyor (işlemler 2 yıl, denetim kaydı 5 yıl) ve `/compliance/retention-report`
    bunları "politika" diye gösteriyor; #68 ise denetim kaydı için 2 yıl öneriyor. Üç kaynak birbirinden farklı: hukukçu karar vermeden
-   hiçbiri iş olarak çalıştırılmadı (Q2, Q5).
+   hiçbiri defter tablolarına uygulanmadı; sabit sayılar kaldırıldı, `/compliance/retention-report` artık gerçek değerleri söyler (Q2, Q5).
 7. **`users`: "hesap kapanınca +90 gün" (#68):** üye silme şimdi soğuma süresi (7 gün) sonunda hemen takma adlandırır; +90 gün beklemez. Hangisi doğru (Q4, Q11)?
 8. **Aydınlatma taslağı "Şirket 30 gün içinde yanıtlar":** ürün artık 7 günlük iptal edilebilir bekleme sonrası siler; metin bunu söylemeli.
 9. **#68 "kişi silme yok" ve eski `POST /compliance/erasure-request`:** bu uç master'da **her çağrıda 500 verirdi** (var olmayan alanlarla bildirim

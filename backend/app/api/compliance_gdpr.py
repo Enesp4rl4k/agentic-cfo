@@ -1,228 +1,78 @@
 """
-KVKK / GDPR Uyumluluk API — SEC-3
+KVKK / GDPR uyumluluk uçları (SEC-3) — eski yollar, artık kayıt defterinden beslenir.
 
-Türkiye Kişisel Verilerin Korunması Kanunu (KVKK) ve
-AB Genel Veri Koruma Tüzüğü (GDPR) uyumlu endpoint'ler.
+  GET /compliance/data-inventory   → Kişisel veri haritası (kayıt defteri: tablolar, depolar, üçüncü taraflar)
+  GET /compliance/data-export      → Kişinin kendi kişisel verisi (KVKK Md. 11/b)  [= GET /privacy/my-data]
+  GET /compliance/retention-report → Saklama politikası: gerçekten uygulanan değerler
 
-Endpoint'ler:
-  GET  /compliance/data-inventory          → Org'un veri envanteri
-  (silme: org_erasure.py ve member_erasure.py)
-  GET  /compliance/data-export/{user_id}   → Kişisel veri dışa aktarma (portability)
-  GET  /compliance/retention-report        → Veri saklama süresi raporu
-  POST /compliance/consent                 → Kullanıcı onayını kaydet
-
-KVKK Madde 7: İlgili kişi, kişisel verilerinin silinmesini talep edebilir.
-GDPR Article 17: Right to erasure ("right to be forgotten").
+Silme: `org_erasure.py` (şirketin tamamı), `member_erasure.py` (bir kişi). Şirket dışa aktarımı, saklama ayarı, bildirim
+sürümleri ve ekran: `privacy_data.py`. Eski sürüm sabit sayılarla "politika" yazıyordu (işlemler 2 yıl, denetim 5 yıl),
+"VERBİS'e kayıtlıdır" diyordu ve hiçbirini uygulamıyordu; bunlar kaldırıldı (docs/kvkk/veri-envanteri-farklar.md).
 """
 from __future__ import annotations
 
-import io
-import logging
 from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_current_user
-from app.core.http_headers import content_disposition
+from app.api.privacy_data import my_data
+from app.config import get_settings
 from app.database import get_db
+from app.models.organization import Organization
 from app.models.user import User
+from app.services.privacy import retention
+from app.services.privacy.registry import THIRD_PARTIES
+from app.services.privacy.registry_stores import STORES
+from app.services.privacy.registry_tables import TABLES
 
 router = APIRouter()
-logger = logging.getLogger(__name__)
 
-# ── KVKK veri saklama süreleri (gün) ─────────────────────────────────────────
-RETENTION_POLICY: dict[str, int] = {
-    "transactions":         2 * 365,    # 2 yıl (TTK Madde 82)
-    "analysis_jobs":        1 * 365,    # 1 yıl
-    "audit_logs":           5 * 365,    # 5 yıl (SOC2 gereksinimi)
-    "smmm_onay_kayitlari":  10 * 365,   # 10 yıl (VUK Madde 253)
-    "in_app_notifications": 90,          # 90 gün
-    "temporal_events":      2 * 365,    # 2 yıl
-}
-
-
-# ── Schemas ───────────────────────────────────────────────────────────────────
-
-# ── Data inventory ────────────────────────────────────────────────────────────
 
 @router.get("/compliance/data-inventory")
-async def data_inventory(
-    current_user: User = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
-) -> dict[str, Any]:
-    """
-    KVKK Madde 10 / GDPR Article 13-14: Veri envanteri.
-
-    Hangi kişisel veriler, hangi amaçla, ne kadar süre saklandığını açıklar.
-    """
-    org_id = getattr(current_user, "org_id", None)
-
-    # Count records per table
-    counts: dict[str, int] = {}
-    try:
-        from app.models.transaction import Transaction
-        tx_q = select(func.count()).select_from(Transaction)
-        if org_id:
-            from app.models.analysis_job import AnalysisJob
-            subq = select(AnalysisJob.id).where(AnalysisJob.org_id == str(org_id))
-            tx_q = tx_q.where(Transaction.job_id.in_(subq))
-        counts["transactions"] = (await db.execute(tx_q)).scalar_one()
-    except Exception:
-        counts["transactions"] = -1
-
-    try:
-        from app.models.analysis_job import AnalysisJob
-        j_q = select(func.count()).select_from(AnalysisJob)
-        if org_id:
-            j_q = j_q.where(AnalysisJob.org_id == str(org_id))
-        counts["analysis_jobs"] = (await db.execute(j_q)).scalar_one()
-    except Exception:
-        counts["analysis_jobs"] = -1
-
+async def data_inventory(current_user: User = Depends(get_current_user)) -> dict[str, Any]:
+    """KVKK Md. 10 / GDPR Art. 13-14: hangi kişisel veri, kimin, hangi amaçla, nereye gidiyor (ürünün haritası)."""
     return {
         "data": {
-            "org_id":   str(org_id) if org_id else None,
             "generated_at": datetime.now(UTC).isoformat(),
-            "categories": [
-                {
-                    "category":       "Finansal İşlem Verileri",
-                    "table":          "transactions",
-                    "legal_basis":    "Sözleşme (KVKK Md.5/2-c)",
-                    "retention_days": RETENTION_POLICY["transactions"],
-                    "record_count":   counts.get("transactions", -1),
-                    "personal_fields": ["description", "vendor"],
-                    "encryption":     "AES-256-GCM (yapılandırılmışsa)",
-                },
-                {
-                    "category":       "Analiz Sonuçları",
-                    "table":          "analysis_jobs",
-                    "legal_basis":    "Meşru Menfaat (KVKK Md.5/2-f)",
-                    "retention_days": RETENTION_POLICY["analysis_jobs"],
-                    "record_count":   counts.get("analysis_jobs", -1),
-                    "personal_fields": ["filename"],
-                    "encryption":     "Hayır (toplu veri)",
-                },
-                {
-                    "category":       "Denetim Kayıtları",
-                    "table":          "audit_logs",
-                    "legal_basis":    "Hukuki Yükümlülük (KVKK Md.5/2-ç)",
-                    "retention_days": RETENTION_POLICY["audit_logs"],
-                    "record_count":   -1,
-                    "personal_fields": ["user_email", "ip_address", "user_agent"],
-                    "encryption":     "Hayır",
-                },
-            ],
-            "data_controller": {
-                "name":    "Agentic CFO Platform",
-                "address": "Türkiye",
-                "kvkk_vd": "Veri Sorumlusu Kayıt Sistemine (VERBİS) kayıtlıdır.",
-            },
+            "tables": [{"table": n, "purpose": t.purpose, "subject": t.subject.value, "retention_class": t.retention.value,
+                        "personal_fields": sorted(t.columns), "third_parties": [f.value for f in t.flows]}
+                       for n, t in sorted(TABLES.items())],
+            "stores": [{"store": s.key, "holds": s.holds, "retention_class": s.retention.value, "lifetime": s.ttl} for s in STORES],
+            "third_parties": [{"key": k.value, "name": v.name, "sends": v.sends, "masked": v.masked} for k, v in THIRD_PARTIES.items()],
             "subject_rights": [
-                "Kişisel verilerinize erişim hakkı (Madde 11/a)",
-                "Verilerin düzeltilmesini isteme (Madde 11/b)",
-                "Verilerin silinmesini isteme (Madde 11/d)",
-                "Verilerin aktarıldığı üçüncü kişilerin bildirilmesini isteme (Madde 11/f)",
+                "Kişisel verilerinize erişim (Md. 11/a): GET /privacy/my-data",
+                "Silinmesini isteme (Md. 11/e): POST /privacy/member-erasure; şirket için /compliance/org-erasure",
+                "Aktarıldığı üçüncü kişileri öğrenme (Md. 11/f): GET /privacy/overview",
             ],
         },
         "error": None,
     }
 
-
-# ── Data export (portability) ─────────────────────────────────────────────────
 
 @router.get("/compliance/data-export")
 async def export_personal_data(
-    current_user: User = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> StreamingResponse:
-    """
-    KVKK Madde 11/b / GDPR Article 20: Veri taşınabilirliği.
-    Kullanıcının kendi kişisel verilerini JSON olarak indirmesi.
-    """
-    import json
+    """KVKK Md. 11/b / GDPR Art. 20: kişinin kendi verisi (GET /privacy/my-data ile aynı)."""
+    return await my_data(current_user=current_user, db=db)
 
-    user_data: dict[str, Any] = {
-        "export_date":  datetime.now(UTC).isoformat(),
-        "user_id":      str(current_user.id),
-        "email":        current_user.email,
-        "full_name":    current_user.full_name,
-        "role":         str(current_user.role),
-        "created_at":   current_user.created_at.isoformat() if current_user.created_at else None,
-        "sso_provider": getattr(current_user, "sso_provider", None),
-    }
-
-    # Fetch analysis jobs
-    try:
-        from app.models.analysis_job import AnalysisJob
-        org_id = getattr(current_user, "org_id", None)
-        q = select(AnalysisJob.id, AnalysisJob.filename, AnalysisJob.created_at, AnalysisJob.status)
-        if org_id:
-            q = q.where(AnalysisJob.org_id == str(org_id))
-        jobs_result = await db.execute(q.limit(200))
-        user_data["analysis_jobs"] = [
-            {"id": str(r.id), "filename": r.filename, "status": str(r.status),
-             "created_at": r.created_at.isoformat() if r.created_at else None}
-            for r in jobs_result
-        ]
-    except Exception:
-        user_data["analysis_jobs"] = []
-
-    json_bytes = json.dumps(user_data, ensure_ascii=False, indent=2).encode("utf-8")
-    return StreamingResponse(
-        io.BytesIO(json_bytes),
-        media_type="application/json",
-        headers={
-            "Content-Disposition": content_disposition(f"my-data-{current_user.id[:8]}.json"),
-            "Content-Length": str(len(json_bytes)),
-        },
-    )
-
-
-# The old `POST /compliance/erasure-request` was removed: it built an `InAppNotification` with fields that model
-# does not have (every call was a 500) and would have copied the requester's e-mail address and reason into it.
-# Erasure is `app/api/org_erasure.py` (a whole organisation) and `app/api/member_erasure.py` (one person).
-
-
-# ── Retention report ──────────────────────────────────────────────────────────
 
 @router.get("/compliance/retention-report")
 async def retention_report(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> dict[str, Any]:
-    """
-    Veri saklama süresi politikası raporu.
-    Hangi tablo, ne kadar süre saklanıyor?
-    """
+    """Saklama: platform değerleri, bu şirketin etkin değerleri ve işin gerçekten silip silmediği."""
+    org = await db.get(Organization, str(current_user.org_id)) if current_user.org_id else None
     return {
         "data": {
-            "policy_version": "2024-01",
-            "legal_framework": ["KVKK", "TTK", "VUK", "GDPR"],
-            "tables": [
-                {
-                    "table":          name,
-                    "retention_days": days,
-                    "retention_years": round(days / 365, 1),
-                    "legal_basis":    _retention_basis(name),
-                    "auto_deletion":  False,  # TODO: scheduled cleanup job
-                }
-                for name, days in RETENTION_POLICY.items()
-            ],
+            "platform": retention.platform_policy(), "effective_for_this_company": retention.effective_policy(org),
+            "automatic_deletion": not get_settings().retention_dry_run,
+            "never_purged": "defter kayıtları (işlemler, defter, yevmiye, açık kalemler, onaylar, kararlar): hukuki süre açık soru (docs/kvkk/avukata-sorular.md Q2)",
+            "unit": "days; 0 = keep",
         },
         "error": None,
     }
-
-
-def _retention_basis(table: str) -> str:
-    bases = {
-        "transactions":         "TTK Madde 82 (ticari defterler 10 yıl) — önlem amaçlı 2 yıl",
-        "analysis_jobs":        "Meşru menfaat — hizmet kalitesi",
-        "audit_logs":           "SOC2 + KVKK güvenlik kaydı yükümlülüğü",
-        "smmm_onay_kayitlari":  "VUK Madde 253 (muhasebe belgeleri 5-10 yıl)",
-        "in_app_notifications": "Meşru menfaat — kullanıcı deneyimi",
-        "temporal_events":      "Meşru menfaat — trend analizi",
-    }
-    return bases.get(table, "Meşru menfaat")

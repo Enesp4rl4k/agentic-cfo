@@ -88,6 +88,11 @@ class DecisionKind(StrEnum):
     # tax number, country, regional packs, legal title.
     ORG_IDENTITY_CHANGE = "org_identity_change"
 
+    # An owner asks for a company-wide export of its data (who asked, when; the bundle itself is never copied here).
+    DATA_EXPORT = "data_export"
+    # An owner changes how long this company's data is kept (the retention choices, day numbers only).
+    RETENTION_POLICY_CHANGE = "retention_policy_change"
+
     # The amount above which a decision needs a senior person: acknowledged as proposed, or set by the owner.
     MATERIALITY = "materiality"
     # Who else receives the Monday briefing (the owner's standing choice about the accountant).
@@ -148,6 +153,8 @@ DECISION_READ: dict[DecisionKind, ReadClass] = {
     _K.CONTEXT_RESET: _R.DECIDER,
     _K.COMPLIANCE_FILING: _R.DECIDER,
     _K.ERASURE: _R.DECIDER,
+    _K.DATA_EXPORT: _R.DECIDER,
+    _K.RETENTION_POLICY_CHANGE: _R.DECIDER,
 }
 
 

@@ -266,6 +266,32 @@ class Settings(BaseSettings):
     org_erasure_hard_delete_enabled: bool = False
     # KVKK erasure: days between the owner's confirmation and the destructive step (0 = immediately); the owner can cancel until then
     erasure_cooling_off_days: int = 7
+    # Company export: hours a finished bundle can be downloaded before it is deleted
+    data_export_ttl_hours: int = 24
+    # Company export: size bound in MB; uploaded files that would exceed it are listed as omitted in the manifest
+    data_export_max_mb: int = 500
+    # Retention job: true only reports what it would purge (counts in retention_runs); set false after reading the report
+    retention_dry_run: bool = True
+    # Retention: days after which a processed upload's raw file, raw text and text chunks are removed (0 = keep; Turkish accounting-record periods are an open lawyer question)
+    retention_upload_days: int = 0
+    # Retention: days after delivery that a sent outbox message's body is removed (recipient, status and times stay)
+    retention_outbox_body_days: int = 90
+    # Retention: days after expiry that password-reset, verification tokens and spent or expired invitations are deleted
+    retention_token_days: int = 30
+    # Retention: days after which an audit-log row's IP address is truncated and its browser string removed (the row stays)
+    retention_audit_ip_days: int = 365
+    # Retention: days after which in-app notifications are deleted
+    retention_notification_days: int = 180
+    # Retention: days after which alert history rows are deleted
+    retention_alert_history_days: int = 365
+    # Version of the privacy notice a person must have accepted; change it to ask everyone again (the text is the owner's documents, linked)
+    privacy_notice_version: str = "taslak-1"
+    # Version of the terms of use a person must have accepted
+    terms_version: str = "taslak-1"
+    # Where the privacy notice text lives (a link; the product does not hold legal text)
+    privacy_notice_url: str = ""
+    # Where the terms of use live (a link)
+    terms_url: str = ""
 
     # LLM — set llm_base_url to use DeepSeek or any OpenAI-compatible API
     llm_model: str = "deepseek-chat"

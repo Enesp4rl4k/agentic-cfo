@@ -32,8 +32,9 @@ the cooling-off; it then becomes a tombstone under a stable pseudonym and the co
 
 1. Get the request in writing from the company's owner. Check the legal basis for what is retained with the
    lawyer if the company asks for *everything* to go.
-2. Offer an export first: only a per-user export exists (`GET /compliance/data-export`); a whole-company
-   export is not in this change (audit item 9.3). Ledger and decision records can be read out in the app.
+2. Offer an export first: the owner can prepare the company's data in the app (Settings > Veri ve gizlilik, or
+   `POST /privacy/exports`): a ZIP of documented JSON built as a job and downloadable for `DATA_EXPORT_TTL_HOURS` (24).
+   A person's own data: `GET /privacy/my-data`.
 3. The owner (or admin) requests; the owner confirms with the phrase. You do not do it for them.
 4. **Backups still contain the data** until the retention window passes (14 days remote, 2 local archives).
    Say so to the company (wording: `docs/kvkk/yedek-ve-silme.md`). Do not edit old archives.

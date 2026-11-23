@@ -1128,6 +1128,9 @@ class WorkerSettings:
         return RedisSettings.from_dsn(settings.redis_url)
 
 
+from app.services.privacy.jobs import run_data_export  # KVKK company export
+
+
 class MaintenanceWorkerSettings:
     """
     Dedicated queue for maintenance workloads (backfill, cleanup, long non-user jobs).
@@ -1135,7 +1138,7 @@ class MaintenanceWorkerSettings:
     """
 
     functions = [run_rag_backfill_maintenance, run_usage_prune_maintenance, run_semantic_rebuild,
-                 run_review_continuation]
+                 run_review_continuation, run_data_export]
     queue_name = get_settings().arq_maintenance_queue_name
     max_jobs = get_settings().arq_maintenance_max_jobs
     job_timeout = 1200

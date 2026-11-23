@@ -102,6 +102,7 @@ export const NAV_GROUPS: {
       { href: "/smmm-onay", labelKey: "smmmOnay",           icon: FileCheck, trPack: true },
       { href: "/billing", labelKey: "billing",                  icon: CreditCard },
       { href: "/settings/alerts", labelKey: "alerts",               icon: Zap },
+      { href: "/settings/privacy", labelKey: "privacy",             icon: ShieldCheck },
       { href: "/pilot", labelKey: "pilot",  icon: Users },
     ],
   },

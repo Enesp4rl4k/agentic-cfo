@@ -11,6 +11,10 @@ Hukuki görüş değildir; sorular [avukata-sorular.md](avukata-sorular.md)'de, 
 | **Silmenin uçtan uca ispatı**: DB satırları (şemadan türetilen kapsam), diskteki dosyalar, Redis, süreç içi yedekler, ajan belleği | `services/privacy/ephemeral.py` | `test_erasure_end_to_end.py` (komşu şirketin kopyaları yerinde kalır) |
 | **Üye silme** (şirket kalır, takma adlı tutma) | `api/member_erasure.py`, `services/privacy/member_erasure.py` | `test_erasure_flow.py` |
 | **Yedekten dönüşte yeniden silme** | `erasure_flow.reapply_erased`, `scripts/reapply_erasures.py` | `test_privacy_breach_and_restore.py` |
+| **Şirket dışa aktarımı** (owner; ZIP, belgelenmiş JSONL + manifest; iş olarak; boyut sınırlı; süreli kimlik doğrulamalı indirme; karar kaydı) ve **üyenin kendi dışa aktarımı** | `services/privacy/export_bundle.py`, `export_flow.py`, `api/privacy_data.py` | `test_privacy_export.py` |
+| **Saklama**: ayarlanabilir, muhafazakâr, idempotent, önce rapor (dry-run), tek şirkete bağlı; defter hiç silinmez | `services/privacy/retention.py`, `jobs.py` | `test_privacy_retention.py` |
+| **Bildirim/aydınlatma sürümü kabulü** (sürüm değişince yeniden sorulur) | `services/privacy/notices.py` | `test_privacy_retention.py` |
+| **Veri ve gizlilik ekranı** | `frontend/src/components/privacy/`, `/settings/privacy` | `privacy-settings.test.tsx` |
 | **İhlal kapsamı** (hangi şirketler, hangi kategoriler) | `services/privacy/breach_scope.py`, `GET /privacy/operator/breach-scope` | aynı dosya; runbook `docs/ops/runbooks/data-breach.md` |
 
 ## Silmede bulunan ve kapatılan açıklar

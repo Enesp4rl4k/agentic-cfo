@@ -130,6 +130,19 @@ is never blocked. WARN findings are logged in every mode.
 | `STORAGE_LOCAL_PATH` | `./uploads` | optional | - |  |
 | `ORG_ERASURE_HARD_DELETE_ENABLED` | False | optional | - |  |
 | `ERASURE_COOLING_OFF_DAYS` | 7 | optional | - | KVKK erasure: days between the owner's confirmation and the destructive step (0 = immediately); the owner can cancel until then |
+| `DATA_EXPORT_TTL_HOURS` | 24 | optional | - | Company export: hours a finished bundle can be downloaded before it is deleted |
+| `DATA_EXPORT_MAX_MB` | 500 | optional | - | Company export: size bound in MB; uploaded files that would exceed it are listed as omitted in the manifest |
+| `RETENTION_DRY_RUN` | True | optional | - | Retention job: true only reports what it would purge (counts in retention_runs); set false after reading the report |
+| `RETENTION_UPLOAD_DAYS` | 0 | optional | - | Retention: days after which a processed upload's raw file, raw text and text chunks are removed (0 = keep; Turkish accounting-record periods are an open lawyer question) |
+| `RETENTION_OUTBOX_BODY_DAYS` | 90 | optional | - | Retention: days after delivery that a sent outbox message's body is removed (recipient, status and times stay) |
+| `RETENTION_TOKEN_DAYS` | 30 | optional | - | Retention: days after expiry that password-reset, verification tokens and spent or expired invitations are deleted |
+| `RETENTION_AUDIT_IP_DAYS` | 365 | optional | - | Retention: days after which an audit-log row's IP address is truncated and its browser string removed (the row stays) |
+| `RETENTION_NOTIFICATION_DAYS` | 180 | optional | - | Retention: days after which in-app notifications are deleted |
+| `RETENTION_ALERT_HISTORY_DAYS` | 365 | optional | - | Retention: days after which alert history rows are deleted |
+| `PRIVACY_NOTICE_VERSION` | `taslak-1` | optional | - | Version of the privacy notice a person must have accepted; change it to ask everyone again (the text is the owner's documents, linked) |
+| `TERMS_VERSION` | `taslak-1` | optional | - | Version of the terms of use a person must have accepted |
+| `PRIVACY_NOTICE_URL` | (empty) | optional | - | Where the privacy notice text lives (a link; the product does not hold legal text) |
+| `TERMS_URL` | (empty) | optional | - | Where the terms of use live (a link) |
 | `LLM_MODEL` | `deepseek-chat` | optional | - |  |
 | `LLM_MODEL_CHEAP` | (unset) | optional | - |  |
 | `LLM_MODEL_STRONG` | (unset) | optional | - |  |

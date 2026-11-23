@@ -1,0 +1,251 @@
+"""Retention: configurable, conservative, idempotent, dry-run first, and bound to one organisation at a time.
+
+What it does NOT do: it never deletes the books. Transactions, the ledger, the journal, open items, approvals and
+decisions are kept (Turkish commercial and tax law has long statutory periods: lawyer questions Q2/Q3 in
+`docs/kvkk/avukata-sorular.md`). What it purges, each with a conservative default (setting, `RETENTION_*`):
+
+  per company (the owner may shorten these for their own company, never below `FLOOR_DAYS`)
+    uploads            raw file, `transactions.raw_text` and text chunks of a processed upload   default: keep (0)
+    outbox_bodies      body of a delivered message; recipient, status and times stay               90 days after delivery
+    notifications      in-app notifications                                                         180 days
+    alert_history      fired-alert history                                                          365 days
+  platform-wide (settings only)
+    tokens             password-reset / e-mail-verification tokens, spent or expired invitations    30 days after expiry
+    audit_ip           audit-log IP address truncated (/24, /48), browser string removed; row stays 365 days
+    exports            expired export bundles (always)
+  not here: demo guest workspaces (their own hourly job, `DEMO_GUEST_TTL_HOURS`), chat history (Redis, 7 days),
+  LLM prompts and responses (never stored by this product; the provider's own retention is Q1), soft-deleted rows
+  (no table has a soft-delete column).
+
+Safety: `purge_org` takes ONE organisation id and every statement it issues is filtered by it (directly or through a
+job id selected under it). `run_retention` visits active organisations one by one, skipping erased ones, the demo
+template and guest workspaces. `dry_run` (the default of RETENTION_DRY_RUN) only counts. Each run writes a
+`RetentionRun` with counts and day numbers, never row content. Running twice purges nothing the second time.
+"""
+from __future__ import annotations
+
+import ipaddress
+import logging
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import Any
+
+from sqlalchemy import ColumnElement, delete, func, select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.alert_rule import AlertHistory
+from app.models.analysis_job import AnalysisJob
+from app.models.audit_log import AuditLog
+from app.models.email_verification import EmailVerificationToken
+from app.models.in_app_notification import InAppNotification
+from app.models.organization import Organization, OrgInvite
+from app.models.outbox_message import SENT, OutboxMessage
+from app.models.password_reset import PasswordResetToken
+from app.models.privacy_records import RetentionRun
+from app.models.rag_chunk import RagChunk
+from app.models.transaction import Transaction
+from app.services.org_erasure import ERASED, hash_id, remove_org_files
+from app.services.outbox import SCRUBBED
+
+logger = logging.getLogger(__name__)
+
+FLOOR_DAYS = 30
+ORG_KEYS = ("upload_days", "outbox_body_days", "notification_days", "alert_history_days")
+PLATFORM_KEYS = ("token_days", "audit_ip_days")
+AUDIT_PAGE = 1000
+
+
+def platform_policy() -> dict[str, int]:
+    from app.config import get_settings
+
+    s = get_settings()
+    return {"upload_days": s.retention_upload_days, "outbox_body_days": s.retention_outbox_body_days,
+            "notification_days": s.retention_notification_days, "alert_history_days": s.retention_alert_history_days,
+            "token_days": s.retention_token_days, "audit_ip_days": s.retention_audit_ip_days}
+
+
+def effective_policy(org: Organization | None) -> dict[str, int]:
+    """The platform default with the company's own choices laid over the per-company keys."""
+    policy = platform_policy()
+    chosen = (org.retention_policy if org is not None else None) or {}
+    for key in ORG_KEYS:
+        if isinstance(chosen.get(key), int):
+            policy[key] = chosen[key]
+    return policy
+
+
+def validate_choice(choice: dict[str, Any]) -> dict[str, int]:
+    """Whole days, only the per-company keys, and never below the floor (0 = keep, allowed for uploads only)."""
+    clean: dict[str, int] = {}
+    for key, value in choice.items():
+        if key not in ORG_KEYS:
+            raise ValueError(f"not a company setting: {key}")
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError(f"{key} must be a whole number of days")
+        if value == 0 and key == "upload_days":
+            clean[key] = 0
+        elif value < FLOOR_DAYS:
+            raise ValueError(f"{key} must be at least {FLOOR_DAYS} days" + (" (or 0 to keep)" if key == "upload_days" else ""))
+        else:
+            clean[key] = value
+    return clean
+
+
+def truncate_ip(raw: str | None) -> str | None:
+    """IPv4 to its /24, IPv6 to its /48; anything that is not an address is dropped."""
+    if not raw:
+        return None
+    try:
+        ip = ipaddress.ip_address(raw.strip())
+    except ValueError:
+        return None
+    prefix = 24 if ip.version == 4 else 48
+    return str(ipaddress.ip_network(f"{ip}/{prefix}", strict=False).network_address)
+
+
+def _aware(moment: datetime) -> datetime:
+    return moment if moment.tzinfo else moment.replace(tzinfo=UTC)
+
+
+async def _count(db: AsyncSession, stmt: Any) -> int:
+    return int((await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one())
+
+
+async def purge_org(db: AsyncSession, org_id: str, policy: dict[str, int], *, dry_run: bool, now: datetime) -> dict[str, int]:
+    """One organisation's purge. Every statement below carries `org_id`; nothing here can reach another company."""
+    out = {"uploads": 0, "outbox_bodies": 0, "notifications": 0, "alert_history": 0}
+
+    days = policy["outbox_body_days"]
+    if days > 0:
+        where: tuple[ColumnElement[bool], ...] = (OutboxMessage.org_id == org_id, OutboxMessage.status == SENT, OutboxMessage.sent_at.is_not(None),
+                 OutboxMessage.sent_at < now - timedelta(days=days), OutboxMessage.body != SCRUBBED)
+        out["outbox_bodies"] = await _count(db, select(OutboxMessage.id).where(*where))
+        if not dry_run and out["outbox_bodies"]:
+            await db.execute(update(OutboxMessage).where(*where).values(body=SCRUBBED, last_error=None))
+
+    days = policy["notification_days"]
+    if days > 0:
+        where = (InAppNotification.org_id == org_id, InAppNotification.created_at < now - timedelta(days=days))
+        out["notifications"] = await _count(db, select(InAppNotification.id).where(*where))
+        if not dry_run and out["notifications"]:
+            await db.execute(delete(InAppNotification).where(*where))
+
+    days = policy["alert_history_days"]
+    if days > 0:
+        where = (AlertHistory.org_id == org_id, AlertHistory.created_at < now - timedelta(days=days))
+        out["alert_history"] = await _count(db, select(AlertHistory.id).where(*where))
+        if not dry_run and out["alert_history"]:
+            await db.execute(delete(AlertHistory).where(*where))
+
+    days = policy["upload_days"]
+    if days > 0:
+        out["uploads"] = await _purge_uploads(db, org_id, now - timedelta(days=days), dry_run)
+    return out
+
+
+async def _purge_uploads(db: AsyncSession, org_id: str, cutoff: datetime, dry_run: bool) -> int:
+    """Raw files of processed uploads older than the cutoff. The ledger rows stay; only the document goes."""
+    jobs = (await db.execute(
+        select(AnalysisJob.id, AnalysisJob.file_path).where(
+            AnalysisJob.org_id == org_id, AnalysisJob.status == "completed", AnalysisJob.created_at < cutoff,
+            AnalysisJob.file_path != "")
+    )).all()
+    if dry_run or not jobs:
+        return len(jobs)
+    from app.config import get_settings
+
+    ids = [j.id for j in jobs]
+    remove_org_files(Path(get_settings().storage_local_path), ids, [j.file_path for j in jobs])
+    await db.execute(update(AnalysisJob).where(AnalysisJob.org_id == org_id, AnalysisJob.id.in_(ids)).values(file_path=""))
+    await db.execute(update(Transaction).where(Transaction.job_id.in_(ids), Transaction.raw_text.is_not(None)).values(raw_text=None))
+    await db.execute(delete(RagChunk).where(RagChunk.org_id == org_id, RagChunk.job_id.in_(ids)))
+    return len(jobs)
+
+
+async def purge_platform(db: AsyncSession, policy: dict[str, int], *, dry_run: bool, now: datetime) -> dict[str, int]:
+    """Platform-wide: tokens and invitations past their time, audit-log IP addresses past theirs."""
+    out = {"tokens": 0, "invitations": 0, "audit_ip": 0}
+    days = policy["token_days"]
+    if days > 0:
+        cutoff = now - timedelta(days=days)
+        for model in (PasswordResetToken, EmailVerificationToken):
+            where = (model.expires_at < cutoff,)
+            out["tokens"] += await _count(db, select(model.id).where(*where))
+            if not dry_run:
+                await db.execute(delete(model).where(*where))
+        inv = ((OrgInvite.expires_at < cutoff) | (OrgInvite.accepted.is_(True) & (OrgInvite.created_at < cutoff)),)
+        out["invitations"] = await _count(db, select(OrgInvite.id).where(*inv))
+        if not dry_run and out["invitations"]:
+            await db.execute(delete(OrgInvite).where(*inv))
+    days = policy["audit_ip_days"]
+    if days > 0:
+        out["audit_ip"] = await _audit_ip(db, now - timedelta(days=days), dry_run)
+    return out
+
+
+async def _audit_ip(db: AsyncSession, cutoff: datetime, dry_run: bool) -> int:
+    """Truncate IPs and clear browser strings of old audit rows, page by page (keyset on id). Counts rows that change."""
+    changed, last = 0, ""
+    while True:
+        rows = (await db.execute(
+            select(AuditLog.id, AuditLog.ip_address, AuditLog.user_agent)
+            .where(AuditLog.created_at < cutoff, AuditLog.id > last, (AuditLog.ip_address.is_not(None)) | (AuditLog.user_agent.is_not(None)))
+            .order_by(AuditLog.id).limit(AUDIT_PAGE)
+        )).all()
+        if not rows:
+            return changed
+        for row in rows:
+            new_ip = truncate_ip(row.ip_address)
+            if new_ip == row.ip_address and row.user_agent is None:
+                continue
+            changed += 1
+            if not dry_run:
+                await db.execute(update(AuditLog).where(AuditLog.id == row.id).values(ip_address=new_ip, user_agent=None))
+        last = rows[-1].id
+        if not dry_run:
+            await db.flush()
+
+
+def _runnable(org: Organization) -> bool:
+    from app.services.demo_template import GOLDEN_SLUG
+
+    return bool(org.is_active) and org.name != ERASED and org.slug != GOLDEN_SLUG and not org.is_demo_guest
+
+
+async def run_retention(
+    db: AsyncSession, *, dry_run: bool | None = None, org_id: str | None = None, now: datetime | None = None,
+) -> dict[str, Any]:
+    """Run the policy over every active company (or the one given) and the platform tables; record counts."""
+    from app.config import get_settings
+    from app.services.privacy.export_flow import purge_expired
+
+    now = now or datetime.now(UTC)
+    dry = get_settings().retention_dry_run if dry_run is None else dry_run
+    stmt = select(Organization)
+    if org_id is not None:
+        stmt = stmt.where(Organization.id == org_id)
+    orgs = [o for o in (await db.execute(stmt)).scalars().all() if _runnable(o)]
+    run = RetentionRun(dry_run=dry, scope=hash_id("org", org_id) if org_id else "all", organisations=len(orgs),
+                       policy=platform_policy(), counts={}, started_at=now)
+    db.add(run)
+    await db.flush()
+    totals: dict[str, int] = {}
+    try:
+        for org in orgs:
+            for key, n in (await purge_org(db, str(org.id), effective_policy(org), dry_run=dry, now=now)).items():
+                totals[key] = totals.get(key, 0) + n
+        if org_id is None:
+            for key, n in (await purge_platform(db, platform_policy(), dry_run=dry, now=now)).items():
+                totals[key] = totals.get(key, 0) + n
+            totals["exports"] = 0 if dry else await purge_expired(db, now)
+        run.counts, run.status = totals, "done"
+    except Exception:
+        logger.exception("retention run failed")
+        run.status = "failed"
+        await db.rollback()
+        run = RetentionRun(dry_run=dry, scope=run.scope, organisations=len(orgs), policy=platform_policy(), counts={}, status="failed", started_at=now)
+        db.add(run)
+        await db.flush()
+    run.finished_at = datetime.now(UTC)
+    await db.commit()
+    return {"run_id": run.id, "dry_run": dry, "status": run.status, "organisations": len(orgs), "counts": totals, "policy": platform_policy()}

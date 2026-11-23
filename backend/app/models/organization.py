@@ -113,6 +113,10 @@ class Organization(Base):
         Boolean, default=False, server_default=false(), nullable=False
     )
 
+    # Data retention the owner chose for this company: {"upload_days", "outbox_body_days", "notification_days",
+    # "alert_history_days"}, whole days; a missing key means the platform default (`app.services.privacy.retention`).
+    retention_policy: Mapped[dict[str, int] | None] = mapped_column(JSON, nullable=True)
+
     # Plan / limits
     plan: Mapped[str] = mapped_column(String(20), default="free", nullable=False)
     max_members: Mapped[int] = mapped_column(default=5, nullable=False)
