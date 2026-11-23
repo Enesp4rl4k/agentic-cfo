@@ -40,6 +40,10 @@ from app.services.privacy.member_erasure import blockers, is_tombstone, pseudony
 router = APIRouter()
 logger = logging.getLogger(__name__)
 NOT_FOUND = "Kayıt bulunamadı."
+# What the person or the owner is shown: waiting, running, failed (with its fixed code) or cleaning up. `failed` and
+# `cleanup_pending` used to be invisible; only the stoppable ones can be cancelled (`erasure_flow.STOPPABLE`).
+LIVE = (erasure_flow.SCHEDULED, erasure_flow.PENDING, erasure_flow.FAILED, erasure_flow.EXECUTING,
+        erasure_flow.CLEANUP_PENDING)
 
 
 class MemberErasureBody(BaseModel):
@@ -49,7 +53,7 @@ class MemberErasureBody(BaseModel):
 
 async def _live_requests(db: AsyncSession, **where: Any) -> list[OrgErasureRequest]:
     stmt = select(OrgErasureRequest).where(
-        OrgErasureRequest.scope == "member", OrgErasureRequest.status.in_((erasure_flow.SCHEDULED, erasure_flow.PENDING)))
+        OrgErasureRequest.scope == "member", OrgErasureRequest.status.in_(LIVE))
     for col, value in where.items():
         stmt = stmt.where(getattr(OrgErasureRequest, col) == value)
     return list((await db.execute(stmt)).scalars())
@@ -87,7 +91,7 @@ async def _schedule_member(
         await db.refresh(req)
     when = req.execute_after.isoformat() if req.execute_after else None
     return {"data": {"request_id": req.id, "status": req.status, "execute_after": when, "pseudonym": pseudonym(str(target.id)),
-                     "cancellable": req.status == erasure_flow.SCHEDULED, "irreversible": True}, "error": None}
+                     "cancellable": req.status in erasure_flow.STOPPABLE, "irreversible": True}, "error": None}
 
 
 async def _record_member_decisions(db: AsyncSession, target: User, *, handle: str, outcome: str, by: str, via: str) -> None:
@@ -154,7 +158,7 @@ async def cancel_member_erasure(
         await erasure_flow.cancel(db, req, by_hash=hash_id("user", uid), decided_by=uid,
                                   role="platform_operator" if operator else req.initiated_by)
     except ValueError as exc:
-        detail = ("Silme işlemi şu anda çalışıyor; iptal edilemez." if str(exc) == erasure_flow.EXECUTING
+        detail = ("Silme işlemi çalıştı veya çalışıyor; iptal edilemez." if str(exc) in (erasure_flow.EXECUTING, erasure_flow.CLEANUP_PENDING)
                   else f"Talep durumu: {exc}; iptal edilemez.")
         raise HTTPException(status_code=409, detail=detail) from exc
     if target is not None:
@@ -176,12 +180,13 @@ async def list_erasure_requests(
     if role in ("owner", "admin"):
         org = (await db.execute(select(OrgErasureRequest).where(
             OrgErasureRequest.scope == "org", OrgErasureRequest.target_org_id == str(current_user.org_id),
-            OrgErasureRequest.status.in_((erasure_flow.SCHEDULED, erasure_flow.PENDING))))).scalars()
+            OrgErasureRequest.status.in_(LIVE)))).scalars()
         out.update({r.id: r for r in org})
     rows = [{
         "request_id": r.id, "scope": r.scope, "status": r.status, "initiated_by": r.initiated_by,
         "execute_after": r.execute_after.isoformat() if r.execute_after else None, "about_me": r.target_user_id == uid,
-        "mode": r.mode, "cancellable": r.status in (erasure_flow.SCHEDULED, erasure_flow.PENDING),
+        "mode": r.mode, "cancellable": r.status in erasure_flow.STOPPABLE,
+        "failure_code": r.failure_code, "blocked_reason": r.blocked_reason,
     } for r in sorted(out.values(), key=lambda r: r.requested_at)]
     return {"data": {"requests": rows, "cooling_off_days": get_settings().erasure_cooling_off_days}, "error": None}
 

@@ -47,12 +47,16 @@ the cooling-off; it then becomes a tombstone under a stable pseudonym and the co
 8. **Caches.** The erasure also removes the company's Redis keys, chat history and agent memory; `_ephemeral.redis_failed: 1`
    on the request row (`post_commit_counts`; the hash-chained record cannot hold what runs after its commit) means Redis was down: those keys expire by themselves within 7 days.
    Redis is swept once, after the database commit; the agent memory is erased inside the transaction.
-9. **A failed erasure.** If the agent-memory delete (or anything else in the transaction) fails, the whole erasure is
-   rolled back, nothing is reported as done, and the request shows `status = failed` with a fixed `failure_code`
-   (`agent_memory_delete_failed`, `erase_failed`, `interrupted`). The hourly executor retries it by itself; fix the cause
-   and it completes, or the owner may still cancel it. A request stuck in `executing` for over 2 hours is released to
-   `failed` (`interrupted`) and retried. Cancel and the executor meet only in conditional UPDATEs: cancel answers 409
-   once the executor has claimed the request.
+9. **Two phases.** One database transaction deletes the rows, erases the Postgres agent memory, writes the proof
+   record and stores a durable cleanup plan on the request (`cleanup_plan`); only AFTER that commit are the files
+   unlinked, the in-process caches dropped and Redis swept, from that plan. If the transaction fails (e.g. the
+   agent-memory delete), nothing is committed and no file is touched: the request shows `status = failed` with a fixed
+   `failure_code` (`agent_memory_delete_failed`, `erase_failed`, `interrupted`), the hourly executor retries it, and the
+   owner may still cancel it (the company is whole). After 24 attempts it becomes `blocked: retries_exhausted` and the
+   operators get an alert. If the cleanup fails, the request stays `cleanup_pending` (rows already gone, NOT cancellable),
+   an operator alert is raised and the same plan is retried hourly until it completes. A running erasure renews its claim
+   (heartbeat) so it is never released as dead; a claim silent for 2 hours is released to `failed` and retried. No step
+   runs for an organisation id that is missing or not a UUID (`blocked: invalid_target` / `no_target`).
 
 ## Where personal data lives
 

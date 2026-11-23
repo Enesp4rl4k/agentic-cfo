@@ -130,6 +130,12 @@ def _exposure_findings(settings: Settings, env: Mapping[str, str]) -> list[Findi
         out.append(_warn("cors_localhost", "BACKEND_CORS_ORIGINS still names a localhost origin; list only the public app origin."))
     elif any(o.startswith("http://") for o in origins):
         out.append(_warn("cors_http", "BACKEND_CORS_ORIGINS has a plain http:// origin; the app must be served over TLS."))
+    if not settings.erasure_pseudonym_secret.strip():
+        out.append(explicit(
+            "no_pseudonym_secret",
+            "ERASURE_PSEUDONYM_SECRET is unset: erased members' pseudonyms would be derived from BACKEND_SECRET_KEY, which the "
+            "rotate-secret runbook rotates, so the same person would get a different handle afterwards. Set it once "
+            "to its own random value (docs/ops/runbooks/rotate-secret.md) and never rotate it."))
     for name, value in (("FRONTEND_URL", settings.frontend_url), ("BRAND_APP_URL", settings.brand_app_url)):
         if _is_localhost(value):
             out.append(explicit("links_localhost", f"{name} points at localhost: every e-mailed link (verification, reset, invite) would be dead."))

@@ -38,6 +38,8 @@ def upgrade() -> None:
         sa.Column("claimed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("failure_code", sa.String(40), nullable=True),
         sa.Column("post_commit_counts", sa.JSON(), nullable=True),
+        sa.Column("attempts", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column("cleanup_plan", sa.JSON(), nullable=True),
     ]
     for col in cols:
         if col.name not in have:
@@ -52,7 +54,7 @@ def downgrade() -> None:
     indexes = {i["name"] for i in sa.inspect(op.get_bind()).get_indexes(_TABLE)}
     if "ix_org_erasure_requests_target_user_id" in indexes:
         op.drop_index("ix_org_erasure_requests_target_user_id", table_name=_TABLE)
-    for name in ("post_commit_counts", "failure_code", "claimed_at", "blocked_reason", "cancelled_by_hash", "cancelled_at", "execute_after", "target_user_id",
+    for name in ("cleanup_plan", "attempts", "post_commit_counts", "failure_code", "claimed_at", "blocked_reason", "cancelled_by_hash", "cancelled_at", "execute_after", "target_user_id",
                  "verification_ref", "initiated_by", "scope"):
         if name in have:
             op.drop_column(_TABLE, name)

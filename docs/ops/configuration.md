@@ -133,7 +133,7 @@ is never blocked. WARN findings are logged in every mode.
 | `STORAGE_LOCAL_PATH` | `./uploads` | optional | - |  |
 | `ORG_ERASURE_HARD_DELETE_ENABLED` | False | optional | - |  |
 | `ERASURE_COOLING_OFF_DAYS` | 7 | optional | - | KVKK erasure: days between the owner's confirmation and the destructive step (0 = immediately); the owner can cancel until then |
-| `ERASURE_PSEUDONYM_SECRET` | (unset) | optional | - | KVKK member erasure: key of the HMAC behind the stable `member-<hex>` pseudonym; empty falls back to `BACKEND_SECRET_KEY`. Set once and keep it: a new value only changes the pseudonym of people erased afterwards |
+| `ERASURE_PSEUDONYM_SECRET` | (unset) | REQUIRED in production | FATAL when `APP_ENV` is production/staging and unset (warning elsewhere) | KVKK member erasure: key of the HMAC behind the stable `member-<hex>` pseudonym. Its own random value (`openssl rand -hex 32`), set once and never rotated (rotating changes the handle of people erased afterwards); empty falls back to `BACKEND_SECRET_KEY`, which does rotate |
 | `LLM_MODEL` | `deepseek-chat` | optional | - |  |
 | `LLM_MODEL_CHEAP` | (unset) | optional | - |  |
 | `LLM_MODEL_STRONG` | (unset) | optional | - |  |

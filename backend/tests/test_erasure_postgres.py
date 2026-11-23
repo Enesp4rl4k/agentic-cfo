@@ -11,7 +11,7 @@ import uuid
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.services import agent_memory as am
@@ -78,3 +78,20 @@ async def test_a_failing_statement_raises_instead_of_reporting_success_on_postgr
         monkeypatch.setattr(db, "execute", broken)
         with pytest.raises(ephemeral.AgentMemoryDeleteError):
             await ephemeral._agent_memory_delete(db, str(uuid.uuid4()))
+
+
+async def test_the_per_organisation_advisory_lock_serialises_two_erasures_on_postgres(maker) -> None:
+    from sqlalchemy import func
+
+    from app.services import org_erasure as svc
+
+    org = str(uuid.uuid4())
+    async with maker() as one, maker() as two:
+        await svc._lock_org(one, org)  # held until `one` ends its transaction
+        busy = (await two.execute(select(func.pg_try_advisory_xact_lock(svc.org_lock_key(org))))).scalar_one()
+        assert busy is False  # a second erasure of the same company would have to wait
+        other = (await two.execute(select(func.pg_try_advisory_xact_lock(svc.org_lock_key(str(uuid.uuid4())))))).scalar_one()
+        assert other is True  # another company is not blocked
+        await one.rollback()
+        free = (await two.execute(select(func.pg_try_advisory_xact_lock(svc.org_lock_key(org))))).scalar_one()
+        assert free is True
