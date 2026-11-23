@@ -58,10 +58,10 @@ async def test_one_org_failing_fails_the_slot_and_the_retry_completes_it_once(mo
 
     async def effects(org: str) -> tuple[int, int, int]:
         async with database.get_session_factory(database.engine())() as db:
-            return tuple(  # type: ignore[return-value]
-                (await db.execute(select(func.count()).select_from(m).where(m.org_id == org))).scalar_one()
-                for m in (ProactiveAlert, InAppNotification, OutboxMessage)
-            )
+            counts = []
+            for m in (ProactiveAlert, InAppNotification, OutboxMessage):
+                counts.append((await db.execute(select(func.count()).select_from(m).where(m.org_id == org))).scalar_one())
+            return counts[0], counts[1], counts[2]
 
     async def slot_status() -> list[str]:
         async with database.get_session_factory(database.engine())() as db:
