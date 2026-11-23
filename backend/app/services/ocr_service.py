@@ -85,6 +85,7 @@ class OCRResult:
     has_tables: bool = False
     warnings: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
+    embedded_xml: list[str] = field(default_factory=list)   # e-Belge XML attachments, read in the child (pdf_embedded)
 
     @property
     def is_reliable(self) -> bool:
@@ -182,6 +183,7 @@ def _try_tesseract_ocr(page: Any, dpi: int = _TESSERACT_DPI) -> tuple[str, float
             image,
             config=custom_config,
             output_type=pytesseract.Output.DICT,
+            timeout=pdf_isolation.ocr_timeout(),  # a page that takes longer is skipped, never left running
         )
 
         # Extract text and compute mean confidence
@@ -249,7 +251,7 @@ def extract_text_from_pdf(file_path: str, force_ocr: bool = False) -> OCRResult:
     Never raises for a bad file and never returns an empty success: a refused, crashed or timed-out
     parse is a result with strategy "failed", no text and a Turkish "PDF okunamadı: ..." warning.
     """
-    result: OCRResult = pdf_isolation.guarded_extract(file_path, force_ocr, _extract_in_process)
+    result: OCRResult = pdf_isolation.guarded_extract(file_path, force_ocr)
     return result
 
 
@@ -296,10 +298,8 @@ def _extract_in_process(file_path: str, force_ocr: bool = False) -> OCRResult:
     try:
         with fitz.open(file_path) as doc:
             page_count = doc.page_count
-            if page_count > pdf_isolation.MAX_PDF_PAGES:
-                return pdf_isolation.refused(
-                    file_path, f"{page_count} sayfa var; en fazla {pdf_isolation.MAX_PDF_PAGES} sayfa okunur. Dosyayı bölüp yükleyin."
-                )
+            if page_count > pdf_isolation.max_pages():
+                return pdf_isolation.refused(file_path, "pdf_too_many_pages", pages=page_count, limit=pdf_isolation.max_pages())
             doc_meta = {
                 "title": doc.metadata.get("title", ""),
                 "author": doc.metadata.get("author", ""),
@@ -334,6 +334,7 @@ def _extract_in_process(file_path: str, force_ocr: bool = False) -> OCRResult:
 
                 # Strategy 3: Tesseract OCR (for scanned pages)
                 if force_ocr or best_conf < 0.60:
+                    pdf_isolation.ocr_started()
                     ocr_text, ocr_conf = _try_tesseract_ocr(page)
                     if ocr_conf > best_conf:
                         best_text = _clean_ocr_text(ocr_text)
@@ -341,8 +342,8 @@ def _extract_in_process(file_path: str, force_ocr: bool = False) -> OCRResult:
                         best_strategy = "tesseract"
                     elif ocr_conf == 0.0 and best_conf < 0.60:
                         page_warnings.append(
-                            f"Page {page_num + 1}: Low confidence text extraction. "
-                            "Install pytesseract for better results."
+                            f"Sayfa {page_num + 1}: metin okunamadı (OCR yok, zaman aşımı ya da düşük güven). "
+                            "Page text could not be read."
                         )
 
                 if page_has_tables:
@@ -361,17 +362,9 @@ def _extract_in_process(file_path: str, force_ocr: bool = False) -> OCRResult:
                 ))
                 all_warnings.extend(page_warnings)
 
-    except Exception as e:
+    except Exception:
         logger.exception("PDF extraction failed for %s", file_path)
-        return OCRResult(
-            text="",
-            confidence=0.0,
-            strategy_used="failed",
-            page_count=0,
-            page_results=[],
-            file_path=file_path,
-            warnings=[f"PDF okunamadı: {e}"],
-        )
+        return pdf_isolation.refused(file_path, "pdf_unreadable")  # the exception text may name server paths: log only
 
     # Combine all page texts
     full_text = "\n\n".join(

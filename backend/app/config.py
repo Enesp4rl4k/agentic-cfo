@@ -344,6 +344,12 @@ class Settings(BaseSettings):
 
     # File upload
     max_upload_size_mb: int = 10
+    # Reading an uploaded PDF (app/services/pdf_isolation.py): it runs in a child process with these limits.
+    pdf_max_pages: int = 500
+    pdf_parse_timeout_seconds: int = 180          # text path, whole document
+    pdf_ocr_seconds_per_page: int = 30            # added per page that needs OCR (Tesseract), so a long scan is not refused for length
+    pdf_child_memory_mb: int = 3072               # RLIMIT_AS of the child (Linux)
+    pdf_parse_concurrency: int = 2                # simultaneous parser children per process
     # Full-automation mode: upload sonrası analizi otomatik kuyruğa al.
     auto_enqueue_analysis_on_upload: bool = True
     # No Redis? Run the enqueued analysis inline in the API process instead of

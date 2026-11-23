@@ -164,6 +164,11 @@ is never blocked. WARN findings are logged in every mode.
 | `OPS_REPORT_TOKEN` | (empty) | recommended | - | shared secret of `POST /platform/ops/backup-report` (header `X-Ops-Token`); empty = the endpoint answers 404 and backups are not monitored |
 | `BACKUP_MAX_AGE_HOURS` | 30 | optional | - | with `OPS_REPORT_TOKEN` set: no successful backup report for this long alerts the operators |
 | `MAX_UPLOAD_SIZE_MB` | 10 | optional | - |  |
+| `PDF_MAX_PAGES` | 500 | optional | - | Pages an uploaded PDF may have; more is refused with a message that says so and asks for a shorter period. |
+| `PDF_PARSE_TIMEOUT_SECONDS` | 180 | optional | - | Time the child process may spend reading one PDF's text; past it the child's process group is killed and the upload is refused as unreadable. |
+| `PDF_OCR_SECONDS_PER_PAGE` | 30 | optional | - | Extra time per page that needs OCR (a scanned statement), and the Tesseract timeout for that page. A 400-page scan is not refused for being long. |
+| `PDF_CHILD_MEMORY_MB` | 3072 | optional | - | Address-space limit (`RLIMIT_AS`) of the PDF child process on Linux; the CPU limit is twice the text timeout. |
+| `PDF_PARSE_CONCURRENCY` | 2 | optional | - | Parser child processes running at once in one API or worker process; the rest wait. |
 | `AUTO_ENQUEUE_ANALYSIS_ON_UPLOAD` | True | optional | - |  |
 | `ALLOW_INLINE_JOB_FALLBACK` | (unset) | optional | FATAL on Postgres |  |
 | `AGENT_AUTO_PROCEED_MIN_CONFIDENCE` | 0.8 | optional | - |  |
