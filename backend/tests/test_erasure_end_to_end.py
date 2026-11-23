@@ -157,3 +157,29 @@ async def test_the_sqlite_agent_memory_file_is_erased_per_organisation(maker, tm
         res = await svc.erase_org(db, a["org"], storage_root=tmp_path)
     assert res.counts["_ephemeral"]["agent_memory_deleted"] == 1
     assert [e.org_id for e in store._backend.all()] == [b["org"]]
+
+
+async def test_an_export_bundle_and_notice_acceptances_go_with_the_organisation(maker, tmp_path: Path, redis, memory) -> None:
+    from sqlalchemy import select
+
+    from app.database import Base
+    from tests.test_org_erasure import _insert
+
+    T = Base.metadata.tables
+    async with maker() as db:
+        a, b, _ = await _two_orgs(db)
+        bundles = {}
+        for tag, org in (("A", a), ("B", b)):
+            path = tmp_path / "exports" / f"{org['org']}.zip"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"PK the whole company")
+            await _insert(db, T["data_exports"], tag, org_id=org["org"], file_path=str(path), status="ready",
+                          requested_by=org["users"][0])
+            await _insert(db, T["terms_acceptances"], tag, user_id=org["users"][0], document="terms", version="v1")
+            bundles[tag] = path
+        await db.commit()
+        await svc.erase_org(db, a["org"], storage_root=tmp_path)
+        assert not bundles["A"].exists() and bundles["B"].exists()
+        left = (await db.execute(select(T["terms_acceptances"].c.user_id))).scalars().all()
+        assert left == [b["users"][0]]
+        assert set((await db.execute(select(T["data_exports"].c.org_id))).scalars().all()) == {b["org"]}

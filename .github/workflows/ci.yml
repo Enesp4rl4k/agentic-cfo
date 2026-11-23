@@ -83,7 +83,9 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
-          cache-dependency-path: backend/requirements.txt
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/constraints.txt
 
       - name: Set up Node.js ${{ env.NODE_VERSION }}
         uses: actions/setup-node@v4
@@ -96,8 +98,8 @@ jobs:
         working-directory: backend
         run: |
           pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install "ruff==0.16.4" mypy pytest-asyncio
+          pip install -r requirements.txt -c constraints.txt
+          pip install -c constraints.txt "ruff==0.16.4" mypy pytest-asyncio
 
       - name: Install frontend dependencies
         working-directory: frontend
@@ -177,13 +179,15 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
-          cache-dependency-path: backend/requirements.txt
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/constraints.txt
 
       - name: Install backend dependencies
         working-directory: backend
         run: |
           pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements.txt -c constraints.txt
 
       - name: Apply every migration from an empty database
         working-directory: backend
@@ -286,13 +290,15 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
-          cache-dependency-path: backend/requirements.txt
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/constraints.txt
 
       - name: Install backend dependencies
         working-directory: backend
         run: |
           pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements.txt -c constraints.txt
 
       - name: Start API briefly for baseline
         working-directory: backend
@@ -398,14 +404,26 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
-          cache-dependency-path: backend/requirements.txt
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/constraints.txt
 
       - name: Install dependencies
         working-directory: backend
         run: |
           pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install "ruff==0.16.4" mypy pytest-asyncio pytest-cov
+          pip install -r requirements.txt -c constraints.txt
+          pip install -c constraints.txt "ruff==0.16.4" mypy pytest-asyncio pytest-cov
+
+      # requirements.txt is exact pins, constraints.txt pins the rest, and what
+      # pip just installed is exactly that set. A new transitive package or a
+      # version that moved fails here, not silently in the next run.
+      # docs/ops/dependency-pinning.md
+      - name: Dependency pins match the installed environment
+        working-directory: backend
+        env:
+          CHECK_INSTALLED_PINS: "1"
+        run: python -m pytest tests/test_dependency_pins.py -q -p no:randomly
 
       - name: Ruff lint
         working-directory: backend

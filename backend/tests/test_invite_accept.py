@@ -170,3 +170,21 @@ async def test_accepting_the_same_invitation_twice_is_refused_the_second_time(cl
     assert (await client.post(f"{P}/org/invite/accept", json={"token": token, "password": PAROLA})).status_code == 201
     assert (await client.post(f"{P}/org/invite/accept", json={"token": token, "password": PAROLA})).status_code == 400
 
+
+
+async def test_accepting_an_invitation_records_the_notice_versions_that_are_current(client):
+    from app.config import get_settings
+    from app.models.privacy_records import TermsAcceptance
+
+    _, org, _ = await kullanici(client, "firma@example.com", role="owner")
+    token = await invite_for(client, org, "yeni@example.com", "analyst")
+    cur = get_settings()
+    body = {"token": token, "password": PAROLA,
+            "accepted_notices": {"privacy_notice": cur.privacy_notice_version, "terms": "eski-surum", "cookie": "1"}}
+    r = await client.post(f"{P}/org/invite/accept", json=body)
+    assert r.status_code == 201, r.text
+    user = await user_row(client, "yeni@example.com")
+    async with client._maker() as db:
+        rows = (await db.execute(select(TermsAcceptance).where(TermsAcceptance.user_id == user.id))).scalars().all()
+    assert [(a.document, a.version, a.source) for a in rows] == [("privacy_notice", cur.privacy_notice_version, "invite")]
+    assert rows[0].accepted_at is not None  # a stale or unknown entry is dropped, not recorded as evidence

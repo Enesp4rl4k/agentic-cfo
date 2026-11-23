@@ -45,6 +45,7 @@ from app.models.outbox_message import OutboxMessage
 from app.models.password_reset import PasswordResetToken
 from app.models.payment_plan_change import PaymentPlanChange
 from app.models.pilot import PilotInvite, UserFeedback
+from app.models.privacy_records import DataExport, RetentionRun, TermsAcceptance
 from app.models.proactive_alert import ProactiveAlert
 from app.models.rag_chunk import RagChunk
 from app.models.related_party import RELATIONSHIP_TYPES, RelatedParty
@@ -82,6 +83,7 @@ __all__ = [
     "ComplianceCertification",
     "ConnectorConnection",
     "CounterpartyAlias",
+    "DataExport",
     "DataSource",
     "DataSourceDomain",
     "DataSourceType",
@@ -119,6 +121,7 @@ __all__ = [
     "Report",
     "ReportFormat",
     "ReportType",
+    "RetentionRun",
     "SMMMHesapKurali",
     "SMMMMuhasebeci",
     "SMMMMusteriKayit",
@@ -126,6 +129,7 @@ __all__ = [
     "ScheduledJobRun",
     "SyncRun",
     "SyncSchedule",
+    "TermsAcceptance",
     "Transaction",
     "TransactionCategory",
     "TransactionType",

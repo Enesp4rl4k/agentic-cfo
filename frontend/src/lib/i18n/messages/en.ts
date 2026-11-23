@@ -337,6 +337,7 @@ export type MessageTree = {
       workspace: string;
       pilot: string;
       kararlar: string;
+      privacy: string;
     };
   };
   bulten: {
@@ -3370,6 +3371,83 @@ export type MessageTree = {
   };
   liveRefusal: { title: string; generic: string; recovery: string };
   notFound: { title: string; body: string; home: string };
+  /** Settings > Veri ve gizlilik: notices, own data, company export and erasure, third parties, retention. */
+  settingsPrivacy: {
+    title: string;
+    subtitle: string;
+    loading: string;
+    loadFailed: string;
+    notices: {
+      title: string;
+      intro: string;
+      privacyNotice: string;
+      terms: string;
+      version: string;
+      acceptedOn: string;
+      mustAccept: string;
+      accept: string;
+      saving: string;
+      noLink: string;
+      openText: string;
+    };
+    mine: {
+      title: string;
+      intro: string;
+      download: string;
+      downloading: string;
+      downloadFailed: string;
+      deleteTitle: string;
+      deleteIntro: string;
+      emailLabel: string;
+      deleteButton: string;
+      working: string;
+      scheduled: string;
+      soleOwner: string;
+      wrongEmail: string;
+      failed: string;
+    };
+    company: {
+      title: string;
+      ownerOnly: string;
+      exportTitle: string;
+      exportIntro: string;
+      exportRequest: string;
+      exportWorking: string;
+      exportReady: string;
+      exportDownload: string;
+      exportFailed: string;
+      exportFailedRequest: string;
+      eraseTitle: string;
+      eraseIntro: string;
+      eraseRequest: string;
+      erasePhrase: string;
+      eraseConfirm: string;
+      eraseScheduled: string;
+      eraseCancel: string;
+      eraseFailed: string;
+      pendingTitle: string;
+      kindOrg: string;
+      kindMember: string;
+    };
+    thirdParties: { title: string; intro: string; masked: string; notMasked: string; reaches: string };
+    retention: {
+      title: string;
+      intro: string;
+      dryRunOn: string;
+      dryRunOff: string;
+      unit: string;
+      keep: string;
+      floor: string;
+      platform: string;
+      yours: string;
+      save: string;
+      saving: string;
+      saved: string;
+      failed: string;
+      reset: string;
+      labels: Record<string, string>;
+    };
+  };
 };
 
 export const en: MessageTree = {
@@ -3714,6 +3792,7 @@ export const en: MessageTree = {
       workspace: "Settings",
       pilot: "Pilot Program",
       kararlar: "Decision log",
+      privacy: "Data and privacy",
     },
   },
   bulten: {
@@ -6756,6 +6835,8 @@ export const en: MessageTree = {
       org_identity_change: "Company identity (tax no., country, packs)",
       materiality: "Materiality threshold",
       briefing_recipients: "Briefing to the accountant",
+      data_export: "Company data export",
+      retention_policy_change: "Retention periods",
     },
     outcomes: {
       confirmed: "Confirmed",
@@ -6778,6 +6859,13 @@ export const en: MessageTree = {
       same_document: "Same document",
       corrected: "Corrected",
       sent: "Sent",
+      requested: "Requested",
+      scheduled: "Scheduled",
+      cancelled: "Cancelled",
+      executed: "Done",
+      erasure_scheduled: "Erasure scheduled",
+      erasure_cancelled: "Erasure cancelled",
+      member_erased: "Member data erased",
     },
   },
   codes: {
@@ -7177,5 +7265,94 @@ export const en: MessageTree = {
     title: "This page is not available",
     body: "The address is wrong, or this screen is not part of your workspace.",
     home: "Back to the app",
+  },
+  settingsPrivacy: {
+    title: "Data and privacy",
+    subtitle: "See which personal data is kept, who receives it, how long it is kept and how to have it erased.",
+    loading: "Loading…",
+    loadFailed: "This section could not be loaded just now. Try again in a moment.",
+    notices: {
+      title: "Privacy notice and terms of use",
+      intro: "The texts are the documents our company publishes; here we record which version you accepted.",
+      privacyNotice: "Privacy notice",
+      terms: "Terms of use",
+      version: "Version {v}",
+      acceptedOn: "You accepted it on {date}",
+      mustAccept: "You need to accept the new version.",
+      accept: "I have read it and accept",
+      saving: "Saving…",
+      noLink: "The link to the text is not set up yet.",
+      openText: "Open the text",
+    },
+    mine: {
+      title: "My data",
+      intro: "Download the personal data this product holds about you (profile, memberships, your own activity records) as a machine-readable file.",
+      download: "Download my data",
+      downloading: "Preparing…",
+      downloadFailed: "The file could not be downloaded. Try again in a moment.",
+      deleteTitle: "Delete my account and personal data",
+      deleteIntro: "After {days} days your account is closed; your name, e-mail address, password and sessions are erased. The company's records and decisions stay, under a pseudonym that does not show who you were. This cannot be undone; you can cancel while you wait.",
+      emailLabel: "Type your e-mail address to confirm",
+      deleteButton: "Delete my account",
+      working: "Saving…",
+      scheduled: "Deletion scheduled: it will happen on {date}. You can cancel until then.",
+      soleOwner: "You are the only owner of this company. Transfer ownership first, or start the erasure of the company's data.",
+      wrongEmail: "The address you typed must be the one on your account.",
+      failed: "The request could not be made. Try again in a moment.",
+    },
+    company: {
+      title: "Company data",
+      ownerOnly: "Only the owner of the company can do these.",
+      exportTitle: "Export the company's data",
+      exportIntro: "The ledger, open items, journal, decisions, settings, members and uploaded files are prepared in one ZIP file as documented JSON. Passwords, keys and tokens are never put in the bundle. The download link is valid for a limited time.",
+      exportRequest: "Prepare the export",
+      exportWorking: "Preparing. You can close this page; it will show here when it is ready.",
+      exportReady: "Ready. It can be downloaded until {date}.",
+      exportDownload: "Download the ZIP file",
+      exportFailed: "The export could not be prepared. You can ask for it again.",
+      exportFailedRequest: "The export could not be requested. Try again in a moment.",
+      eraseTitle: "Ask for the company's data to be erased",
+      eraseIntro: "{days} days after you confirm, the company's personal data is erased; accounting records are kept for the statutory period but their personal fields are cleared; uploaded files are deleted. This cannot be undone; you can cancel while you wait.",
+      eraseRequest: "Create an erasure request",
+      erasePhrase: "To confirm, type: {phrase}",
+      eraseConfirm: "Confirm the erasure",
+      eraseScheduled: "Erasure scheduled: it will happen on {date}.",
+      eraseCancel: "Cancel the request",
+      eraseFailed: "The action could not be completed. Try again in a moment.",
+      pendingTitle: "Pending erasure requests",
+      kindOrg: "Company data",
+      kindMember: "Member account",
+    },
+    thirdParties: {
+      title: "Third parties the data goes to",
+      intro: "The services below can receive personal data when the feature is on. Where data is not masked before it is sent, that is said plainly.",
+      masked: "Masked before it is sent",
+      notMasked: "Not masked before it is sent",
+      reaches: "It can come from these records",
+    },
+    retention: {
+      title: "Retention periods",
+      intro: "Accounting records (transactions, ledger, journal, open items, approvals, decisions) are never deleted automatically. The values below are in days.",
+      dryRunOn: "The cleanup job currently only produces a report and deletes nothing.",
+      dryRunOff: "The cleanup job is on: data past its period is deleted.",
+      unit: "days",
+      keep: "0 = keep",
+      floor: "At least {n} days",
+      platform: "Platform default",
+      yours: "Your company's value",
+      save: "Save",
+      saving: "Saving…",
+      saved: "Saved.",
+      failed: "Could not save: check the values.",
+      reset: "Back to the default",
+      labels: {
+        upload_days: "Uploaded raw file, raw text and text chunks (after processing)",
+        outbox_body_days: "Sent e-mail bodies (after delivery; recipient and status stay)",
+        notification_days: "In-app notifications",
+        alert_history_days: "Alert history",
+        token_days: "Expired links and invitations",
+        audit_ip_days: "IP address (truncated) and browser string in the audit log",
+      },
+    },
   },
 };

@@ -84,6 +84,7 @@ _ROUTERS = [
     ("app.api.org_erasure",             "router", "org-erasure"),                # KVKK Md.7: whole-organisation erasure (two-step)
     ("app.api.member_erasure",          "router", "member-erasure"),             # KVKK Md.7/11: one person's erasure (pseudonymous retention)
     ("app.api.privacy",                 "router", "privacy"),                    # KVKK: the personal-data map
+    ("app.api.privacy_data",            "router", "privacy-data"),               # KVKK: export, retention, notices, the settings screen
     ("app.api.security",                "router", "security"),                   # SOC2 + IP whitelist (SEC-4/5)
     ("app.api.analytics",               "router", "analytics"),                  # AN-1..6: TCMB, Monte Carlo, WC, Cohort
     ("app.api.integrations_extended",   "router", "integrations-ext"),           # INT-2,4,5,6: OB, Ecom, Sheets, Webhook

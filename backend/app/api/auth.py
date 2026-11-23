@@ -94,6 +94,8 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, description="Min 8 characters")
     full_name: str | None = None
+    # Notice and terms versions accepted on the sign-up page (recorded only when current; see privacy/notices.py).
+    accepted_notices: dict[str, str] | None = None
     # The secret of a pilot invitation (services/pilot_invites.py). With it, and only with it, an account and
     # its company are created when REGISTRATION_MODE is not `open`.
     invite_token: str | None = Field(default=None, min_length=8, max_length=128)
@@ -290,6 +292,9 @@ async def _register_with_pilot_invite(body: RegisterRequest, db: AsyncSession) -
             db, str(body.invite_token), email=str(body.email), hashed_password=password_hash,
             full_name=body.full_name,
         )
+        from app.services.privacy.notices import stage_at_signup
+
+        await stage_at_signup(db, str(user.id), body.accepted_notices, "pilot_invite")
         await db.commit()
     except pilot_invites.PilotInviteError as err:
         await db.rollback()
