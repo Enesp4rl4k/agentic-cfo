@@ -442,5 +442,5 @@ class TestTheJourneysFixtures:
         assert runway["level"] == "critical" and runway["opening_cash_cents"] == 900_000
         assert runway["avg_monthly_net_cents"] == -3_000_000 and runway["runway_months"] == 0.3
         (alert,) = [a for a in result["forecast"]["alerts"] if a["level"] == "critical"]
-        for fact in ("₺9.000,00", "ortalama aylık net nakit çıkışı ₺30.000,00", "yaklaşık 0,3 ay", "(varsayım)"):
+        for fact in ("₺9.000,00", "ortalama aylık net nakit çıkışı ₺30.000,00", "1 aydan az (yaklaşık 9 gün)", "(varsayım)"):
             assert fact in alert["message"]

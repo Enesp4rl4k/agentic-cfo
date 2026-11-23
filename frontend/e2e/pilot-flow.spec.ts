@@ -280,7 +280,7 @@ test.describe("Pilot flow", () => {
     expect(critical).toHaveLength(1);
     expect(critical[0].message).toContain("₺9.000,00");
     expect(critical[0].message).toContain("ortalama aylık net nakit çıkışı ₺30.000,00");
-    expect(critical[0].message).toContain("yaklaşık 0,3 ay");
+    expect(critical[0].message).toContain("1 aydan az (yaklaşık 9 gün)");
     expect(critical[0].message).toContain("(varsayım)");
 
     // The Monday briefing says it too, and first: the same measured runway, not a second computation.
@@ -288,7 +288,7 @@ test.describe("Pilot flow", () => {
     expect(briefing.runway_status).toBe("computed");
     expect(briefing.runway_level).toBe("critical");
     expect(briefing.runway_months).toBe(0.3);
-    expect(briefing.full_text.startsWith("KRİTİK: Nakit pisti yaklaşık 0,3 ay")).toBe(true);
+    expect(briefing.full_text.startsWith("KRİTİK: Nakit pisti 1 aydan az (yaklaşık 9 gün)")).toBe(true);
     const radar = (await (await request.get(`${API}/ledger/cash-radar`, { headers: bearer(owner.token) })).json()).data;
     expect(radar.runway.level).toBe("critical");
     expect(radar.runway.runway_months).toBe(0.3);
