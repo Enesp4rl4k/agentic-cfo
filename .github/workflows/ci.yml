@@ -705,11 +705,16 @@ jobs:
   # It used to scan ./backend only, where Trivy reads requirements.txt (the direct
   # pins) and ignores constraints.txt, so no transitive package was ever looked at.
   # The full pinned set (constraints.txt) is now copied to a scratch requirements.txt
-  # and scanned too. With ignore-unfixed, the first run of the gate showed 35 fixable
-  # HIGH/CRITICAL findings in the direct pins alone (Pillow, langchain, langchain-core,
-  # weasyprint); fixing them is dependency work (backend/requirements.txt), so
-  # making this red now would block every merge. To make it blocking once those are
-  # upgraded: set `exit-code: 1` on both scans. The .env check below DOES fail.
+  # and scanned too; the totals are written to the job summary (last step).
+  # State on 2026-11-24, fixable findings only: 5 in the direct pins and 8 in the full
+  # set (4 HIGH + 1 CRITICAL, and 7 HIGH + 1 CRITICAL), all in the langchain family:
+  # langchain 0.2.17, langchain-core 0.2.43 (CRITICAL CVE-2025-68664) and, transitive,
+  # langchain-text-splitters 0.2.4 and langsmith 0.1.147. Before this can be made
+  # blocking (`exit-code: 1` on both scans) those four must be upgraded in
+  # backend/requirements.txt and constraints.txt (langchain 0.3.30+, langchain-core
+  # 0.3.81+, langchain-text-splitters 0.3.9+, langsmith 0.8.0+; check each fix against
+  # the app, the 0.2 to 0.3 step is a migration), or the remaining ones accepted by
+  # name in a .trivyignore with a reason.
   security:
     name: Security Scan (REPORT ONLY, findings do not fail; .env check does)
     runs-on: ubuntu-latest
@@ -745,6 +750,33 @@ jobs:
           exit-code:   0    # REPORT ONLY - see the comment above the job
           ignore-unfixed: true
           severity:    CRITICAL,HIGH
+
+      # Totals in the run's summary page, so the count is visible without opening the log.
+      # Report only: this step never fails the job.
+      - name: Trivy totals in the job summary (REPORT ONLY)
+        if: always()
+        run: |
+          {
+            echo "### Trivy: fixable HIGH/CRITICAL findings (report only, they do not fail this job)"
+            echo
+            echo "| Scan | CRITICAL | HIGH | Total |"
+            echo "|---|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          for scan in "direct pins (backend/)|./backend" "full pinned set (constraints.txt)|./.trivy-scan"; do
+            label="${scan%%|*}"; ref="${scan##*|}"
+            if trivy fs --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed --format json --output /tmp/trivy.json "$ref" >/dev/null 2>&1; then
+              python3 - "$label" >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json, sys
+          c = {"CRITICAL": 0, "HIGH": 0}
+          for r in json.load(open("/tmp/trivy.json")).get("Results", []):
+              for v in r.get("Vulnerabilities") or []:
+                  c[v["Severity"]] = c.get(v["Severity"], 0) + 1
+          print(f"| {sys.argv[1]} | {c['CRITICAL']} | {c['HIGH']} | {c['CRITICAL'] + c['HIGH']} |")
+          PY
+            else
+              echo "| $label | n/a | n/a | scan did not run |" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
 
       - name: Check for .env files accidentally committed
         run: |
