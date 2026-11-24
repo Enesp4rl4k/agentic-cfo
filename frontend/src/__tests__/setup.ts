@@ -25,6 +25,12 @@ vi.mock("next/font/google", () => {
   };
 });
 
+// ── Mock next/font/local ───────────────────────────────────────────────────────
+// The brand faces are self-hosted (lib/brand-fonts.ts); like the Google loaders they are compiled away.
+vi.mock("next/font/local", () => ({
+  default: () => ({ className: "", variable: "", style: {} }),
+}));
+
 // ── Mock next-auth/react ───────────────────────────────────────────────────────
 vi.mock("next-auth/react", () => ({
   signIn:     vi.fn(),
