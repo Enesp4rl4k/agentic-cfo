@@ -16,6 +16,36 @@ export interface IngestSummary {
   balance_check?: "verified" | "verified_partial" | "unverified" | null;
   /** Rows with no balance in a statement whose other rows have one: held, not vouched for by the chain. */
   outside_chain?: number;
+  /** PDF pages that yielded no text (app/services/page_gap.py): per page, Turkish and English, and whether rows may be missing. */
+  pages_not_read?: Array<{
+    file: string;
+    pages: Array<{ page: number; state: "hold" | "scan_verified" | "note"; tr: string; en: string }>;
+  }>;
+}
+
+function PagesNotRead({ ingest }: Readonly<{ ingest: IngestSummary }>) {
+  const { t, locale } = useI18n();
+  const files = (ingest.pages_not_read ?? []).filter((f) => f.pages.length > 0);
+  if (files.length === 0) return null;
+  const held = files.some((f) => f.pages.some((p) => p.state === "hold"));
+  return (
+    <div className="space-y-1 text-sm" data-testid="pages-not-read">
+      <p className={held ? "font-medium text-amber-500" : "font-medium"} role={held ? "alert" : undefined}>
+        {t.heldRows.ingestPagesTitle}
+        {held && `: ${t.heldRows.ingestPagesHeld}`}
+      </p>
+      <ul className="list-inside list-disc text-xs text-muted-foreground">
+        {files.flatMap((f) =>
+          f.pages.map((p) => (
+            <li key={`${f.file}-${p.page}`} className={p.state === "hold" ? "text-amber-500" : undefined}>
+              {files.length > 1 ? `${f.file}: ` : ""}
+              {locale === "en" ? p.en : p.tr}
+            </li>
+          )),
+        )}
+      </ul>
+    </div>
+  );
 }
 
 /**
@@ -26,7 +56,8 @@ export interface IngestSummary {
 export function IngestCounts({ ingest }: Readonly<{ ingest?: IngestSummary | null }>) {
   const { t } = useI18n();
   const copy = t.heldRows;
-  if (!ingest || !ingest.rows_read) return null;
+  if (!ingest) return null;
+  if (!ingest.rows_read) return <PagesNotRead ingest={ingest} />;
   const skipped = ingest.summary_lines_skipped ?? 0;
   const transfers = ingest.account_lines_skipped ?? 0;
   const sentence = copy.ingestRead
@@ -69,6 +100,7 @@ export function IngestCounts({ ingest }: Readonly<{ ingest?: IngestSummary | nul
         <p className="text-xs text-amber-500">{copy.ingestOutsideChain.replace("{count}", String(ingest.outside_chain))}</p>
       )}
       {ingest.reader_fallback && <p className="text-xs text-muted-foreground">{copy.ingestFallback}</p>}
+      <PagesNotRead ingest={ingest} />
     </div>
   );
 }

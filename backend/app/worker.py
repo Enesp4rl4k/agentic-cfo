@@ -476,6 +476,8 @@ async def run_cfo_analysis(
             from app.services.ingest.summary import ingest_summary
 
             meta["ingest"] = ingest_summary(persisted_rows, registered, result.get("ingest_counts"))
+            if result.get("pages_not_read"):   # pages of a PDF that yielded no text: shown on the upload result, held or not
+                meta["ingest"]["pages_not_read"] = result["pages_not_read"]
             if terminal == JobStatus.AWAITING_REVIEW:
                 from app.services.held_analysis import held_by
 

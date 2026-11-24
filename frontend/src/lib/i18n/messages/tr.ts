@@ -3123,6 +3123,8 @@ export const tr: MessageTree = {
     ingestBalanceVerified: "Bakiye zinciriyle doğrulandı.",
     ingestBalancePartial: "Bakiye zinciriyle doğrulanan {verified} satır; {held} satır kararınızı bekliyor.",
     ingestBalanceUnverified: "Bakiye ile doğrulanamadı: satırlar bakiye zinciriyle denetlenemedi.",
+    ingestPagesTitle: "Okunamayan sayfalar",
+    ingestPagesHeld: "Bu dosyadan kayıtlar eksik kalmış olabilir; incelemenizi bekliyor.",
     fileSignQuestion: "Bu dosyada eksi tutarlar çıkış, artı tutarlar giriş mi?",
     fileSignReading: "Eksi çıkışsa: {inIncome} giriş, {inExpense} çıkış. Tersiyse: {outIncome} giriş, {outExpense} çıkış.",
     fileBodySignUniform: "Bu dosyadaki tüm tutarlar aynı işaretli ve hangi yöne gittiklerini söyleyen bir sütun ya da bakiye yok. Sistem tahmin etmez.",

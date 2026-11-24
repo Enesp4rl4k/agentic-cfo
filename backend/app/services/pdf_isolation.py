@@ -516,8 +516,11 @@ def apply_pdf_notes(result: Any, file_path: str) -> None:
     detail = result.detail or ""
     if pages:
         detail = f"[Okunamayan sayfalar / Pages not read: {pages[0]}] {detail}"
-        meta = (getattr(cached_result(file_path), "metadata", None) or {})
-        result.patch = {**(result.patch or {}), "pages_not_read": [int(p) for p in meta.get("pages_unread") or []]}
+        from app.services import page_gap
+
+        meta = getattr(cached_result(file_path), "metadata", None) or {}
+        # What the upload screen shows (worker: meta["ingest"]["pages_not_read"]): per page, Turkish and English, held or not
+        result.patch = {**(result.patch or {}), "pages_not_read": [{"file": Path(file_path).name, "pages": page_gap.entries(meta)}]}
     if attachment:
         detail = f"{detail} [{attachment[0]}]"
     if pages or attachment:

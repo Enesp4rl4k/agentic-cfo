@@ -375,7 +375,7 @@ def test_an_unreadable_page_with_content_is_listed_as_a_note_and_holds_only_with
     sonuc = SkillResult(ok=True, patch={}, confidence=0.95, needs_review=False, detail="3 işlem")
     pdf_isolation.apply_pdf_notes(sonuc, path)
     # nothing on the pages around it says rows are missing (no transaction rows at all): a visible note, no hold
-    assert sonuc.needs_review is False and "2, 3. sayfada okunabilir metin yok (görsel/boş sayfa)" in sonuc.detail and "No readable text" in sonuc.detail
+    assert sonuc.needs_review is False and "2. sayfada okunabilir metin yok (görsel/boş sayfa)" in sonuc.detail and "page 3 has no readable text" in sonuc.detail
     assert di.apply_pdf_notes is pdf_isolation.apply_pdf_notes
 
 

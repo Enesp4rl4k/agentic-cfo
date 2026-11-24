@@ -132,6 +132,8 @@ class CFOState(TypedDict, total=False):
     held_transactions: list[dict[str, Any]]
     # What the readers did with every row (app.services.ingest.okuma): read, booked, held, skipped and counted.
     ingest_counts: dict[str, Any]
+    # [{file, pages: [{page, state, tr, en}]}]: pages of an uploaded PDF that yielded no text (app.services.page_gap).
+    pages_not_read: list[dict[str, Any]]
     # {date, balance_cents} the statement closes on, proven over ALL its rows as read
     # (held ones included, in file order). Set only when rows were held: the balance is
     # a fact of the file, not of which rows a person still has to look at.

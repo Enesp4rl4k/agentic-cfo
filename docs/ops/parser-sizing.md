@@ -97,14 +97,20 @@ A child that runs out of memory is never an empty page and never "damaged": a `M
 "dosya bellek sınırını aştı; daha kısa dönemlere bölüp yükleyin" (English underneath), naming the pages that were
 not read.
 
-A page that yields no text is always named first on the result under "Okunamayan sayfalar / Pages not read" (and in
-`patch["pages_not_read"]`). It HOLDS the upload only when rows may be missing (`app/services/page_gap.py`), in this order:
-(1) the statement states a closing balance or period end that the rows do not reach: hold (rows reaching it: note);
-(2) the page sits between pages with rows and the balances do not chain across it, or cannot be checked: hold;
-(3) nothing is stated: a page-sized raster (images covering at least half the page, classified in the child) is a
-scan and holds ("N. sayfa taranmış görünüyor ve okunamadı; işlemler eksik olabilir"); a small image (logo, stamp) or a
-blank page is a note ("görsel/boş sayfa"), and a page that says the statement continues, with no rows after, holds.
-A page is called decorative only when it is not a scan.
+A page that yields no text is always listed on the upload result under "Okunamayan sayfalar / Pages not read"
+(`ingest.pages_not_read`, shown by `IngestCounts`; first in the step detail too). It HOLDS the upload only when rows may
+be missing (`app/services/page_gap.py`), in this order:
+(1) the statement states a closing balance or a period end the rows fall short of (a period end more than a week after
+the last row): hold. A period end that is reached proves nothing and never suppresses a hold;
+(2) the page sits between pages with rows and the balances do not chain across it, or cannot be checked: hold; chaining
+verifies it;
+(3) an edge page: only a stated closing balance exactly equal to the chronologically last row's balance verifies it
+(the statement's own closing balance: "Önceki dönem kapanış bakiyesi", "Devreden", "Açılış" never count). Otherwise a
+scan holds ("N. sayfa taranmış görünüyor ve okunamadı; işlemler eksik olabilir"); a logo, stamp or blank page is a note;
+a page that says the statement continues, with no rows after, holds.
+A scan is a page with no readable text whose images cover at least 20% of it (`SCAN_COVERAGE`): a logo or stamp covers a
+few percent, a scan of the last rows on a third of a page must count. "Bakiyeler süreklidir / satır eksik görünmüyor"
+is said only for a verified page; a page is called an image or blank page only when it is not a scan.
 
 ## Preflight
 

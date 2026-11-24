@@ -33,7 +33,11 @@ def _image_page(doc, rect) -> None:
 
 
 def logo_page(doc) -> None:
-    _image_page(doc, lambda page: pymupdf.Rect(50, 50, 150, 130))     # a small logo or stamp
+    _image_page(doc, lambda page: pymupdf.Rect(50, 50, 210, 210))     # a logo or stamp: about 5% of the page
+
+
+def half_scan_page(doc) -> None:
+    _image_page(doc, lambda page: pymupdf.Rect(0, 0, 595, 252))        # the last rows scanned on a third of the page: about 30%
 
 
 def scan_page(doc) -> None:
@@ -81,7 +85,8 @@ def test_a_full_page_scan_at_the_end_with_nothing_stated_holds_and_says_it_is_a_
 def test_the_same_scan_is_a_note_when_the_stated_closing_balance_is_reached(tmp_path, monkeypatch):
     held, detail, meta = outcome(tmp_path, monkeypatch, lambda doc: statement(doc, closing=CLOSING_OK, last=scan_page))
     assert meta["pages_unread"] == [3] and "pages_gap" not in meta and held is False
-    assert "3. sayfa taranmış sayfa, okunamadı" in detail and "görsel/boş" not in detail
+    assert "3. sayfa taranmış sayfa ve okunamadı; ekstrenin kapanış bakiyesi okunan son bakiyeyle aynıdır, satır eksik görünmüyor" in detail
+    assert meta["pages_verified"] == {"3": "closing"} and "görsel/boş" not in detail
 
 
 def test_a_logo_only_last_page_is_a_note(tmp_path, monkeypatch):
@@ -113,7 +118,57 @@ def test_a_logo_first_page_is_a_note_and_a_chained_middle_scan_says_the_balances
         scan_page(doc)
         rows_page(doc, *CHAINS)
     held, detail, _meta = outcome(tmp_path, monkeypatch, middle)
-    assert held is False and "2. sayfa taranmış sayfa, okunamadı; hesap bakiyeleri tutarlı" in detail
+    assert held is False and "2. sayfa taranmış sayfa ve okunamadı; bakiyeler süreklidir, satır eksik görünmüyor" in detail
+
+
+def month_end(doc, *, closing: str = "", last=scan_page) -> None:
+    """A March statement whose last parsed row is 28.03, within a week of its stated end 31.03."""
+    head = "Hesap Ekstresi\nDonem: 01.03.2026 - 31.03.2026\nTarih Aciklama Tutar Bakiye\n"
+    first = "\n".join(f"{d} {FILLER} {a} {b}" for d, a, b in (("20.03.2026", "500,00", "10.500,00"), ("24.03.2026", "250,00", "10.750,00")))
+    doc.new_page().insert_text((40, 72), head + first, fontsize=8)
+    rows_page(doc, ("28.03.2026", "100,00", "10.850,00"), extra=closing)
+    last(doc)
+
+
+def test_a_scan_at_the_end_of_a_month_end_statement_still_holds_when_the_last_row_is_within_a_week_of_the_period_end(tmp_path, monkeypatch):
+    held, detail, meta = outcome(tmp_path, monkeypatch, month_end)
+    assert held is True and "3. sayfa taranmış görünüyor ve okunamadı" in detail          # proximity to the period end proves nothing
+    assert "pages_verified" not in meta and "satır eksik görünmüyor" not in detail
+
+
+def test_the_same_statement_with_its_closing_balance_exactly_reached_is_a_note_with_the_verified_wording(tmp_path, monkeypatch):
+    held, detail, meta = outcome(tmp_path, monkeypatch, lambda doc: month_end(doc, closing=CLOSING_OK))
+    assert held is False and meta["pages_verified"] == {"3": "closing"} and "satır eksik görünmüyor" in detail
+
+
+def test_a_closing_balance_stated_but_not_reached_holds(tmp_path, monkeypatch):
+    held, detail, _meta = outcome(tmp_path, monkeypatch, lambda doc: month_end(doc, closing=CLOSING_SHORT))
+    assert held is True and "kapanış bakiyesi 13.400,00" in detail
+
+
+def test_only_the_opening_balance_phrasing_is_not_a_stated_closing_balance(tmp_path, monkeypatch):
+    # the number equals the last balance by coincidence: it must still not verify the page
+    held, detail, _meta = outcome(tmp_path, monkeypatch, lambda doc: month_end(doc, closing="Onceki donem kapanis bakiyesi: 10.850,00"))
+    assert held is True and "3. sayfa taranmış görünüyor ve okunamadı" in detail
+
+
+def test_opening_labels_never_match_and_two_different_closing_balances_are_ambiguous():
+    assert page_gap.stated_closing("Onceki donem kapanis bakiyesi 1.000,00\nDevreden bakiye 1.000,00\nAcilis bakiyesi 1.000,00") is None
+    assert page_gap.stated_closing("Onceki donem kapanis bakiyesi 1.000,00\nKapanis Bakiyesi: 2.500,00") == 250_000
+    assert page_gap.stated_closing("Kapanis Bakiyesi: 2.500,00\nSon Bakiye: 2.600,00") is None
+    assert page_gap.stated_closing("Closing balance 2.500,00 TL") == 250_000
+
+
+def test_a_half_page_scan_as_the_last_page_holds_and_a_logo_is_a_note(tmp_path, monkeypatch):
+    held, detail, meta = outcome(tmp_path, monkeypatch, lambda doc: statement(doc, last=half_scan_page))
+    assert meta["pages_scan"] == [3] and held is True and f"3. {SCAN_TR}" in detail
+    held, detail, meta = outcome(tmp_path, monkeypatch, lambda doc: statement(doc, last=logo_page))
+    assert "pages_scan" not in meta and held is False and f"3. {NOTE_TR}" in detail
+
+
+def test_a_scan_that_was_not_verified_never_gets_the_reassuring_sentence():
+    (entry,) = page_gap.entries({"pages_unread": [3], "pages_scan": [3]})
+    assert entry["state"] == "note" and "satır eksik görünmüyor" not in entry["tr"] and "görsel/boş" not in entry["tr"]
 
 
 # ── The middle ──────────────────────────────────────────────────────────────────────────────
@@ -169,15 +224,15 @@ def test_a_stated_period_end_well_after_the_last_row_is_evidence_and_one_reached
     head = "Hesap Ekstresi\nDönem: 01.03.2026 - 31.03.2026\nTarih Açıklama Tutar Bakiye\n"
     row = "05.03.2026 HAVALE GELEN ODEME ACIKLAMA FATURA 100,00 10.100,00\n"
     short = page_gap.stated_end([(1, head + row)])
-    assert short is not None and short[0] is False and "31.03.2026" in short[1][0]
+    assert short is not None and short[0] == "short" and "31.03.2026" in short[1][0]
     reached = page_gap.stated_end([(1, head + row + "29.03.2026 HAVALE GELEN ODEME ACIKLAMA FATURA 100,00 10.200,00\n")])
-    assert reached is not None and reached[0] is True
+    assert reached is None      # within a week of the period end: never "reached", never evidence either way
     assert page_gap.stated_end([(1, row)]) is None            # nothing stated: no evidence either way
 
 
 def test_a_closing_balance_may_match_the_first_row_of_a_newest_first_statement():
     text = "Son Bakiye: 10.850,00\n03.03.2026 X 100,00 10.850,00\n02.03.2026 X 250,00 10.750,00\n"
-    assert page_gap.stated_end([(1, text)])[0] is True
+    assert page_gap.stated_end([(1, text)])[0] == "exact"
 
 
 def test_balances_chain_in_either_row_order():
