@@ -7,8 +7,6 @@ inside: the delimiter, the header row, the data rows.
 """
 from __future__ import annotations
 
-import csv
-import io
 import re
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -16,6 +14,10 @@ from typing import Any
 
 from app.core.turkish import fold
 from app.parsers.direction import is_summary_phrase
+from app.services.sheet_child import ayirici as _ayirici  # noqa: F401 (re-exported)
+from app.services.sheet_child import (
+    metin_coz,  # noqa: F401 (every door reads text through this one)
+)
 
 _MAX_BASLIK_ARAMA = 25          # a header is never further down than this
 
@@ -51,36 +53,6 @@ def anahtar(baslik: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
 
-def metin_coz(veri: bytes) -> str:
-    """Text of a file as written: UTF-8 (with or without BOM), else Windows-1254, else Latin-1.
-
-    Turkish bank and ERP exports are very often Windows-1254; every door that reads a
-    CSV or text file as text goes through this one, so they cannot disagree.
-    """
-    for enc in ("utf-8-sig", "cp1254"):
-        try:
-            return veri.decode(enc)
-        except UnicodeDecodeError:
-            continue
-    return veri.decode("latin-1")
-
-
-def _ayirici(metin: str) -> str:
-    satirlar = [s for s in metin.splitlines() if s.strip()][:_MAX_BASLIK_ARAMA]
-    best, best_score = ",", -1
-    for d in (";", "\t", ",", "|"):
-        counts = [s.count(d) for s in satirlar]
-        if not counts or max(counts) == 0:
-            continue
-        # The delimiter is the one most lines agree on, weighted by how many
-        # columns that makes: "1.234,56" puts commas in amounts, not in headers.
-        mode = max(set(counts), key=counts.count)
-        score = counts.count(mode) * mode
-        if score > best_score:
-            best, best_score = d, score
-    return best
-
-
 def satirlari_oku(veri: bytes, uzanti: str) -> list[tuple[str | None, list[list[Any]]]]:
     """Every sheet's rows, as (sheet name, rows). CSV is a single unnamed sheet."""
     uzanti = uzanti.lower().lstrip(".")
@@ -89,25 +61,11 @@ def satirlari_oku(veri: bytes, uzanti: str) -> list[tuple[str | None, list[list[
             "Bu eski Excel biçimi (.xls) okunamıyor. Dosyayı Excel'de açıp "
             "'Farklı Kaydet → Excel Çalışma Kitabı (.xlsx)' ile kaydedip tekrar yükleyin."
         )
-    if uzanti == "xlsx":
-        import openpyxl
+    if uzanti in ("xlsx", "csv", "txt"):
+        # The bytes are parsed in the child process (sheet_isolation): zip and XML bombs never reach this one.
+        from app.services.sheet_isolation import read_sheets
 
-        try:
-            wb = openpyxl.load_workbook(io.BytesIO(veri), read_only=True, data_only=True)
-        except Exception as exc:
-            raise OkunamayanDosya("Excel dosyası açılamadı; bozuk ya da parola korumalı olabilir.") from exc
-        try:
-            out = []
-            for ws in wb.worksheets:
-                rows = [list(r) for r in ws.iter_rows(values_only=True)]
-                out.append((ws.title, rows))
-            return out
-        finally:
-            wb.close()
-    if uzanti in ("csv", "txt"):
-        metin = metin_coz(veri)
-        reader = csv.reader(io.StringIO(metin), delimiter=_ayirici(metin))
-        return [(None, [list(r) for r in reader])]
+        return read_sheets(veri, uzanti)
     raise OkunamayanDosya(f".{uzanti} bir tablo dosyası değil.")
 
 

@@ -46,6 +46,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from app.services import pdf_isolation
+
 logger = logging.getLogger(__name__)
 
 # Minimum character count to consider native text extraction successful
@@ -69,6 +71,7 @@ class PageResult:
     word_count: int
     has_tables: bool = False
     warnings: list[str] = field(default_factory=list)
+    had_content: bool = True   # False for a page with no text layer and no image: blank, not "unread"
 
 
 @dataclass
@@ -83,6 +86,7 @@ class OCRResult:
     has_tables: bool = False
     warnings: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
+    embedded_xml: list[str] = field(default_factory=list)   # e-Belge XML attachments, read in the child (pdf_embedded)
 
     @property
     def is_reliable(self) -> bool:
@@ -142,6 +146,8 @@ def _try_pdfplumber_extraction(file_path: str, page_num: int) -> tuple[str, floa
     except ImportError:
         logger.debug("pdfplumber not installed — skipping table extraction")
         return "", 0.0, False
+    except MemoryError:
+        raise   # a resource limit is not an empty page: the document outcome says so (_extract_in_process)
     except Exception as e:
         logger.debug("pdfplumber extraction failed for page %d: %s", page_num, e)
         return "", 0.0, False
@@ -160,10 +166,16 @@ def _try_tesseract_ocr(page: Any, dpi: int = _TESSERACT_DPI) -> tuple[str, float
         import pytesseract
         from PIL import Image
 
-        # Render page to pixmap (PNG)
-        mat = page.get_pixmap(dpi=dpi)
-        img_bytes = mat.tobytes("png")
-        image = Image.open(io.BytesIO(img_bytes))
+        # PyMuPDF renders the page to PNG here, so Pillow only decodes a PNG this process just produced;
+        # the allow-list and the pixel ceiling keep it that way and bound a huge page.
+        limit = pdf_isolation.MAX_RENDER_PIXELS
+        pixels = (page.rect.width * dpi / 72) * (page.rect.height * dpi / 72)
+        if pixels > limit:
+            logger.warning("OCR skipped: page would render to %.0f pixels (limit %d)", pixels, limit)
+            return "", 0.0
+        Image.MAX_IMAGE_PIXELS = limit
+        img_bytes = page.get_pixmap(dpi=dpi).tobytes("png")
+        image = Image.open(io.BytesIO(img_bytes), formats=["PNG"])
 
         # Run Tesseract with Turkish + English
         # --oem 3: best engine (LSTM), --psm 6: assume uniform block of text
@@ -174,6 +186,7 @@ def _try_tesseract_ocr(page: Any, dpi: int = _TESSERACT_DPI) -> tuple[str, float
             image,
             config=custom_config,
             output_type=pytesseract.Output.DICT,
+            timeout=pdf_isolation.ocr_timeout(),  # a page that takes longer is skipped, never left running
         )
 
         # Extract text and compute mean confidence
@@ -197,9 +210,20 @@ def _try_tesseract_ocr(page: Any, dpi: int = _TESSERACT_DPI) -> tuple[str, float
     except ImportError:
         logger.debug("pytesseract or Pillow not installed — OCR skipped")
         return "", 0.0
+    except MemoryError:
+        raise
     except Exception as e:
+        if _tesseract_ran_out_of_memory(e):   # Tesseract inherits the child's limit: its failed malloc is a memory failure
+            raise MemoryError(str(e)) from e
         logger.warning("Tesseract OCR failed: %s", e)
         return "", 0.0
+
+
+def _tesseract_ran_out_of_memory(exc: Exception) -> bool:
+    """Tesseract was ended by a failed allocation (SIGABRT/SIGKILL exit status, or `bad_alloc` / "memory" in its message)."""
+    status = getattr(exc, "status", None)
+    text = str(exc).lower()
+    return status in (-6, -9, 134, 137) or "bad_alloc" in text or "cannot allocate memory" in text or "out of memory" in text
 
 
 def _clean_ocr_text(text: str) -> str:
@@ -236,6 +260,69 @@ def _clean_ocr_text(text: str) -> str:
 
 
 def extract_text_from_pdf(file_path: str, force_ocr: bool = False) -> OCRResult:
+    """Extract text from a PDF: size cap, then a child process with a timeout (see pdf_isolation).
+
+    Never raises for a bad file and never returns an empty success: a refused, crashed or timed-out
+    parse is a result with strategy "failed", no text and a Turkish "PDF okunamadı: ..." warning.
+    """
+    result: OCRResult = pdf_isolation.guarded_extract(file_path, force_ocr)
+    return result
+
+
+def _read_page(doc: Any, file_path: str, page_num: int, force_ocr: bool) -> PageResult:
+    """One page by the best available strategy. A MemoryError is NOT caught here (see `_extract_in_process`)."""
+    page = doc[page_num]
+    best_text = ""
+    best_conf = 0.0
+    best_strategy = "failed"
+    page_has_tables = False
+    page_warnings: list[str] = []
+
+    if not force_ocr:
+        # Strategy 1: Native text layer
+        native_text, native_conf = _try_native_extraction(page)
+        if native_conf >= 0.70:
+            best_text = native_text
+            best_conf = native_conf
+            best_strategy = "native"
+
+        # Strategy 2: pdfplumber (better for tables)
+        if best_conf < 0.80:
+            pl_text, pl_conf, has_tables = _try_pdfplumber_extraction(file_path, page_num)
+            if pl_conf > best_conf:
+                best_text = pl_text
+                best_conf = pl_conf
+                best_strategy = "pdfplumber"
+                page_has_tables = has_tables
+
+    # Strategy 3: Tesseract OCR (for scanned pages)
+    if force_ocr or best_conf < 0.60:
+        pdf_isolation.ocr_started()
+        ocr_text, ocr_conf = _try_tesseract_ocr(page)
+        if ocr_conf > best_conf:
+            best_text = _clean_ocr_text(ocr_text)
+            best_conf = ocr_conf
+            best_strategy = "tesseract"
+        elif ocr_conf == 0.0 and best_conf < 0.60:
+            page_warnings.append(
+                f"Sayfa {page_num + 1}: metin okunamadı (OCR yok, zaman aşımı ya da düşük güven). "
+                "Page text could not be read."
+            )
+
+    return PageResult(
+        had_content=(not page_warnings) or bool(page.get_images()) or bool(page.get_text("text").strip()),
+        page_num=page_num,
+        text=best_text,
+        confidence=best_conf,
+        strategy=best_strategy,
+        char_count=len(best_text),
+        word_count=len(best_text.split()) if best_text else 0,
+        has_tables=page_has_tables,
+        warnings=page_warnings,
+    )
+
+
+def _extract_in_process(file_path: str, force_ocr: bool = False) -> OCRResult:
     """
     Extract text from a PDF using the best available strategy.
 
@@ -278,6 +365,8 @@ def extract_text_from_pdf(file_path: str, force_ocr: bool = False) -> OCRResult:
     try:
         with fitz.open(file_path) as doc:
             page_count = doc.page_count
+            if page_count > pdf_isolation.max_pages():
+                return pdf_isolation.refused(file_path, "pdf_too_many_pages", pages=page_count, limit=pdf_isolation.max_pages())
             doc_meta = {
                 "title": doc.metadata.get("title", ""),
                 "author": doc.metadata.get("author", ""),
@@ -286,70 +375,22 @@ def extract_text_from_pdf(file_path: str, force_ocr: bool = False) -> OCRResult:
             }
 
             for page_num in range(page_count):
-                page = doc[page_num]
-                best_text = ""
-                best_conf = 0.0
-                best_strategy = "failed"
-                page_has_tables = False
-                page_warnings: list[str] = []
+                try:
+                    page_result = _read_page(doc, file_path, page_num, force_ocr)
+                except MemoryError:
+                    # NOT an empty page: the document is refused and the message names the pages not read.
+                    logger.warning("PDF parse hit its memory limit on page %d of %d: %s", page_num + 1, page_count, path.name)
+                    return pdf_isolation.refused(file_path, "pdf_memory", **pdf_isolation.memory_pages(page_num + 1, page_count))
+                page_results.append(page_result)
+                all_warnings.extend(page_result.warnings)
+                doc_has_tables = doc_has_tables or page_result.has_tables
 
-                if not force_ocr:
-                    # Strategy 1: Native text layer
-                    native_text, native_conf = _try_native_extraction(page)
-                    if native_conf >= 0.70:
-                        best_text = native_text
-                        best_conf = native_conf
-                        best_strategy = "native"
-
-                    # Strategy 2: pdfplumber (better for tables)
-                    if best_conf < 0.80:
-                        pl_text, pl_conf, has_tables = _try_pdfplumber_extraction(file_path, page_num)
-                        if pl_conf > best_conf:
-                            best_text = pl_text
-                            best_conf = pl_conf
-                            best_strategy = "pdfplumber"
-                            page_has_tables = has_tables
-
-                # Strategy 3: Tesseract OCR (for scanned pages)
-                if force_ocr or best_conf < 0.60:
-                    ocr_text, ocr_conf = _try_tesseract_ocr(page)
-                    if ocr_conf > best_conf:
-                        best_text = _clean_ocr_text(ocr_text)
-                        best_conf = ocr_conf
-                        best_strategy = "tesseract"
-                    elif ocr_conf == 0.0 and best_conf < 0.60:
-                        page_warnings.append(
-                            f"Page {page_num + 1}: Low confidence text extraction. "
-                            "Install pytesseract for better results."
-                        )
-
-                if page_has_tables:
-                    doc_has_tables = True
-
-                word_count = len(best_text.split()) if best_text else 0
-                page_results.append(PageResult(
-                    page_num=page_num,
-                    text=best_text,
-                    confidence=best_conf,
-                    strategy=best_strategy,
-                    char_count=len(best_text),
-                    word_count=word_count,
-                    has_tables=page_has_tables,
-                    warnings=page_warnings,
-                ))
-                all_warnings.extend(page_warnings)
-
-    except Exception as e:
+    except MemoryError:   # opening or walking the document itself ran out of memory
+        logger.warning("PDF parse hit its memory limit: %s", path.name)
+        return pdf_isolation.refused(file_path, "pdf_memory")
+    except Exception:
         logger.exception("PDF extraction failed for %s", file_path)
-        return OCRResult(
-            text="",
-            confidence=0.0,
-            strategy_used="failed",
-            page_count=0,
-            page_results=[],
-            file_path=file_path,
-            warnings=[f"PDF extraction error: {e}"],
-        )
+        return pdf_isolation.refused(file_path, "pdf_unreadable")  # the exception text may name server paths: log only
 
     # Combine all page texts
     full_text = "\n\n".join(
@@ -375,6 +416,10 @@ def extract_text_from_pdf(file_path: str, force_ocr: bool = False) -> OCRResult:
     strategies = [pr.strategy for pr in page_results if pr.strategy != "failed"]
     from collections import Counter
     dominant_strategy = Counter(strategies).most_common(1)[0][0] if strategies else "failed"
+
+    unread_pages = [pr.page_num + 1 for pr in page_results if pr.warnings and pr.had_content]
+    if unread_pages:   # pages that yielded nothing: shown to the user as not read (pdf_isolation.apply_pdf_notes)
+        doc_meta["pages_unread"] = unread_pages
 
     result = OCRResult(
         text=full_text,

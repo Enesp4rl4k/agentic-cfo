@@ -296,6 +296,20 @@ describe("Nakit Radarı", () => {
     expect((await screen.findByTestId("runway-value")).textContent).toBe("1 aydan az");
   });
 
+  it("says cash that is already gone as that, known or assumed, never as 'under a month'", async () => {
+    getCashRadar.mockResolvedValue(radar({
+      runway: runway({ level: "critical", runway_months: 0, cash_gone: true, opening_cash_cents: -100_00, message: "KRİTİK: Kasa bakiyesi sıfır ya da altında: nakit bitmiş" }),
+    }));
+    const first = show();
+    expect((await screen.findByTestId("runway-value")).textContent).toBe("Nakit bitmiş");
+    first.unmount();
+    getCashRadar.mockResolvedValue(radar({
+      runway: runway({ level: "warning", basis: "assumed", attention: true, runway_months: 0, cash_gone: true, message: "DİKKAT: Son ekstreye göre nakit bitmiş görünüyor" }),
+    }));
+    show();
+    expect((await screen.findByTestId("runway-value")).textContent).toBe("Son ekstreye göre nakit bitmiş görünüyor");
+  });
+
   it("says unknown with no figure when there is no proven balance, and names the statement that failed", async () => {
     getCashRadar.mockResolvedValue(radar({
       starting_cash_cents: null,

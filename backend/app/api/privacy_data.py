@@ -76,6 +76,7 @@ async def overview(current_user: User = Depends(get_current_user), db: AsyncSess
                           for k, v in THIRD_PARTIES.items()],
         "notices": await notices.status(db, str(current_user.id)),
         "cooling_off_days": settings.erasure_cooling_off_days,
+        "support_contact": settings.support_contact.strip() or None,  # shown when an erasure failed; null: not configured
         "retention": {
             "platform": retention.platform_policy(), "effective": retention.effective_policy(org),
             "company_choice": (org.retention_policy if org is not None else None) or {},

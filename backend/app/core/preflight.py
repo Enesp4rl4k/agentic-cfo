@@ -75,6 +75,27 @@ def _looks_like_placeholder(value: str) -> bool:
     return not lowered or any(marker in lowered for marker in _PLACEHOLDER_MARKERS)
 
 
+def _notice_url_problem(url: str, *, https_only: bool) -> str | None:
+    """Why a notice link cannot be opened by a person, or None. Absolute, a real host, `https` (`http` only outside production)."""
+    from urllib.parse import urlsplit
+
+    if not url.strip():
+        return "is unset"
+    try:
+        parts = urlsplit(url)
+        host = parts.hostname
+    except ValueError:
+        return "is not a valid URL"
+    if url != url.strip() or any(c.isspace() for c in url):
+        return "contains whitespace"
+    allowed = ("https",) if https_only else ("https", "http")
+    if parts.scheme not in allowed:
+        return "must be an absolute " + ("https" if https_only else "http(s)") + " URL"
+    if not host:
+        return "has no host"
+    return None
+
+
 def _is_localhost(url: str) -> bool:
     lowered = url.strip().lower()
     return "localhost" in lowered or "127.0.0.1" in lowered or "[::1]" in lowered
@@ -136,6 +157,14 @@ def _exposure_findings(settings: Settings, env: Mapping[str, str]) -> list[Findi
             "ERASURE_PSEUDONYM_SECRET is unset: erased members' pseudonyms would be derived from BACKEND_SECRET_KEY, which the "
             "rotate-secret runbook rotates, so the same person would get a different handle afterwards. Set it once "
             "to its own random value (docs/ops/runbooks/rotate-secret.md) and never rotate it."))
+    for var, url in (("PRIVACY_NOTICE_URL", settings.privacy_notice_url), ("TERMS_URL", settings.terms_url)):
+        problem = _notice_url_problem(url, https_only=declared)
+        if problem:
+            out.append(explicit(
+                "no_notice_url",
+                f"{var} {problem}: the sign-in prompt would ask people to accept a text they cannot open, and the "
+                "acceptance record would be evidence of nothing. Set the public https link of the published text "
+                "(docs/kvkk/muhendislik-notlari.md)."))
     for name, value in (("FRONTEND_URL", settings.frontend_url), ("BRAND_APP_URL", settings.brand_app_url)):
         if _is_localhost(value):
             out.append(explicit("links_localhost", f"{name} points at localhost: every e-mailed link (verification, reset, invite) would be dead."))
@@ -208,7 +237,62 @@ def _degraded_findings(settings: Settings, env: Mapping[str, str]) -> list[Findi
     return out
 
 
-def check_settings(settings: Settings, environ: Mapping[str, str] | None = None) -> list[Finding]:
+# cgroup memory limit files: v2 first, then v1. Tests point this at a temporary directory.
+_CGROUP_LIMIT_FILES = (
+    Path("/sys/fs/cgroup/memory.max"),
+    Path("/sys/fs/cgroup/memory/memory.limit_in_bytes"),
+)
+_CGROUP_UNLIMITED = 1 << 60   # v1 reports "no limit" as a number near 2**63
+
+
+def cgroup_memory_limit_mb() -> int | None:
+    """The container's memory limit in MB from the cgroup (v2 `memory.max`, v1 `memory.limit_in_bytes`);
+    None when there is none, or the files are absent (Windows, macOS, a bare host): then nothing is said."""
+    for path in _CGROUP_LIMIT_FILES:
+        try:
+            raw = path.read_text(encoding="ascii").strip()
+        except (OSError, UnicodeDecodeError):
+            continue
+        if raw.isdigit() and 0 < int(raw) < _CGROUP_UNLIMITED:
+            return int(raw) // (1024 * 1024)
+        return None   # "max" (v2) or an unlimited v1 value: this file is the answer
+    return None
+
+
+# The processes that run parser children (a PDF or spreadsheet read on an upload). The migrate job, `--db` checks and
+# the maintenance worker never do, so the sizing rule does not apply to them.
+PARSING_PROCESSES = frozenset({"api", "worker"})
+
+
+def _parser_memory_findings(settings: Settings, process: str | None) -> list[Finding]:
+    """Parser children must fit in the container (docs/ops/parser-sizing.md): past its memory limit the
+    kernel's OOM killer decides what dies, and it may pick the API process itself, not the child.
+
+    The quantity is the child's expected RESIDENT set (`PARSE_CHILD_RSS_MB`, measured peak x headroom), not its
+    `RLIMIT_AS`, which counts address space and is only a generous backstop. Only for a process that parses."""
+    if process not in PARSING_PROCESSES:
+        return []
+    limit = cgroup_memory_limit_mb()
+    if limit is None:
+        return []
+    rss = settings.parse_child_rss_mb
+    procs = max(1, settings.parse_process_count) if process == "api" else 1   # an arq worker is one process
+    slots = max(1, settings.pdf_parse_concurrency)
+    worst = rss * slots * procs
+    if rss >= limit:
+        return [_fatal("parser_memory_impossible", (
+            f"A parser child may use {rss} MB resident (PARSE_CHILD_RSS_MB) and this container is limited to {limit} MB: "
+            f"one parse alone would end in the kernel's OOM killer, which may kill the API process. "
+            f"Raise the container's memory limit (docs/ops/parser-sizing.md)."))]
+    if worst > limit:
+        return [_warn("parser_memory_exceeds_container", (
+            f"Parser children can use {rss} MB x PDF_PARSE_CONCURRENCY {slots} x {procs} process(es) "
+            f"= {worst} MB, over this container's {limit} MB limit: a burst of uploads may be ended by the OOM "
+            f"killer, not by the per-child limit. Raise the container limit or lower the concurrency (docs/ops/parser-sizing.md)."))]
+    return []
+
+
+def check_settings(settings: Settings, environ: Mapping[str, str] | None = None, process: str | None = None) -> list[Finding]:
     """Every finding for these settings. Pure: logs nothing, raises nothing."""
     env = os.environ if environ is None else environ
     findings = [
@@ -217,18 +301,19 @@ def check_settings(settings: Settings, environ: Mapping[str, str] | None = None)
         *_exposure_findings(settings, env),
         *_mail_findings(settings, env),
         *_degraded_findings(settings, env),
+        *_parser_memory_findings(settings, process),
     ]
     if settings.use_sqlite and app_env(env) in _PRODUCTION_ENVS:
         findings.append(_fatal("sqlite_in_production", f"APP_ENV={app_env(env)} with USE_SQLITE=true: a development database must not hold company data."))
     return findings
 
 
-def enforce(settings: Settings, environ: Mapping[str, str] | None = None) -> list[Finding]:
+def enforce(settings: Settings, environ: Mapping[str, str] | None = None, process: str | None = None) -> list[Finding]:
     """Log every finding; raise `PreflightError` for fatal ones in production.
 
     Outside production a fatal finding is logged as a warning (and returned) so development is not
     blocked. Returns the findings so a caller can show them."""
-    findings = check_settings(settings, environ)
+    findings = check_settings(settings, environ, process)
     production = is_production(settings, environ)
     fatal = [f for f in findings if f.severity == FATAL]
     for finding in findings:
@@ -251,7 +336,7 @@ def enforce_or_exit(settings: Settings, *, process: str) -> list[Finding]:
     if _enforced:
         return []
     try:
-        findings = enforce(settings)
+        findings = enforce(settings, process=process)
     except PreflightError as err:
         logger.critical("%s process: STARTUP ABORTED — %s", process, err)
         raise SystemExit(1) from err

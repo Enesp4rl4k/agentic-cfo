@@ -15,6 +15,7 @@ import { OrgSwitcher } from "@/components/ui/org-switcher";
 import { ThemeIconToggle } from "@/components/ui/theme-toggle";
 import { CommandPaletteTrigger } from "@/components/ui/command-palette";
 import { DocumentLang } from "@/components/ui/document-lang";
+import { NoticeGate } from "@/components/privacy/NoticeGate";
 
 // PERF: Lazy load heavy overlay components
 const AgentChatPanel = dynamic(
@@ -336,7 +337,16 @@ function Breadcrumb({ pathname }: { pathname: string }) {
 
 // ── Layout ────────────────────────────────────────────────────────────────────
 
-export default function DashboardLayout({
+// The app is not rendered at all while a current privacy-notice version is unaccepted (`NoticeGate`).
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <NoticeGate>
+      <DashboardShell>{children}</DashboardShell>
+    </NoticeGate>
+  );
+}
+
+function DashboardShell({
   children,
 }: {
   children: React.ReactNode;

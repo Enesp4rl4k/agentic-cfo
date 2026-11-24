@@ -67,6 +67,7 @@ app_env() {
   # APP_ENV is required with Postgres, and invite-only registration needs a mail sender (never used here).
   export APP_ENV=production SMTP_USER=roundtrip
   ERASURE_PSEUDONYM_SECRET="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"; export ERASURE_PSEUDONYM_SECRET  # production preflight requires its own value
+  export PRIVACY_NOTICE_URL="https://app.roundtrip.test/aydinlatma" TERMS_URL="https://app.roundtrip.test/kosullar"  # production preflight requires both
   SMTP_PASSWORD="$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' ')"; export SMTP_PASSWORD
 }
 in_backend() { (cd "$REPO_ROOT/backend" && "$@"); }

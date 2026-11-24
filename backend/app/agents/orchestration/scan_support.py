@@ -1,6 +1,8 @@
 """Small helpers of the hourly KRI scan, kept out of `proactive_alerts.py` (file-size ceiling)."""
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -8,19 +10,40 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
-def kri_key(kri: dict[str, Any], siblings: list[dict[str, Any]]) -> str:
-    """The part of a deterministic alert id that names one KRI.
+_DEFINING = ("category", "unit", "threshold_amber", "threshold_red", "higher_is_worse", "source")
+_VOLATILE = ("current_value", "evidence", "status")
 
-    The KRI's own stable id when it carries one; otherwise its name plus its position among the
-    same-named KRIs of the list, so two same-named KRIs of one kind do not collapse into one alert. The
-    list order is the scan's own (stable across the retry of a slot), so a retry derives the same key."""
+
+def _digest(parts: object) -> str:
+    return hashlib.sha256(json.dumps(parts, sort_keys=True, default=str, ensure_ascii=True).encode("utf-8")).hexdigest()[:10]
+
+
+def kri_key(kri: dict[str, Any], siblings: list[dict[str, Any]]) -> str:
+    """The part of a deterministic alert id that names one KRI, independent of the order of the list.
+
+    The KRI's own stable id when it carries one. Otherwise its name plus a short hash of what DEFINES it
+    (category, unit, thresholds, direction, source), so two same-named KRIs that differ in their definition never
+    share a key and neither key depends on a position. Same-named KRIs that are identical in definition (they differ
+    only by value/evidence, which a new analysis can change) are told apart by their rank under a stable sort of
+    that content, never by list position: a retry after the list was reordered derives the same keys."""
     for field in ("id", "kri_id"):
         if kri.get(field) not in (None, ""):
             return f"id:{kri[field]}"
     name = str(kri.get("name", ""))
-    same = [k for k in siblings if str(k.get("name", "")) == name]
-    position = next((i for i, k in enumerate(same) if k is kri), 0)
-    return name if position == 0 else f"{name}#{position}"
+    base = f"{name}~{_digest([kri.get(f) for f in _DEFINING])}"
+    group = [k for k in siblings if k.get("name") == kri.get("name")
+             and [k.get(f) for f in _DEFINING] == [kri.get(f) for f in _DEFINING]]
+    if not any(k is kri for k in group) or len(group) == 1:
+        return base
+    rank = next(i for i, k in enumerate(sorted(group, key=lambda k: _digest([k.get(f) for f in _VOLATILE]))) if k is kri)
+    return base if rank == 0 else f"{base}#{rank}"
+
+
+def kri_alert_words(name: str, val: Any, unit: str, *, critical: bool) -> tuple[str, str]:
+    """Title and opening line of a KRI alert: "kritik" only for a critical one; a capped one says DİKKAT."""
+    if critical:
+        return f"🚨 {name}: {val} {unit} — Kırmızı Eşik Aşıldı", f"**{name}** metrigi kritik seviyeye ulasti.\n\n"
+    return f"⚠ {name}: {val} {unit} — DİKKAT", f"**{name}** metrigi dikkat gerektiriyor (dayanağı varsayıma dayanıyor).\n\n"
 
 
 async def active_orgs(db: Any) -> list[str]:

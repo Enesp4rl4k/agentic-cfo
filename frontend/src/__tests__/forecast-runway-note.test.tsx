@@ -51,6 +51,13 @@ describe("forecast runway note", () => {
     expect(screen.getByTestId("forecast-runway-upload").getAttribute("href")).toBe("/upload");
   });
 
+  it("says cash that is already gone as that in the table and the summary", () => {
+    box.current = dashboard({ stale: false, runway_months: 0, level: "critical", cash_gone: true, basis: "known" }, 1);
+    render(<ForecastPage />);
+    expect(screen.getAllByText("Nakit bitmiş").length).toBeGreaterThan(0);
+    expect(screen.queryByText("1 ay")).toBeNull();
+  });
+
   it("has no upload link when the balance is current, and says under a month as that", () => {
     box.current = dashboard({ stale: false, runway_months: 0, level: "critical" }, 0);
     render(<ForecastPage />);

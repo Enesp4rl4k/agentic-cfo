@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.config import get_settings
 from app.models.decision import Decision, DecisionKind
@@ -111,9 +111,13 @@ async def test_the_operator_route_needs_an_operator_and_never_skips_the_window(c
     monkeypatch.setattr(get_settings(), "erasure_cooling_off_days", 0)
     owner, org, _ = await _owner_company(client, "company@example.com")
     ops, _, _ = await kullanici(client, "ops@example.com", attach_org=False, role="analyst")
-    body = {"org_id": org, "verification_ref": "TICKET-42"}
+    body = {"org_id": org, "verification_ref": "TICKET-42", "confirmation_phrase": "ERASE company"}
     assert (await client.post(OP, json=body, headers=owner)).status_code == 403
     assert (await client.post(OP, json={**body, "org_id": "nope"}, headers=ops)).status_code == 404
+    assert (await client.post(OP, json={"org_id": org, "verification_ref": "TICKET-42"}, headers=ops)).status_code == 422  # phrase required
+    assert (await client.post(OP, json={**body, "confirmation_phrase": "erase company please"}, headers=ops)).status_code == 422
+    async with client._maker() as db:
+        assert (await db.execute(select(func.count()).select_from(OrgErasureRequest))).scalar_one() == 0  # refusals leave nothing
     ok = await client.post(OP, json=body, headers=ops)
     assert ok.status_code == 200 and ok.json()["data"]["status"] == "scheduled"  # not executed although the window is 0
     rid = ok.json()["data"]["request_id"]
@@ -121,6 +125,8 @@ async def test_the_operator_route_needs_an_operator_and_never_skips_the_window(c
         req = await db.get(OrgErasureRequest, rid)
         assert req.initiated_by == "operator" and req.verification_ref == "TICKET-42"
         assert req.execute_after - req.confirmed_at >= timedelta(hours=23)
+        rec = (await db.execute(select(Decision).where(Decision.target_id == rid, Decision.outcome == "scheduled"))).scalar_one()
+        assert rec.decided_by == str(req.requested_by_user_id) and rec.after["acting_role"] == "platform_operator"
         note = (await db.execute(select(InAppNotification).where(InAppNotification.org_id == org))).scalars().all()
         assert note and "iptal" in note[0].message
     listing = (await client.get("/api/v1/privacy/erasure-requests", headers=owner)).json()["data"]["requests"]

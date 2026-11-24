@@ -172,6 +172,7 @@ function Runway({ radar, copy, locale }: { radar: CashRadar; copy: Copy; locale:
       months={runway.runway_months ?? null}
       text={runway.message}
       attention={runway.attention}
+      cashGone={runway.cash_gone}
       uploadHref={runway.stale ? runway.upload_path : null}
       copy={copy}
       locale={locale}

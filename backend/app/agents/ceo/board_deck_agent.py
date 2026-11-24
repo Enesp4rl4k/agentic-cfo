@@ -37,7 +37,7 @@ from typing import Any
 
 from app.agents.ceo.state import CEORunConfig, CEOSkillResult, CEOState
 from app.core.currency_totals import fmt_compact
-from app.services.runway_display import view_from_fin
+from app.services.runway_display import RunwayView, view_from_fin
 
 logger = logging.getLogger(__name__)
 
@@ -80,18 +80,23 @@ def _score_cell(score: float | None) -> tuple[str, str]:
     return f"{score:.1f}/10", _health_label(score)
 
 
-def _runway_momentum(runway: float | None) -> str | None:
+def _runway_momentum(view: RunwayView) -> str | None:
     """Arrow for a measured runway; None when it is unknown (no claim)."""
-    if runway is None:
+    if view.months is None:
         return None
-    return "↓" if runway < 12 else "→"
+    return "↓" if view.in_sight else "→"
 
 
-def _runway_alert(runway: float | None) -> str | None:
-    """critical < 6 months, high < 12; None when unknown — never a made-up alarm."""
-    if runway is None or runway >= 12:
-        return None
-    return "critical" if runway < 6 else "high"
+def _runway_alert(view: RunwayView) -> str | None:
+    """The runway's own class (`runway.level_for_months`, critical only when proven); None when it has none —
+    never a made-up alarm."""
+    return view.severity
+
+
+def _runway_value(view: RunwayView) -> str:
+    if view.months is None:
+        return "Sınır yok / ölçülmedi"
+    return view.short() if view.gone else f"{view.months:.1f} ay"
 
 
 def _score_line(score: float | None) -> str:
@@ -213,7 +218,7 @@ def _build_slides(
     # "5.0/10 — Orta" tech score, and an unknown runway (profitable, or not
     # measured) printed "0.0 months" with a critical alert — on a board deck.
     health_score: float | None = tech.get("overall_health_score")
-    runway: float | None = fin.get("cash_runway_months")
+    runway_view = view_from_fin(fin)
     revenue = fin.get("revenue_cents") or 0
     net_income = fin.get("net_income_cents") or 0
     net_margin = fin.get("net_margin") or 0.0
@@ -259,9 +264,10 @@ def _build_slides(
             },
             {
                 "label": "Nakit Pisti",
-                "value": f"{runway:.1f} ay" if runway is not None else "Sınır yok / ölçülmedi",
-                "momentum": _runway_momentum(runway),
-                "alert": "critical" if runway is not None and runway < 6 else None,
+                "value": _runway_value(runway_view),
+                "momentum": _runway_momentum(runway_view),
+                "alert": _runway_alert(runway_view),
+                **({"sub": "izlemede"} if runway_view.watch else {}),
                 "confidence": 0.88,
             },
             {
@@ -459,8 +465,9 @@ def _build_slides(
             },
             {
                 "label": "Nakit Pisti",
-                "value": f"{runway:.1f} ay" if runway is not None else "Sınır yok / ölçülmedi",
-                "alert": _runway_alert(runway),
+                "value": _runway_value(runway_view),
+                "alert": _runway_alert(runway_view),
+                **({"sub": "izlemede"} if runway_view.watch else {}),
             },
             {
                 "label": "Aylık Kullanım",
@@ -474,7 +481,7 @@ def _build_slides(
         ],
         "narrative": (
             f"12 aylık temel tahmin: {fin_money(forecast_12m)}. "
-            f"{'Pisti kısıtı birinci dereceden risk.' if runway and runway <= 6 else 'Finansal trajektori stabil.'} "
+            f"{'Pisti kısıtı birinci dereceden risk.' if runway_view.level else 'Finansal trajektori stabil.'} "
             f"{f'Cloud optimizasyonu pistiye {runway_gain_months} ay ekleyebilir.' if runway_gain_months else ''}"
         ).strip(),
     })

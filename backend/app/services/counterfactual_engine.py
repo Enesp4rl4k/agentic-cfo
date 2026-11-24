@@ -37,6 +37,8 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+from app.services.runway_display import runway_for_display
+
 logger = logging.getLogger(__name__)
 
 
@@ -132,8 +134,9 @@ class CounterfactualEngine:
         self.monthly_net_cash = known(self.cashflow, "net_change", "nakit akışı") / 100 / 12
 
         # Nakit ömrü (runway)
-        base_sc = (self.forecast.get("scenarios") or {}).get("base") or {}
-        self.runway_months = base_sc.get("runway_months")
+        # The runway and its class come from the one reader (`runway_display`): critical needs a proven balance.
+        self.runway_view = runway_for_display(self.forecast)
+        self.runway_months = self.runway_view.months
 
     def _need(self, *names: str) -> None:
         """Refuse to compute from inputs the company's data does not carry."""
@@ -214,7 +217,7 @@ class CounterfactualEngine:
 
         # Cashflow risk
         new_monthly_cash = self.monthly_net_cash + scenarios[1].cashflow_impact_monthly
-        if new_monthly_cash < 0 and self.runway_months is not None and self.runway_months < 3:
+        if new_monthly_cash < 0 and self.runway_view.level == "critical":
             cf_risk = "critical"
         elif new_monthly_cash < 0:
             cf_risk = "high"

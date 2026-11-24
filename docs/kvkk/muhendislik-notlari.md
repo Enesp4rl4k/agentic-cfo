@@ -12,10 +12,14 @@ Hukuki görüş değildir; sorular [avukata-sorular.md](avukata-sorular.md)'de, 
 | **Üye silme** (şirket kalır, takma adlı tutma) | `api/member_erasure.py`, `services/privacy/member_erasure.py` | `test_erasure_flow.py` |
 | **Yedekten dönüşte yeniden silme** | `erasure_flow.reapply_erased`, `scripts/reapply_erasures.py` | `test_privacy_breach_and_restore.py` |
 | **Şirket dışa aktarımı** (owner; ZIP, belgelenmiş JSONL + manifest; iş olarak; boyut sınırlı; süreli kimlik doğrulamalı indirme; karar kaydı) ve **üyenin kendi dışa aktarımı** | `services/privacy/export_bundle.py`, `export_flow.py`, `api/privacy_data.py` | `test_privacy_export.py` |
-| **Saklama**: ayarlanabilir, muhafazakâr, idempotent, önce rapor (dry-run), tek şirkete bağlı; defter hiç silinmez | `services/privacy/retention.py`, `jobs.py` | `test_privacy_retention.py` |
-| **Bildirim/aydınlatma sürümü kabulü** (sürüm değişince yeniden sorulur; kabul yalnız Ayarlar > Veri ve gizlilik ekranında kaydedilir, girişten sonra zorunlu istem yok) | `services/privacy/notices.py` | `test_privacy_retention.py` |
+| **Saklama**: ayarlanabilir, muhafazakâr, idempotent, önce rapor (dry-run), tek şirkete bağlı; defter hiç silinmez | `services/privacy/retention.py`, `jobs.py` | `test_privacy_retention.py`, `test_notice_pending.py`, `notice-gate.test.tsx` |
+| **Bildirim/aydınlatma sürümü kabulü** (sürüm değişince yeniden sorulur; girişten sonra ve açık oturumla uygulama yüklenince sunucu bekleyen sürüm bildirirse uygulama yerine bloklayan istem çıkar; kabul yalnızca sunucunun o an yayımladığı sürüm için kaydedilir) | `services/privacy/notices.py` | `test_privacy_retention.py`, `test_notice_pending.py`, `notice-gate.test.tsx` |
 | **Veri ve gizlilik ekranı** | `frontend/src/components/privacy/`, `/settings/privacy` | `privacy-settings.test.tsx` |
 | **İhlal kapsamı** (hangi şirketler, hangi kategoriler) | `services/privacy/breach_scope.py`, `GET /privacy/operator/breach-scope` | aynı dosya; runbook `docs/ops/runbooks/data-breach.md` |
+
+### Aydınlatma istemi yalnızca ön yüzde uygulanır (pilotun bilinçli kapsamı)
+
+`NoticeGate` yalnızca oturum açmış uygulama kabuğunu (`(dashboard)/layout.tsx`) sarar; **API, kabul edilmeden de çağrılabilir**. Sunucu tarafında `require_notice_accepted` benzeri bir kapı yoktur. Pilot için bilinçli sınır: amaç, insanlara metni göstermek ve kabul kanıtını sunucuda yazmaktır; API'yi doğrudan çağıran bir istemci (kendi betiği) istemi görmez. Sunucu tarafı kapı istenirse şunları **muaf tutmak** gerekir: çıkış, `/privacy/notices` uçları (okuma ve kabul), parola sıfırlama, e-posta doğrulama, davet kabulü, oturum yenileme, ve kişinin hakları (kendi verisini dışa aktarma `/privacy/my-data`, üye silme isteği ve iptali, şirket dışa aktarımı ve silme talebinin iptali); yoksa kabul etmeyen biri kendi verisini alamaz ya da silemez. Ayrıca sağlık/hazırlık uçları ve webhook'lar kişi oturumu taşımadığı için kapsam dışıdır. Üretimde `PRIVACY_NOTICE_URL` ve `TERMS_URL` tanımsızsa preflight başlamayı reddeder; böylece kimse açılamayan bir metni kabul etmez.
 
 ## Silmede bulunan ve kapatılan açıklar
 

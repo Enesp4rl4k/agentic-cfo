@@ -98,7 +98,10 @@ async def test_a_failed_backup_report_alerts_once_per_day(client, monkeypatch):
 
 
 async def test_a_stale_backup_alerts_only_when_reporting_is_in_use(client, monkeypatch):
-    now = datetime.now(UTC)
+    # A fixed `now` one minute into an alert window: with the real clock, 31 h and 31 h 15 min later straddled
+    # a window boundary about one run in twenty-four, and the "same window" check saw two mails.
+    window = max(1, get_settings().operator_alert_cooldown_minutes) * 60
+    now = datetime.fromtimestamp(1_800_000_000 // window * window + 60, tz=UTC)
     assert await ops_watch.watch(now) >= 0
     assert not [r for r in await alert_rows(client) if "Yedek raporu" in r.subject]  # no token: nothing claimed
     monkeypatch.setattr(get_settings(), "ops_report_token", "tok-" + "z" * 20)
@@ -153,8 +156,16 @@ async def test_a_failing_destination_alerts_without_the_address(client):
     assert len(mails) == 1 and "org=org-1" in mails[0].body and "gizli@firma.com" not in mails[0].body
 
 
-async def test_preflight_warnings_are_sent_once_per_window(client):
-    now = datetime.now(UTC)
+async def test_preflight_warnings_are_sent_once_per_window(client, monkeypatch):
+    # No real clock and no live preflight: a `now` that straddled a cool-down bucket, or a Redis
+    # timeout that changed the set of warnings between the two calls, sent two mails.
+    monkeypatch.setattr(
+        preflight,
+        "check_settings",
+        lambda _settings, _environ=None: [preflight.Finding("no_llm_key", preflight.WARN, "stub")],
+    )
+    window = max(1, get_settings().operator_alert_cooldown_minutes) * 60
+    now = datetime.fromtimestamp(1_800_000_000 // window * window + 60, tz=UTC)  # one minute into a window
     await ops_watch.watch(now)
     await ops_watch.watch(now + timedelta(minutes=15))
     mails = [r for r in await alert_rows(client) if "Başlangıç denetimi" in r.subject]
@@ -267,4 +278,5 @@ def test_the_worker_module_runs_the_same_preflight():
     from pathlib import Path
 
     source = (Path(__file__).resolve().parents[1] / "app" / "worker.py").read_text(encoding="utf-8")
-    assert 'enforce_or_exit(get_settings(), process="worker")' in source
+    # "worker" for the analysis worker; the maintenance worker (no uploads parsed) is named apart for the parser memory rule.
+    assert "enforce_or_exit(get_settings(), process=" in source and 'else "worker")' in source

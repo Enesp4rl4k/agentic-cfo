@@ -526,6 +526,7 @@ def _extract_relevant_data(context: dict[str, Any], domain: str) -> dict[str, An
         view = runway_for_display(forecast)
         result["runway_months"] = view.months
         result["runway_text"] = view.text()
+        result["runway_class"] = view.class_name
 
     # Domain-specific
     if domain in ("cto", "all"):
@@ -553,7 +554,7 @@ def _fallback_observations(data: dict[str, Any], question: str) -> list[str]:
     if data.get("net_margin") is not None:
         obs.append(f"Net marj: {data['net_margin'] * 100:.1f}%")
     if data.get("runway_text"):
-        obs.append(f"Nakit runway: {data['runway_text']}")
+        obs.append(f"Nakit runway: {data['runway_text']} (sınıf: {data.get('runway_class', 'unknown')})")
     if not obs:
         obs.append("Analiz için yeterli finansal veri mevcut değil.")
     return obs
@@ -581,7 +582,7 @@ def _execute_calculation(step: PlanStep, data: dict[str, Any]) -> str:
 
     if "runway" in desc or "nakit" in desc:
         if data.get("runway_text"):
-            results.append(f"Nakit Runway: {data['runway_text']}")
+            results.append(f"Nakit Runway: {data['runway_text']} (sınıf: {data.get('runway_class', 'unknown')})")
 
     if "cac" in desc:
         cac = data.get("cac_cents", 0)

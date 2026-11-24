@@ -19,6 +19,12 @@ Production means `USE_SQLITE=false`, or `APP_ENV` set to `production` or `stagin
 `ci` or `test`. A host that forgot it would otherwise run in "warnings only" mode. Outside production a FATAL finding is logged as a warning, so a laptop
 is never blocked. WARN findings are logged in every mode.
 
+**Helm chart.** `helm/agentic-cfo` sets `APP_ENV=production`, derives `FRONTEND_URL` / `BRAND_APP_URL` from the ingress host and
+requires `config.privacyNoticeUrl` and `config.termsUrl` (`helm template` fails without them). The chart is **not** kept
+complete for the preflight: it still offers no way to set `ERASURE_PSEUDONYM_SECRET`, a mail sender, `PLATFORM_OPERATOR_EMAILS`
+or `SUPPORT_CONTACT`, and its deploy step in `.github/workflows/k8s-deploy.yml` is commented out. Run the preflight against the
+rendered environment before trusting a Helm deploy; the supported path is `docker-compose.prod.yml`.
+
 ## What startup does
 
 1. `Settings.validate_production_security()` (existing): insecure default secret, field encryption on
@@ -144,8 +150,8 @@ is never blocked. WARN findings are logged in every mode.
 | `RETENTION_ALERT_HISTORY_DAYS` | 365 | optional | - | Retention: days after which alert history rows are deleted |
 | `PRIVACY_NOTICE_VERSION` | `taslak-1` | optional | - | Version of the privacy notice a person must have accepted; change it to ask everyone again (the text is the owner's documents, linked) |
 | `TERMS_VERSION` | `taslak-1` | optional | - | Version of the terms of use a person must have accepted |
-| `PRIVACY_NOTICE_URL` | (empty) | optional | - | Where the privacy notice text lives (a link; the product does not hold legal text) |
-| `TERMS_URL` | (empty) | optional | - | Where the terms of use live (a link) |
+| `PRIVACY_NOTICE_URL` | (empty) | REQUIRED in production | FATAL when `APP_ENV` is production/staging and unset (warning elsewhere) | Where the privacy notice text lives (an absolute `https` link with a host; `http` is accepted only outside production; the product does not hold legal text). The sign-in prompt asks people to accept it, so it must be openable. Malformed (`TBD`, `x`, a relative path, `javascript:`) counts as unset |
+| `TERMS_URL` | (empty) | REQUIRED in production | FATAL when `APP_ENV` is production/staging and unset (warning elsewhere) | Where the terms of use live (a link); same rule |
 | `ERASURE_PSEUDONYM_SECRET` | (unset) | REQUIRED in production | FATAL when `APP_ENV` is production/staging and unset (warning elsewhere) | KVKK member erasure: key of the HMAC behind the stable `member-<hex>` pseudonym. Its own random value (`openssl rand -hex 32`), set once and never rotated (rotating changes the handle of people erased afterwards); empty falls back to `BACKEND_SECRET_KEY`, which does rotate |
 | `LLM_MODEL` | `deepseek-chat` | optional | - |  |
 | `LLM_MODEL_CHEAP` | (unset) | optional | - |  |
@@ -164,6 +170,22 @@ is never blocked. WARN findings are logged in every mode.
 | `OPS_REPORT_TOKEN` | (empty) | recommended | - | shared secret of `POST /platform/ops/backup-report` (header `X-Ops-Token`); empty = the endpoint answers 404 and backups are not monitored |
 | `BACKUP_MAX_AGE_HOURS` | 30 | optional | - | with `OPS_REPORT_TOKEN` set: no successful backup report for this long alerts the operators |
 | `MAX_UPLOAD_SIZE_MB` | 10 | optional | - |  |
+| `PDF_MAX_PAGES` | 500 | optional | - | Pages an uploaded PDF may have; more is refused with a message that says so and asks for a shorter period. |
+| `PDF_PARSE_TIMEOUT_SECONDS` | 180 | optional | - | Time the child process may spend reading one PDF's text; past it the child's process group is killed and the upload is refused as unreadable. |
+| `PDF_OCR_SECONDS_PER_PAGE` | 30 | optional | - | Extra time per page that needs OCR (a scanned statement), and the Tesseract timeout for that page. A 400-page scan is not refused for being long. |
+| `PDF_CHILD_MEMORY_MB` | 1536 | optional | - | Address-space limit (`RLIMIT_AS`) of a PDF parser child on Linux: a generous BACKSTOP above its measured peak (it counts address space, not resident memory, and Tesseract inherits it). The CPU limit is twice the text timeout. A child that hits it is a visible "bellek sınırını aştı" refusal. Measurements and rule: `docs/ops/parser-sizing.md`. |
+| `PARSE_CHILD_RSS_MB` | 800 | optional | FATAL in production (api/worker only) if >= the container limit; WARN if it x `PDF_PARSE_CONCURRENCY` x processes exceeds it | Resident memory one parser child (with its Tesseract) may use: measured peak x headroom. What the container must hold; the sizing rule uses this, not `PDF_CHILD_MEMORY_MB`. |
+| `PDF_PARSE_CONCURRENCY` | 1 | optional | - | Parser children (PDF and spreadsheet share the slots) running at once **per process**; the rest wait up to `PARSE_QUEUE_WAIT_SECONDS`. |
+| `PARSE_PROCESS_COUNT` | 2 | optional | - | API worker processes in this container (`uvicorn --workers`; an arq worker container has 1). Used only for the memory-sizing check. |
+| `PARSE_QUEUE_WAIT_SECONDS` | 60 | optional | - | How long an upload waits for a free parser slot before it is refused with "Sistem yoğun, tekrar deneyin". |
+| `SHEET_PARSE_TIMEOUT_SECONDS` | 90 | optional | - | Time the child may spend reading one .xlsx or CSV; past it the group is killed and the upload is refused with a message that says so. |
+| `SHEET_CHILD_MEMORY_MB` | 512 | optional | - | `RLIMIT_AS` of a spreadsheet/CSV child on Linux (measured peak about 110 MB for 600 000 cells). |
+| `SHEET_MAX_UNCOMPRESSED_MB` | 128 | optional | - | Total uncompressed size of an .xlsx's zip members: checked from the zip directory before reading and counted again while reading. Over it: refused (zip-bomb defence). |
+| `SHEET_MAX_ZIP_MEMBERS` | 500 | optional | - | Most parts an .xlsx zip may hold. |
+| `SHEET_MAX_ROWS` | 200000 | optional | - | Most rows in one sheet (or CSV). More is refused, never truncated. |
+| `SHEET_MAX_COLUMNS` | 256 | optional | - | Most columns in a row once empty trailing cells are dropped. |
+| `SHEET_MAX_CELLS` | 1000000 | optional | - | Most cells in one file. |
+| `SHEET_MAX_CSV_LINE_CHARS` | 100000 | optional | - | Longest line a CSV may have. |
 | `AUTO_ENQUEUE_ANALYSIS_ON_UPLOAD` | True | optional | - |  |
 | `ALLOW_INLINE_JOB_FALLBACK` | (unset) | optional | FATAL on Postgres |  |
 | `AGENT_AUTO_PROCEED_MIN_CONFIDENCE` | 0.8 | optional | - |  |

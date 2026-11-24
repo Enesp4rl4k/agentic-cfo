@@ -10,6 +10,7 @@ GET  /reports/pdf/{report_id}/download → Oluşturulan raporu indir
 """
 from __future__ import annotations
 
+import html
 import logging
 from datetime import UTC, datetime
 from typing import Any, cast
@@ -287,11 +288,14 @@ def _build_compliance_cert_html(
     certified_at:   str,
     cert_id:        str,
 ) -> str:
+    company_name, period, certifier_name, certifier_role, signature_hash, certified_at, cert_id = (
+        html.escape(v) for v in (company_name, period, certifier_name, certifier_role, signature_hash, certified_at, cert_id)
+    )
     framework_label = {
         "sox_302": "SOX Section 302 — CEO/CFO Sertifikasyonu",
         "sox_404": "SOX Section 404 — İç Kontrol Değerlendirmesi",
         "gdpr_dpa": "GDPR — Veri İşleme Sözleşmesi",
-    }.get(framework, framework.upper())
+    }.get(framework, html.escape(framework.upper()))
 
     brand = get_brand()
     brand_name = brand.name

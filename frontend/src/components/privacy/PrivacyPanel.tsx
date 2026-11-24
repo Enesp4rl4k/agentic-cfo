@@ -5,7 +5,7 @@ import { apiClient } from "@/lib/api/client";
 import { useI18n } from "@/hooks/useI18n";
 import { CompanyPrivacy } from "./CompanyPrivacy";
 import { RetentionCard } from "./RetentionCard";
-import { detailOf, downloadBlob, type NoticeStatus, type PrivacyOverview } from "./types";
+import { detailOf, downloadBlob, safeHref, type NoticeStatus, type PrivacyOverview } from "./types";
 
 /** Settings > Veri ve gizlilik. One call (`GET /privacy/overview`) feeds every section. */
 export function PrivacyPanel() {
@@ -43,7 +43,7 @@ export function PrivacyPanel() {
         onAccepted={() => void load()}
       />
       <MyData coolingOffDays={data.cooling_off_days} locale={locale} />
-      <CompanyPrivacy isOwner={data.role === "owner"} initialExport={data.export} coolingOffDays={data.cooling_off_days} />
+      <CompanyPrivacy isOwner={data.role === "owner"} initialExport={data.export} coolingOffDays={data.cooling_off_days} supportContact={data.support_contact} />
       <section className="space-y-3 rounded-lg border border-border p-4" aria-labelledby="privacy-third">
         <h2 id="privacy-third" className="text-lg font-semibold">{p.thirdParties.title}</h2>
         <p className="text-sm text-muted-foreground">{p.thirdParties.intro}</p>
@@ -96,7 +96,7 @@ function Notices({ notices, locale, onAccepted }: {
           <li key={key} className="flex flex-wrap items-center gap-2">
             <span className="font-medium">{label}</span>
             <span className="text-muted-foreground">{n.version.replace("{v}", s.version)}</span>
-            {s.url ? <a href={s.url} className="underline" target="_blank" rel="noreferrer">{n.openText}</a> : <span className="text-muted-foreground">{n.noLink}</span>}
+            {safeHref(s.url) ? <a href={safeHref(s.url) ?? undefined} className="underline" target="_blank" rel="noreferrer">{n.openText}</a> : <span className="text-muted-foreground">{n.noLink}</span>}
             {s.must_accept
               ? <span className="text-amber-700">{n.mustAccept}</span>
               : s.accepted_at && <span className="text-muted-foreground">{n.acceptedOn.replace("{date}", new Date(s.accepted_at).toLocaleDateString(locale))}</span>}

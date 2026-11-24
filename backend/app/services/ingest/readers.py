@@ -8,8 +8,6 @@ from __future__ import annotations
 
 import logging
 
-from app.parsers.invoice.makbuz import EARSIV_NS
-
 logger = logging.getLogger("app.agents.data_ingestion")
 
 
@@ -21,45 +19,43 @@ def _read_pdf(file_path: str) -> str:
     Falls back to pdfplumber for table-heavy documents.
     Falls back to Tesseract OCR for scanned/image-based PDFs.
 
+    The whole read happens in the child process of `pdf_isolation`; nothing here opens the file. A refused,
+    crashed or timed-out read raises `PdfOkunamadi` with the reason; there is no in-process fallback.
+
     Returns the best-quality text available, with a warning comment
     prepended if confidence is low (for LLM fallback awareness).
     """
-    try:
-        from app.services.ocr_service import extract_text_from_pdf
-        result = extract_text_from_pdf(file_path)
+    from app.services.ocr_service import extract_text_from_pdf
+    from app.services.pdf_isolation import raise_if_refused
 
-        if result.needs_llm_fallback:
-            # Prepend low-confidence marker for LLM extraction path
-            prefix = (
-                f"[OCR_LOW_CONFIDENCE: {result.confidence:.0%} — "
-                f"strategy={result.strategy_used}, pages={result.page_count}]\n\n"
-            )
-            return prefix + result.text
+    result = extract_text_from_pdf(file_path)
+    raise_if_refused(result)
 
-        # Append warnings for partial OCR
-        text = result.text
-        if result.warnings and result.confidence < 0.85:
-            text += "\n\n[OCR_WARNINGS: " + "; ".join(result.warnings[:3]) + "]"
+    if result.needs_llm_fallback:
+        # Prepend low-confidence marker for LLM extraction path
+        prefix = (
+            f"[OCR_LOW_CONFIDENCE: {result.confidence:.0%} — "
+            f"strategy={result.strategy_used}, pages={result.page_count}]\n\n"
+        )
+        return prefix + result.text
 
-        return text
+    # Append warnings for partial OCR
+    text = result.text
+    if result.warnings and result.confidence < 0.85:
+        text += "\n\n[OCR_WARNINGS: " + "; ".join(result.warnings[:3]) + "]"
 
-    except Exception as exc:
-        # Graceful fallback to original simple extraction
-        logger.warning("OCR service failed (%s), falling back to basic PDF read: %s", file_path, exc)
-        import fitz
-        text_parts: list[str] = []
-        with fitz.open(file_path) as doc:
-            for page in doc:
-                text_parts.append(page.get_text())
-        return "\n".join(text_parts)
+    return text
 
 
 def _read_excel(file_path: str) -> str:
-    from openpyxl import load_workbook
-    wb = load_workbook(file_path, read_only=True, data_only=True)
+    """The workbook as tab-separated text. Opened in the child process (sheet_isolation); a refusal raises."""
+    from app.services.ingest.table import satirlari_oku
+
+    with open(file_path, "rb") as f:
+        data = f.read()
     rows: list[str] = []
-    for sheet in wb.worksheets:
-        for row in sheet.iter_rows(values_only=True):
+    for _title, sheet_rows in satirlari_oku(data, "xlsx" if not file_path.lower().endswith(".xls") else "xls"):
+        for row in sheet_rows:
             cells = [str(c) if c is not None else "" for c in row]
             if any(cells):
                 rows.append("\t".join(cells))
@@ -69,42 +65,32 @@ def _read_excel(file_path: str) -> str:
 def _read_csv(file_path: str) -> str:
     # UTF-8 first, then Windows-1254: a Turkish bank or ERP export is very often
     # the latter, and reading it as UTF-8 only ended in a generic ingestion error.
+    # Size and line length are bounded (sheet_child.check_text_bytes) before the text is decoded.
+    from app.config import get_settings
     from app.services.ingest.table import metin_coz
+    from app.services.sheet_child import SheetLimit, check_text_bytes
+    from app.services.sheet_isolation import SheetOkunamadi, limits_from_settings
 
+    limits = limits_from_settings()
     with open(file_path, "rb") as f:
-        return metin_coz(f.read())
-
-
-# The e-Arşiv marker is GİB's XML namespace, compared as text; it is not a URL anything connects to.
-_EBELGE_MARKERS = ("urn:oasis:names:specification:ubl:schema:xsd:", EARSIV_NS)
-
-
-_EMBEDDED_XML_LIMIT = 10 * 1024 * 1024   # the upload cap; an attachment cannot exceed its file
+        data = f.read(limits["max_bytes"] + 1)
+    try:
+        check_text_bytes(data, limits["max_bytes"], limits["max_csv_line_chars"])
+    except SheetLimit as limit:
+        params = {"limit_mb": get_settings().max_upload_size_mb, **limit.params}
+        raise SheetOkunamadi(limit.code, **params) from None
+    return metin_coz(data)
 
 
 def _pdf_embedded_xml(file_path: str) -> list[str]:
     """XML attachments in a PDF that are GİB e-Belge documents, in PDF order.
 
-    Only attachments that declare a UBL or e-Arşiv namespace are returned;
-    anything else a PDF carries (an XSLT, an image) is not a document.
+    Read by the child process (`pdf_embedded`, size-capped while inflating, DTD/ENTITY refused) in the same
+    parse as the text; here is only a lookup of that result. Anything else a PDF carries is not a document.
     """
-    try:
-        import pymupdf
-    except ImportError:  # pragma: no cover - pinned in requirements
-        return []
-    found: list[str] = []
-    try:
-        with pymupdf.open(file_path) as doc:
-            for i in range(doc.embfile_count()):
-                data = doc.embfile_get(i)
-                if not data or len(data) > _EMBEDDED_XML_LIMIT:
-                    continue
-                text = data.decode("utf-8", errors="replace").lstrip("﻿")
-                if text.lstrip().startswith("<") and any(m in text[:4000] for m in _EBELGE_MARKERS):
-                    found.append(text)
-    except Exception as exc:
-        logger.warning("PDF ekleri okunamadı (%s): %s", file_path, exc)
-    return found
+    from app.services.ocr_service import extract_text_from_pdf
+
+    return list(extract_text_from_pdf(file_path).embedded_xml)
 
 
 def _read_xml(file_path: str) -> str:

@@ -14,6 +14,7 @@ import logging
 from dataclasses import dataclass, field
 
 from app.core.financial import cents_to_amount, safe_div
+from app.services.runway import is_attention, level_for_months
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +73,7 @@ class PrescriptiveRecommender:
             actions.append(PrescriptiveAction(
                 action_id="act-rec-1",
                 category="receivables",
-                priority="immediate" if current_runway < 3 else "high",
+                priority="immediate" if is_attention(current_runway) else "high",
                 title="Erken Tahsilat İskonto Kampanyası (%2 İskonto / 10 Gün)",
                 impact_try=cents_to_amount(accelerated_cents),
                 effort="low",
@@ -95,7 +96,7 @@ class PrescriptiveRecommender:
             actions.append(PrescriptiveAction(
                 action_id="act-pay-1",
                 category="payables",
-                priority="high" if current_runway < 4 else "medium",
+                priority="high" if level_for_months(current_runway, proven=False) else "medium",
                 title="Stratejik Olmayan Tedarikçi Vade Uzatımı (+15 Gün)",
                 impact_try=cents_to_amount(deferred_cents),
                 effort="medium",

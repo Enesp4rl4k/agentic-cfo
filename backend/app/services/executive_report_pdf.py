@@ -20,6 +20,7 @@ from functools import partial
 from typing import Any
 
 from app.core.currency_totals import fmt_compact
+from app.services.pdf_escape import css_string, escape_tree
 from app.services.runway_display import runway_for_display
 
 logger = logging.getLogger(__name__)
@@ -65,6 +66,15 @@ def _build_html(
     period: str,
     generated_at: str,
 ) -> str:
+    # The company name and period are typed by a person. In the page margin they sit inside a CSS string
+    # (a quote or backslash would end it, `</style>` would end the sheet), in the body inside HTML.
+    margin_text = css_string(f"{company_name} · {period} · {generated_at}")
+    company_name = html.escape(company_name)
+    period = html.escape(period)
+    # Cut BEFORE escaping: a cut after it can end inside an entity ("&am") and print it as text.
+    narrative = escape_tree(str((dashboard.get("pnl") or {}).get("narrative") or "")[:400])
+    forecast_narrative = escape_tree(str((dashboard.get("forecast") or {}).get("narrative") or "")[:300])
+    dashboard = escape_tree(dashboard)  # every string the data carries; the f-strings below interpolate it as is
     pnl      = dashboard.get("pnl") or {}
     # Every amount on the page is in the currency the P&L states, or bare when it states none.
     cur = pnl.get("currency")
@@ -76,7 +86,6 @@ def _build_html(
 
     base_scenario = (forecast.get("scenarios") or {}).get("base") or {}
     runway_view = runway_for_display(forecast)
-    runway = runway_view.months
     base_scenario.get("twelve_month_net", 0)
 
     cf_alerts = cashflow.get("alerts") or []
@@ -119,20 +128,18 @@ def _build_html(
     for key in ["pessimistic", "base", "optimistic"]:
         sc = scenarios.get(key) or {}
         net12 = sc.get("twelve_month_net", 0)
-        label = html.escape(str(sc.get("label", key)))
+        label = str(sc.get("label", key))
         row_class = "base-row" if key == "base" else ""
         scenario_rows += f"""
         <tr class="{row_class}">
           <td>{label} <span style="color:#64748b">(senaryo — varsayım)</span></td>
           <td class="{_sign_class(net12)}">{fmt_lira(net12)}</td>
-          <td>{html.escape(_scenario_runway(forecast, key))}</td>
+          <td>{_scenario_runway(forecast, key)}</td>
         </tr>"""
 
     # Narrative
-    narrative = pnl.get("narrative") or ""
     # What the figures leave out: other currencies (not converted), or a company currency not yet confirmed.
-    currency_note = html.escape(str(pnl.get("currency_note") or ""))
-    forecast_narrative = forecast.get("narrative") or ""
+    currency_note = str(pnl.get("currency_note") or "")
 
     return f"""<!DOCTYPE html>
 <html lang="tr">
@@ -143,7 +150,7 @@ def _build_html(
   size: A4;
   margin: 1.2cm 1.5cm;
   @bottom-center {{
-    content: "{company_name} · {period} · {generated_at}";
+    content: "{margin_text}";
     font-size: 7pt;
     color: #94a3b8;
   }}
@@ -349,7 +356,7 @@ tr.base-row td {{ font-weight: 700; background: #eff6ff; }}
   {'<div class="alert-badge alert-critical">⚠ ' + str(critical_count) + ' Kritik Uyarı</div>' if critical_count > 0 else '<div class="alert-badge alert-ok">✓ Kritik Uyarı Yok</div>'}
   {'<div class="alert-badge alert-warning">▲ ' + str(warning_count) + ' Uyarı</div>' if warning_count > 0 else ''}
   {'<div class="alert-badge alert-anomaly">◆ ' + str(anom_critical + anom_high) + ' Yüksek Anomali</div>' if (anom_critical + anom_high) > 0 else ''}
-  {'<div class="alert-badge alert-warning">⏳ Nakit Ömrü: ' + runway_view.text() + '</div>' if runway and runway < 12 else ''}
+  {'<div class="alert-badge alert-warning">⏳ Nakit Ömrü: ' + runway_view.text() + (' — izlemede' if runway_view.watch else '') + '</div>' if runway_view.in_sight else ''}
 </div>
 
 <!-- KPI Strip -->
@@ -381,7 +388,7 @@ tr.base-row td {{ font-weight: 700; background: #eff6ff; }}
 </div>
 
 <!-- CFO Narrative -->
-{f'<div class="narrative-box">{narrative[:400]}</div>' if narrative else ""}
+{f'<div class="narrative-box">{narrative}</div>' if narrative else ""}
 {f'<div class="narrative-box" style="border-left-color:#d97706">{currency_note}</div>' if currency_note else ""}
 
 <!-- Main grid: Cash Flow + OpEx -->
@@ -423,7 +430,7 @@ tr.base-row td {{ font-weight: 700; background: #eff6ff; }}
       <thead><tr><th>Senaryo</th><th style="text-align:right">12 Aylık Net</th><th>Nakit Ömrü</th></tr></thead>
       <tbody>{scenario_rows or "<tr><td colspan='3' style='color:#94a3b8'>Tahmin verisi yok</td></tr>"}</tbody>
     </table>
-    {f'<div style="margin-top:0.2cm;font-size:7.5pt;color:#475569;font-style:italic">{forecast_narrative[:300]}</div>' if forecast_narrative else ""}
+    {f'<div style="margin-top:0.2cm;font-size:7.5pt;color:#475569;font-style:italic">{forecast_narrative}</div>' if forecast_narrative else ""}
   </div>
 </div>
 
@@ -457,6 +464,8 @@ def generate_executive_report(
 
     try:
         from weasyprint import HTML
+
+        from app.services.pdf_fetch import deny_fetcher
     except (ImportError, OSError) as exc:
         # OSError, not ImportError, is what a missing Pango/GObject raises —
         # it slipped past and became an unhandled 500 (plan v7 §P0 / W3).
@@ -482,7 +491,7 @@ def generate_executive_report(
     )
 
     try:
-        pdf_bytes = HTML(string=html_content).write_pdf()
+        pdf_bytes = HTML(string=html_content, url_fetcher=deny_fetcher()).write_pdf()
         logger.info("Executive report PDF generated: %d bytes", len(pdf_bytes))
         return pdf_bytes
     except Exception as exc:

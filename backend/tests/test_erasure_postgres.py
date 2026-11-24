@@ -95,3 +95,56 @@ async def test_the_per_organisation_advisory_lock_serialises_two_erasures_on_pos
         await one.rollback()
         free = (await two.execute(select(func.pg_try_advisory_xact_lock(svc.org_lock_key(org))))).scalar_one()
         assert free is True
+
+
+async def test_two_executors_race_for_one_request_and_a_live_claim_survives_the_stale_release_on_postgres(maker, monkeypatch) -> None:
+    """Real concurrent sessions: exactly one claim wins; a run renewing its claim is not released after two hours, a dead one is."""
+    import asyncio
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import delete
+
+    from app.models.erasure_record import OrgErasureRequest
+    from app.services.privacy import erasure_flow
+
+    now = datetime.now(UTC)
+    ids: list[str] = []
+
+    def _row(**over: object) -> OrgErasureRequest:
+        r = OrgErasureRequest(id=str(uuid.uuid4()), target_org_id=str(uuid.uuid4()), org_hash="a" * 64, mode="anonymise", requested_by_hash="b" * 64,
+                              requested_at=now, expires_at=now + timedelta(days=7), **over)  # type: ignore[arg-type]
+        ids.append(r.id)
+        return r
+
+    try:
+        async with maker() as db:
+            due = _row(status="scheduled", execute_after=now - timedelta(minutes=1), confirmed_at=now)
+            dead = _row(status="executing", claimed_at=now - timedelta(hours=3), execute_after=now + timedelta(days=1))
+            live = _row(status="executing", claimed_at=now - timedelta(hours=3), execute_after=now + timedelta(days=1))
+            db.add_all([due, dead, live])
+            await db.commit()
+            due_id, dead_id, live_id = due.id, dead.id, live.id
+
+        async def claim() -> bool:
+            async with maker() as s:
+                return await erasure_flow._claim(s, due_id, now)
+
+        results = await asyncio.gather(*[claim() for _ in range(6)])
+        assert sorted(results) == [False] * 5 + [True]  # six executors, one winner
+
+        async with maker() as db:  # `live` keeps renewing its claim, as a running erasure does; `dead` does not
+            engine = db.bind
+        monkeypatch.setattr(erasure_flow, "HEARTBEAT", timedelta(milliseconds=50))
+        beat = asyncio.create_task(erasure_flow._heartbeat(engine, live_id))
+        await asyncio.sleep(0.5)
+        beat.cancel()
+        async with maker() as db:
+            assert (await erasure_flow.execute_due(db))["executed"] == 0
+        async with maker() as db:
+            assert (await db.get(OrgErasureRequest, live_id)).status == "executing"
+            released = await db.get(OrgErasureRequest, dead_id)
+            assert (released.status, released.failure_code) == ("failed", "interrupted")
+    finally:
+        async with maker() as db:
+            await db.execute(delete(OrgErasureRequest).where(OrgErasureRequest.id.in_(ids)))
+            await db.commit()

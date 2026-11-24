@@ -344,6 +344,24 @@ class Settings(BaseSettings):
 
     # File upload
     max_upload_size_mb: int = 10
+    # Reading an uploaded PDF (app/services/pdf_isolation.py): it runs in a child process with these limits.
+    pdf_max_pages: int = 500
+    pdf_parse_timeout_seconds: int = 180          # text path, whole document
+    pdf_ocr_seconds_per_page: int = 30            # added per page that needs OCR (Tesseract), so a long scan is not refused for length
+    pdf_child_memory_mb: int = 1536               # RLIMIT_AS of a PDF parser child (Linux): a generous BACKSTOP above its measured peak; docs/ops/parser-sizing.md
+    parse_child_rss_mb: int = 800                 # resident memory budget of one parser child (and its Tesseract), measured x headroom: what the container must hold
+    pdf_parse_concurrency: int = 1                # simultaneous parser children per PROCESS (PDF and spreadsheet children share it)
+    parse_process_count: int = 2                  # API worker processes in this container (uvicorn --workers); an arq worker container sets 1
+    parse_queue_wait_seconds: int = 60            # an upload waiting for a free parser slot longer than this is refused as "busy"
+    # Reading an uploaded spreadsheet or CSV (app/services/sheet_isolation.py): the same child mechanism, these limits.
+    sheet_parse_timeout_seconds: int = 90
+    sheet_child_memory_mb: int = 512              # RLIMIT_AS of a spreadsheet/CSV child (measured peak about 110 MB for 600k cells)
+    sheet_max_uncompressed_mb: int = 128          # total uncompressed size of an .xlsx's zip members (directory AND while reading)
+    sheet_max_zip_members: int = 500
+    sheet_max_rows: int = 200_000                 # per sheet
+    sheet_max_columns: int = 256
+    sheet_max_cells: int = 1_000_000              # per file
+    sheet_max_csv_line_chars: int = 100_000
     # Full-automation mode: upload sonrası analizi otomatik kuyruğa al.
     auto_enqueue_analysis_on_upload: bool = True
     # No Redis? Run the enqueued analysis inline in the API process instead of
