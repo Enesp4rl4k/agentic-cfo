@@ -100,7 +100,7 @@ _TEXTS: dict[str, tuple[str, str]] = {
         "Try again in a few minutes by uploading the same file again.",
     ),
     "pdf_memory": (
-        "PDF okunamadı: dosya bellek sınırını aştı{where_tr} (PDF_CHILD_MEMORY_MB); "
+        "PDF okunamadı: dosya bellek sınırını aştı{where_tr}; "
         "daha kısa dönemlere bölüp yükleyin.",
         "The PDF could not be read: the file exceeded the memory limit{where_en}; "
         "split the statement into shorter periods and upload them separately.",
@@ -509,17 +509,20 @@ def pages_note(file_path: str) -> tuple[str, bool] | None:
 
 
 def apply_pdf_notes(result: Any, file_path: str) -> None:
-    """Put what the PDF read did not get on an ingestion result: an unread attachment, text-less pages. Held only
-    where data is missing (an e-Belge candidate attachment, a page with evidence of lost rows). Never a silent fallback."""
-    notes: list[str] = []
-    hold = False
-    for found in (attachment_note(file_path), pages_note(file_path)):
-        if found:
-            notes.append(found[0])
-            hold = hold or found[1]
-    if notes:
-        result.detail = f"{result.detail or ''} [{' | '.join(notes)}]".strip()
-        result.needs_review = bool(result.needs_review) or hold
+    """Put what the PDF read did not get on an ingestion result: text-less pages (FIRST in the detail, under "pages
+    not read", and in `patch["pages_not_read"]`) and an unread attachment. Held only where data may be missing (an
+    e-Belge candidate attachment, a page with evidence of lost rows or a scan). Never a silent fallback."""
+    attachment, pages = attachment_note(file_path), pages_note(file_path)
+    detail = result.detail or ""
+    if pages:
+        detail = f"[Okunamayan sayfalar / Pages not read: {pages[0]}] {detail}"
+        meta = (getattr(cached_result(file_path), "metadata", None) or {})
+        result.patch = {**(result.patch or {}), "pages_not_read": [int(p) for p in meta.get("pages_unread") or []]}
+    if attachment:
+        detail = f"{detail} [{attachment[0]}]"
+    if pages or attachment:
+        result.detail = detail.strip()
+        result.needs_review = bool(result.needs_review) or any(f[1] for f in (attachment, pages) if f)
 
 
 # ── Child side ───────────────────────────────────────────────────────────────────────────────

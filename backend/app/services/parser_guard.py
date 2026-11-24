@@ -12,9 +12,13 @@ Pure functions over `/proc`-shaped paths, so tests point them at a fake director
 """
 from __future__ import annotations
 
+import logging
 import os
 import sys
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
+_warned = False
 
 OOM_SCORE_ADJ = 900            # 1000 is "kill first, always"; 900 is far above an API worker's 0 without being a special case
 DEFAULT_OOM_PATH = "/proc/self/oom_score_adj"
@@ -30,7 +34,11 @@ def prefer_oom_victim(path: str | None = None, score: int = OOM_SCORE_ADJ) -> bo
     try:
         with open(path, "w", encoding="ascii") as handle:
             handle.write(str(score))
-    except OSError:
+    except OSError as exc:
+        global _warned
+        if not _warned:   # once: every child would say the same
+            _warned = True
+            logger.warning("Could not write oom_score_adj (%s): a parser child is not the preferred OOM victim in this container", exc)
         return False
     return True
 

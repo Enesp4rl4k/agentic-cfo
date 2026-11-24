@@ -97,11 +97,14 @@ A child that runs out of memory is never an empty page and never "damaged": a `M
 "dosya bellek sınırını aştı; daha kısa dönemlere bölüp yükleyin" (English underneath), naming the pages that were
 not read.
 
-A page that yields no text although it has an image or a few characters is always named on the result ("N. sayfada
-okunabilir metin yok (görsel/boş sayfa)"). It HOLDS the upload only when there is evidence that rows may be missing
-(`app/services/page_gap.py`): the page sits between pages that carry transaction rows and the balance does not chain
-across it (or cannot be checked), or the page before it says the statement continues and nothing with rows follows.
-A logo cover, a stamp page or a blank scanned back side is a note only.
+A page that yields no text is always named first on the result under "Okunamayan sayfalar / Pages not read" (and in
+`patch["pages_not_read"]`). It HOLDS the upload only when rows may be missing (`app/services/page_gap.py`), in this order:
+(1) the statement states a closing balance or period end that the rows do not reach: hold (rows reaching it: note);
+(2) the page sits between pages with rows and the balances do not chain across it, or cannot be checked: hold;
+(3) nothing is stated: a page-sized raster (images covering at least half the page, classified in the child) is a
+scan and holds ("N. sayfa taranmış görünüyor ve okunamadı; işlemler eksik olabilir"); a small image (logo, stamp) or a
+blank page is a note ("görsel/boş sayfa"), and a page that says the statement continues, with no rows after, holds.
+A page is called decorative only when it is not a scan.
 
 ## Preflight
 

@@ -362,7 +362,7 @@ def test_an_unreadable_page_with_content_is_listed_as_a_note_and_holds_only_with
     doc = pymupdf.open()
     doc.new_page().insert_text((50, 72), "01.03.2026 HAVALE GELEN ODEME ACIKLAMA 1.250,00 TL " * 3, fontsize=8)   # readable (native)
     doc.new_page().insert_text((50, 72), "ok", fontsize=10)   # a page with a little text no strategy can use
-    doc.new_page()                                              # a genuinely blank page: not reported
+    doc.new_page()                                              # a genuinely blank page: a note, never a hold
     path = str(tmp_path / "a.pdf")
     doc.save(path)
     doc.close()
@@ -370,12 +370,12 @@ def test_an_unreadable_page_with_content_is_listed_as_a_note_and_holds_only_with
     monkeypatch.setattr(ocr_service, "_try_pdfplumber_extraction", lambda file_path, page_num: ("", 0.0, False))
     monkeypatch.setattr(ocr_service, "_try_tesseract_ocr", lambda page, dpi=300: ("", 0.0))
     result = pdf_isolation.parse_here(path)
-    assert result.metadata.get("pages_unread") == [2]           # page 2 had content and gave nothing; page 3 is blank
+    assert result.metadata.get("pages_unread") == [2, 3]        # page 2 had content and gave nothing; page 3 is blank (a note either way)
     monkeypatch.setattr(pdf_isolation, "cached_result", lambda file_path: result)
     sonuc = SkillResult(ok=True, patch={}, confidence=0.95, needs_review=False, detail="3 işlem")
     pdf_isolation.apply_pdf_notes(sonuc, path)
     # nothing on the pages around it says rows are missing (no transaction rows at all): a visible note, no hold
-    assert sonuc.needs_review is False and "2. sayfada okunabilir metin yok (görsel/boş sayfa)" in sonuc.detail and "No readable text" in sonuc.detail
+    assert sonuc.needs_review is False and "2, 3. sayfada okunabilir metin yok (görsel/boş sayfa)" in sonuc.detail and "No readable text" in sonuc.detail
     assert di.apply_pdf_notes is pdf_isolation.apply_pdf_notes
 
 
