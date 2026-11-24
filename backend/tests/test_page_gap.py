@@ -171,6 +171,70 @@ def test_a_scan_that_was_not_verified_never_gets_the_reassuring_sentence():
     assert entry["state"] == "note" and "satır eksik görünmüyor" not in entry["tr"] and "görsel/boş" not in entry["tr"]
 
 
+# ── Evidence is directional: a closing balance vouches for the NEWEST end, an opening balance for the OLDEST ──────
+
+OPENING_OK = "Devreden Bakiye: 10.000,00"             # the balance before the oldest row (10.500,00 after its 500,00)
+
+
+def newest_first(doc, *, closing: str = "", opening: str = "", last=scan_page) -> None:
+    """A newest-first statement: page 1 holds the newest rows (and the stated balances), page 2 older ones, then `last`."""
+    rows_page(doc, ("03.03.2026", "100,00", "10.850,00"), ("02.03.2026", "250,00", "10.750,00"), extra="\n".join(x for x in (closing, opening) if x))
+    rows_page(doc, ("01.03.2026", "500,00", "10.500,00"))
+    last(doc)
+
+
+def oldest_first_scanned_first(doc, *, closing: str = "", opening: str = "") -> None:
+    scan_page(doc)
+    rows_page(doc, *FIRST)
+    rows_page(doc, *CHAINS, extra="\n".join(x for x in (closing, opening) if x))
+
+
+def test_newest_first_with_a_scanned_last_page_and_only_the_closing_balance_matching_holds(tmp_path, monkeypatch):
+    # the closing balance and the newest rows are on page 1; the scanned last page holds the OLDEST rows
+    held, detail, meta = outcome(tmp_path, monkeypatch, lambda doc: newest_first(doc, closing=CLOSING_OK))
+    assert held is True and "pages_verified" not in meta and f"3. {SCAN_TR}" in detail and "satır eksik görünmüyor" not in detail
+
+
+def test_newest_first_with_a_scanned_last_page_is_verified_by_an_opening_balance_that_links_to_the_oldest_row(tmp_path, monkeypatch):
+    held, detail, meta = outcome(tmp_path, monkeypatch, lambda doc: newest_first(doc, closing=CLOSING_OK, opening=OPENING_OK))
+    assert held is False and meta["pages_verified"] == {"3": "opening"}
+    assert "açılış bakiyesi en eski satırdan önceki bakiyeyle aynıdır, satır eksik görünmüyor" in detail
+
+
+def test_an_opening_balance_that_does_not_link_to_the_oldest_row_verifies_nothing(tmp_path, monkeypatch):
+    held, detail, meta = outcome(tmp_path, monkeypatch, lambda doc: newest_first(doc, closing=CLOSING_OK, opening="Devreden Bakiye: 9.000,00"))
+    assert held is True and "pages_verified" not in meta and "satır eksik görünmüyor" not in detail
+
+
+def test_oldest_first_with_a_scanned_first_page_and_only_the_closing_balance_matching_holds(tmp_path, monkeypatch):
+    held, detail, meta = outcome(tmp_path, monkeypatch, lambda doc: oldest_first_scanned_first(doc, closing=CLOSING_OK))
+    assert held is True and "pages_verified" not in meta and f"1. {SCAN_TR}" in detail
+
+
+def test_oldest_first_with_a_scanned_first_page_is_verified_by_the_opening_balance(tmp_path, monkeypatch):
+    held, detail, meta = outcome(tmp_path, monkeypatch, lambda doc: oldest_first_scanned_first(doc, opening=OPENING_OK))
+    assert held is False and meta["pages_verified"] == {"1": "opening"} and "satır eksik görünmüyor" in detail
+
+
+def test_oldest_first_with_a_scanned_last_page_and_the_closing_balance_matching_is_still_verified(tmp_path, monkeypatch):
+    held, detail, meta = outcome(tmp_path, monkeypatch, lambda doc: statement(doc, closing=CLOSING_OK, last=scan_page))
+    assert held is False and meta["pages_verified"] == {"3": "closing"} and "satır eksik görünmüyor" in detail
+
+
+def test_a_cover_page_with_no_evidence_is_a_plain_note_and_an_unknown_row_order_is_no_evidence(tmp_path, monkeypatch):
+    held, detail, meta = outcome(tmp_path, monkeypatch, lambda doc: (logo_page(doc), rows_page(doc, *FIRST), rows_page(doc, *CHAINS)))
+    assert held is False and "pages_verified" not in meta and f"1. {NOTE_TR}" in detail and "satır eksik görünmüyor" not in detail
+    same_day = "Kapanis Bakiyesi: 10.850,00\n03.03.2026 X 250,00 10.750,00\n03.03.2026 X 100,00 10.850,00\n"
+    assert page_gap.edge_evidence([(1, same_day)])["newest_side"] is None      # dates cannot say which end is newest
+
+
+def test_the_stated_opening_balance_is_read_only_from_opening_labels():
+    assert page_gap.stated_opening("Devreden Bakiye: 10.000,00") == 1_000_000
+    assert page_gap.stated_opening("Onceki donem kapanis bakiyesi 10.000,00") == 1_000_000
+    assert page_gap.stated_opening("Kapanis Bakiyesi: 10.000,00") is None
+    assert page_gap.stated_opening("Acilis bakiyesi 1,00\nDevreden bakiye 2,00") is None      # two different ones: ambiguous
+
+
 # ── The middle ──────────────────────────────────────────────────────────────────────────────
 
 def test_a_text_less_page_between_rows_whose_balances_do_not_chain_holds_with_the_reason(tmp_path, monkeypatch):
@@ -232,7 +296,8 @@ def test_a_stated_period_end_well_after_the_last_row_is_evidence_and_one_reached
 
 def test_a_closing_balance_may_match_the_first_row_of_a_newest_first_statement():
     text = "Son Bakiye: 10.850,00\n03.03.2026 X 100,00 10.850,00\n02.03.2026 X 250,00 10.750,00\n"
-    assert page_gap.stated_end([(1, text)])[0] == "exact"
+    ev = page_gap.edge_evidence([(1, text)])
+    assert ev["newest_side"] == "leading" and ev["closing_ok"] is True and page_gap.stated_end([(1, text)]) is None
 
 
 def test_balances_chain_in_either_row_order():

@@ -104,10 +104,13 @@ be missing (`app/services/page_gap.py`), in this order:
 the last row): hold. A period end that is reached proves nothing and never suppresses a hold;
 (2) the page sits between pages with rows and the balances do not chain across it, or cannot be checked: hold; chaining
 verifies it;
-(3) an edge page: only a stated closing balance exactly equal to the chronologically last row's balance verifies it
-(the statement's own closing balance: "Önceki dönem kapanış bakiyesi", "Devreden", "Açılış" never count). Otherwise a
-scan holds ("N. sayfa taranmış görünüyor ve okunamadı; işlemler eksik olabilir"); a logo, stamp or blank page is a note;
-a page that says the statement continues, with no rows after, holds.
+(3) an edge page is verified by DIRECTIONAL evidence only (row order read from the dates; unknown order: no evidence).
+On the newest side (after the last row of an oldest-first statement, before the first row of a newest-first one) the
+statement's own stated closing balance must equal the newest row's balance; on the oldest side its stated opening
+balance ("Devreden bakiye", "Önceki dönem kapanış bakiyesi", "Açılış bakiyesi") must be one step of the oldest row's
+amount from that row's balance. A closing balance never vouches for the oldest end. Without that evidence a
+scan holds ("N. sayfa taranmış görünüyor ve okunamadı; işlemler eksik olabilir"); a logo, stamp or blank page is a plain
+note; a page that says the statement continues, with no rows after, holds.
 A scan is a page with no readable text whose images cover at least 20% of it (`SCAN_COVERAGE`): a logo or stamp covers a
 few percent, a scan of the last rows on a third of a page must count. "Bakiyeler süreklidir / satır eksik görünmüyor"
 is said only for a verified page; a page is called an image or blank page only when it is not a scan.

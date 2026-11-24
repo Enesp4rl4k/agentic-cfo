@@ -11,8 +11,11 @@ text-less page, in this order:
 2. The page sits between pages with transaction rows: the first row after it must differ from the last row before it by
    exactly its own amount (oldest first) or the earlier row's (newest first). Not chaining, or no balance to check: HOLD.
    Chaining: VERIFIED (a scan then says the balances are continuous).
-3. An edge page (rows on one side only): ONLY a stated closing balance equal to the chronologically last row's running
-   balance verifies it. Otherwise a scan holds ("N. sayfa taranmış görünüyor ve okunamadı; işlemler eksik olabilir"),
+3. An edge page (rows on one side only) is verified by DIRECTIONAL evidence only. The statement's row order is read from
+   its dates (undeterminable: no evidence). On the NEWEST side (after the last row of an oldest-first statement, before
+   the first row of a newest-first one) a stated closing balance equal to the newest row's balance verifies it. On the
+   OLDEST side the stated opening balance ("Devreden bakiye", "Önceki dönem kapanış bakiyesi", "Açılış bakiyesi") must
+   equal the balance before the oldest row (its balance, one step of its amount away). Otherwise a scan holds ("N. sayfa taranmış görünüyor ve okunamadı; işlemler eksik olabilir"),
    a small image or blank page is a note ("görsel/boş sayfa"), and a page before it saying the statement continues,
    with no rows after, holds.
 
@@ -35,6 +38,9 @@ _CONTINUES = re.compile(r"sonraki\s+sayfada\s+devam|devam[ıi]\s+(?:var|sonraki)
 _AMOUNT = r"(-?\d{1,3}(?:\.\d{3})*,\d{2}|-?\d+,\d{2})"
 # The statement's OWN closing balance. "Önceki dönem kapanış bakiyesi", "Devreden", "Açılış" are its opening balance.
 _CLOSING = re.compile(r"(?:kapanış|kapanis|dönem\s*sonu|donem\s*sonu|son|closing|ending)\s*(?:bakiye|balance)(?:si)?[^\d\n-]{0,25}" + _AMOUNT, re.I)
+_OPENING_LABEL = re.compile(
+    r"(?:devreden\s*bakiye|önceki\s*dönem\s*(?:kapanış\s*)?bakiye(?:si)?|onceki\s*donem\s*(?:kapanis\s*)?bakiye(?:si)?"
+    r"|açılış\s*bakiye(?:si)?|acilis\s*bakiye(?:si)?|opening\s*balance|balance\s*brought\s*forward)[^\d\n-]{0,25}" + _AMOUNT, re.I)
 _OPENING = re.compile(r"önceki|onceki|açılış|acilis|devreden|opening|previous|başlangıç|baslangic|brought", re.I)
 
 
@@ -89,23 +95,51 @@ def stated_closing(text: str) -> int | None:
     return found.pop() if len(found) == 1 else None
 
 
+def stated_opening(text: str) -> int | None:
+    """The statement's stated opening balance in cents; None when it states none or two different ones."""
+    found = {_cents(m.group(1)) for m in _OPENING_LABEL.finditer(text)}
+    return found.pop() if len(found) == 1 else None
+
+
+def row_order(rows: Sequence[tuple[date | None, list[int]]]) -> str | None:
+    """"oldest_first" or "newest_first" from the dates of the first and last row; None when they cannot say."""
+    if not rows or rows[0][0] is None or rows[-1][0] is None or rows[0][0] == rows[-1][0]:
+        return None
+    return "newest_first" if rows[0][0] > rows[-1][0] else "oldest_first"
+
+
+def edge_evidence(pages: Sequence[tuple[int, str]]) -> dict[str, Any]:
+    """Directional evidence about the statement's two ends, from its own text: `newest_side` ("trailing" after the last
+    row page, "leading" before the first; None when the order is unknown), `closing_ok` (the stated closing balance equals
+    the newest row's balance), `opening_ok` (the stated opening balance is one step of its amount from the oldest row's
+    balance); `closing` and `newest_balance` serve the "short" judgement."""
+    text = "\n\n".join(t for _no, t in pages)
+    rows = [r for page in pages for r in dated_rows(page[1])]
+    order = row_order(rows)
+    out: dict[str, Any] = {"newest_side": None, "closing_ok": False, "opening_ok": False, "closing": None, "newest_balance": None}
+    if order is None:
+        return out
+    newest, oldest = (rows[-1], rows[0]) if order == "oldest_first" else (rows[0], rows[-1])
+    out["newest_side"] = "trailing" if order == "oldest_first" else "leading"
+    closing, opening = stated_closing(text), stated_opening(text)
+    if closing is not None and len(newest[1]) >= 2:
+        out.update(closing=closing, newest_balance=newest[1][-1], closing_ok=closing == newest[1][-1])
+    if opening is not None and len(oldest[1]) >= 2:
+        out["opening_ok"] = abs(opening - oldest[1][-1]) == abs(oldest[1][-2])
+    return out
+
+
 def stated_end(pages: Sequence[tuple[int, str]]) -> tuple[str, tuple[str, str]] | None:
-    """What the statement says about where it ends, against the rows read: ("exact", ...) when the stated closing
-    balance equals the chronologically last row's balance, ("short", (Turkish, English why)) when a stated closing
-    balance or period end is not reached, None when nothing checkable is stated."""
+    """("short", (Turkish, English why)) when a stated closing balance is not the newest row's balance, or a stated period
+    end lies more than a week after the last row; None otherwise (nothing stated, order unknown, or reached)."""
     text = "\n\n".join(t for _no, t in pages)
     rows = [r for page in pages for r in dated_rows(page[1])]
     if not rows:
         return None
-    newest_first = bool(rows[0][0] and rows[-1][0] and rows[0][0] > rows[-1][0])
-    last_row = rows[0] if newest_first else rows[-1]
-    closing = stated_closing(text)
-    if closing is not None and len(last_row[1]) >= 2:
-        last = last_row[1][-1]
-        if closing == last:
-            return "exact", ("", "")
-        return "short", (f"ekstrenin kapanış bakiyesi {_fmt(closing)}, okunan son bakiye {_fmt(last)}",
-                         f"the statement's closing balance is {_fmt(closing)}, the last balance read is {_fmt(last)}")
+    ev = edge_evidence(pages)
+    if ev["closing"] is not None and not ev["closing_ok"]:
+        return "short", (f"ekstrenin kapanış bakiyesi {_fmt(ev['closing'])}, okunan son bakiye {_fmt(ev['newest_balance'])}",
+                         f"the statement's closing balance is {_fmt(ev['closing'])}, the last balance read is {_fmt(ev['newest_balance'])}")
     try:
         from app.services.stated_period import stated_period
 
@@ -121,20 +155,26 @@ def stated_end(pages: Sequence[tuple[int, str]]) -> tuple[str, tuple[str, str]] 
     return None
 
 
+def _side(before: int | None, after: int | None) -> str | None:
+    """Where an edge page sits: "trailing" (rows only before it), "leading" (rows only after it), else None."""
+    return "trailing" if before is not None and after is None else "leading" if after is not None and before is None else None
+
+
 def judge(pages: Sequence[tuple[int, str]], unread: Iterable[int], scans: Iterable[int] = ()) -> tuple[dict[int, tuple[str, str]], dict[int, str]]:
     """(holds, verified) for the text-less pages. `holds` is {page: (Turkish, English) sentence}; `verified` is
-    {page: "chain" | "closing"} for the pages whose neighbours or stated closing balance positively show nothing is missing.
+    {page: "chain" | "closing" | "opening"} for the pages whose neighbours or stated closing balance positively show nothing is missing.
     `pages` is every page as (1-based number, text); `unread` the text-less pages with content; `scans` the page-sized rasters."""
     texts = dict(pages)
     rows = {no: r for no, r in ((no, row_lines(t)) for no, t in pages if t.strip()) if r}
     scan_pages = set(scans)
     end = stated_end(pages)
+    ev = edge_evidence(pages)
     held: dict[int, tuple[str, str]] = {}
     verified: dict[int, str] = {}
     for no in sorted(set(unread)):
         before = max((p for p in rows if p < no), default=None)
         after = min((p for p in rows if p > no), default=None)
-        if end is not None and end[0] == "short":
+        if end is not None:
             held[no] = (f"{no}. sayfa okunamadı: {end[1][0]}; işlemler eksik olabilir",
                         f"page {no} could not be read: {end[1][1]}; rows may be missing")
         elif before is not None and after is not None:
@@ -147,8 +187,10 @@ def judge(pages: Sequence[tuple[int, str]], unread: Iterable[int], scans: Iterab
             else:
                 held[no] = (f"{no}. sayfa okunamadı: {before}. ve {after}. sayfada işlem satırı var, bakiye bağlantısı doğrulanamadı; işlemler eksik olabilir",
                             f"page {no} could not be read: pages {before} and {after} hold transactions and the balance link could not be checked; rows may be missing")
-        elif end is not None:   # "exact": the stated closing balance is the last row's balance
-            verified[no] = "closing"
+        elif ev["closing_ok"] and ev["newest_side"] == _side(before, after):
+            verified[no] = "closing"      # the newest end of the rows, and the stated closing balance is the newest row's
+        elif ev["opening_ok"] and _side(before, after) not in (None, ev["newest_side"]):
+            verified[no] = "opening"      # the oldest end, and the stated opening balance links to the oldest row
         elif no in scan_pages:
             held[no] = (f"{no}. sayfa taranmış görünüyor ve okunamadı; işlemler eksik olabilir",
                         f"page {no} looks scanned and could not be read; rows may be missing")
@@ -209,8 +251,11 @@ def entries(meta: dict) -> list[dict[str, Any]]:
         if p in gap:
             out.append({"page": p, "state": "hold", "tr": gap[p][0], "en": gap[p][1]})
         elif p in scans and p in verified:
-            how_tr, how_en = (("bakiyeler süreklidir", "the balances are continuous") if verified[p] == "chain" else
-                              ("ekstrenin kapanış bakiyesi okunan son bakiyeyle aynıdır", "the statement's closing balance equals the last balance read"))
+            how_tr, how_en = {
+                "chain": ("bakiyeler süreklidir", "the balances are continuous"),
+                "closing": ("ekstrenin kapanış bakiyesi okunan son bakiyeyle aynıdır", "the statement's closing balance equals the last balance read"),
+                "opening": ("ekstrenin açılış bakiyesi en eski satırdan önceki bakiyeyle aynıdır", "the statement's opening balance equals the balance before the oldest row"),
+            }[verified[p]]
             out.append({"page": p, "state": "scan_verified",
                         "tr": f"{p}. sayfa taranmış sayfa ve okunamadı; {how_tr}, satır eksik görünmüyor",
                         "en": f"page {p} is a scanned page and could not be read; {how_en}, no rows look missing"})
