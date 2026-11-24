@@ -479,7 +479,13 @@ jobs:
       # is `bash -e` without pipefail), so failing tests here were green for weeks.
       # `-rfE` ends the log with one FAILED/ERROR line per test, so the cause is
       # readable without scrolling a 30-minute log.
+      # -v and the header (it prints pytest-randomly's seed) because one run of this step hung
+      # for the job's whole hour while the same code finished in 21 minutes on the run before:
+      # the last test name and the seed are what a hang needs. faulthandler_timeout dumps every
+      # thread's stack if one test runs past 15 minutes; timeout-minutes turns a hang into a
+      # failure that names the step instead of a silent hour.
       - name: Run tests
+        timeout-minutes: 50
         working-directory: backend
         env:
           # SQLite, said plainly — see proof-gate. DATABASE_URL is not a
@@ -490,9 +496,9 @@ jobs:
           LOG_FORMAT:           plain
         run: |
           pytest tests/ \
-            -q \
+            -v \
             --tb=short \
-            --no-header \
+            -o faulthandler_timeout=900 \
             -rfE \
             --cov=app \
             --cov-report=term:skip-covered \
