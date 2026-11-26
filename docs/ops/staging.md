@@ -24,7 +24,7 @@ migrate: her deploy'da bir kez `alembic upgrade head`; backend ancak o 0 ile ç�
 
 | | |
 |---|---|
-| Boyut | **4 vCPU / 8 GB RAM / 160 GB SSD** |
+| Boyut | **4 vCPU / 12 GB RAM / 160 GB SSD** (bellek alt sınırı için aşağıya bakın) |
 | İşletim sistemi | Ubuntu 24.04 LTS |
 | Konum | Türkiye'deki bir veri merkezi — sözleşmede yazılı olsun (KVKK) |
 | Ağ | Sabit IPv4; 22, 80, 443 açık |
@@ -35,14 +35,14 @@ Her servisin bellek/CPU sınırı `docker-compose.prod.yml`'de vardır (üst sı
 |---|---|---|---|
 | postgres | 2g | 2 | `shared_buffers=1GB`, `max_connections=200` |
 | redis | 640m | 0.5 | `maxmemory 512mb` + AOF yeniden yazma payı |
-| backend | 1280m | 2 | 2 uvicorn süreci; OCR (tesseract) en çok burada bellek yer |
-| worker | 1280m | 2 | analizler + zamanlanmış işler |
+| backend | **2560m (en az)** | 2 | 2 uvicorn süreci (her biri ~350 MB) + süreç başına bir ayrıştırıcı çocuk (en çok `PARSE_CHILD_RSS_MB` = 800 MB) |
+| worker | **2g (en az)** | 2 | analizler + zamanlanmış işler + bir ayrıştırıcı çocuk (800 MB) |
 | worker-maintenance | 768m | 1 | |
 | frontend | 512m | 1 | |
 | caddy | 256m | 0.5 | |
 | migrate | 512m | 1 | tek seferlik |
 
-Toplam sınır yaklaşık 6,6 GB: 8 GB'lık makinede işletim sistemine ~1,4 GB kalır. Bu değerler **ölçülmedi**: ilk hafta `docker stats` ile bakın; bir servis sınırında `OOMKilled` oluyorsa (`docker inspect -f '{{.State.OOMKilled}}' <konteyner>`) o servisin `mem_limit`'ini artırın, makineyi büyütmeden önce. Daha küçük bir VPS için önce Postgres'in `shared_buffers`'ını ve `mem_limit`'ini birlikte düşürün.
+**Bellek alt sınırı:** API konteyneri en az **2,5 GB**, worker en az **2 GB**, bunlara Postgres (2 GB) ve Redis (640 MB) eklenir; yukarıdaki sınırların toplamı yaklaşık 8,8 GB'dır (`migrate` tek seferlik, hesaba girmez), bu yüzden makine **12 GB** olmalıdır. 8 GB'lık makinede bütün sınırlar aynı anda dolmaz ama bunun garantisi yoktur; dolarsa çekirdeğin OOM killer'ı bir süreci öldürür. Ayrıştırıcı çocuk ise `PARSE_CHILD_RSS_MB` (800 MB) aşılınca kendiliğinden durdurulur ve kullanıcı "dosya bellek sınırını aştı" iletisini görür. Neden: [parser-sizing.md](parser-sizing.md). `backend` ve `worker` sınırlarını bunların altına indirmeyin: açılışta `parser_memory_exceeds_container` uyarısı görürsünüz. Bu değerler **ölçülmedi**: ilk hafta `docker stats` ile bakın; bir servis sınırında `OOMKilled` oluyorsa (`docker inspect -f '{{.State.OOMKilled}}' <konteyner>`) o servisin `mem_limit`'ini artırın, makineyi büyütmeden önce. Daha küçük bir VPS için önce Postgres'in `shared_buffers`'ını ve `mem_limit`'ini birlikte düşürün.
 
 Loglar her konteynerde `json-file`, **5 dosya × 20 MB** ile döner (konteyner başına en çok 100 MB). Caddy erişim logu da aynı sınırdadır.
 

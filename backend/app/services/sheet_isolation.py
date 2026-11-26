@@ -86,7 +86,7 @@ _TEXTS: dict[str, tuple[str, str]] = {
         "Try again in a few minutes by uploading the same file again.",
     ),
     "sheet_memory": (
-        "Dosya okunamadı: dosya bellek sınırını aştı (SHEET_CHILD_MEMORY_MB); dosyayı daha küçük parçalara bölüp yükleyin.",
+        "Dosya okunamadı: dosya bellek sınırını aştı; dosyayı daha küçük parçalara bölüp yükleyin.",
         "The file could not be read: it exceeded the memory limit; split the file into smaller parts and upload them separately.",
     ),
     "sheet_unreadable": (

@@ -262,6 +262,9 @@ def cgroup_memory_limit_mb() -> int | None:
 # The processes that run parser children (a PDF or spreadsheet read on an upload). The migrate job, `--db` checks and
 # the maintenance worker never do, so the sizing rule does not apply to them.
 PARSING_PROCESSES = frozenset({"api", "worker"})
+# What one API or arq process itself holds (the app, its libraries, the connection pools), apart from its children:
+# about 350 MB measured per uvicorn worker (docs/ops/parser-sizing.md). The container holds this AND the children.
+PROCESS_BASE_MB = 350
 
 
 def _parser_memory_findings(settings: Settings, process: str | None) -> list[Finding]:
@@ -278,7 +281,7 @@ def _parser_memory_findings(settings: Settings, process: str | None) -> list[Fin
     rss = settings.parse_child_rss_mb
     procs = max(1, settings.parse_process_count) if process == "api" else 1   # an arq worker is one process
     slots = max(1, settings.pdf_parse_concurrency)
-    worst = rss * slots * procs
+    worst = (rss * slots + PROCESS_BASE_MB) * procs
     if rss >= limit:
         return [_fatal("parser_memory_impossible", (
             f"A parser child may use {rss} MB resident (PARSE_CHILD_RSS_MB) and this container is limited to {limit} MB: "
@@ -286,8 +289,8 @@ def _parser_memory_findings(settings: Settings, process: str | None) -> list[Fin
             f"Raise the container's memory limit (docs/ops/parser-sizing.md)."))]
     if worst > limit:
         return [_warn("parser_memory_exceeds_container", (
-            f"Parser children can use {rss} MB x PDF_PARSE_CONCURRENCY {slots} x {procs} process(es) "
-            f"= {worst} MB, over this container's {limit} MB limit: a burst of uploads may be ended by the OOM "
+            f"Each of {procs} process(es) holds about {PROCESS_BASE_MB} MB itself plus up to {rss} MB x PDF_PARSE_CONCURRENCY {slots} "
+            f"of parser children: {worst} MB, over this container's {limit} MB limit: a burst of uploads may be ended by the OOM "
             f"killer, not by the per-child limit. Raise the container limit or lower the concurrency (docs/ops/parser-sizing.md)."))]
     return []
 

@@ -2815,6 +2815,8 @@ export type MessageTree = {
     ingestBalanceVerified: string;
     ingestBalancePartial: string;
     ingestBalanceUnverified: string;
+    ingestPagesTitle: string;
+    ingestPagesHeld: string;
     fileSignQuestion: string;
     fileSignReading: string;
     fileBodySignUniform: string;
@@ -6586,6 +6588,8 @@ export const en: MessageTree = {
     ingestBalanceVerified: "Verified against the running balance.",
     ingestBalancePartial: "{verified} rows verified against the running balance; {held} rows wait for your decision.",
     ingestBalanceUnverified: "Not verified against the balance: the rows could not be checked with the running balance.",
+    ingestPagesTitle: "Pages not read",
+    ingestPagesHeld: "Rows may be missing from this file, so it waits for your review.",
     fileSignQuestion: "In this file, are minus amounts money out and plus amounts money in?",
     fileSignReading: "If minus is out: {inIncome} in, {inExpense} out. If it is the opposite: {outIncome} in, {outExpense} out.",
     fileBodySignUniform: "Every amount in this file has the same sign, and there is no column or balance that says which way they went. The system does not guess.",

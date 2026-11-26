@@ -168,6 +168,14 @@ for execution (none has been run on a host).
 
 [pilot-acceptance-checklist.md](pilot-acceptance-checklist.md): one page, each line linked to its evidence.
 
+## Host memory minimum (uploaded-file parsers)
+
+Every uploaded PDF, .xlsx and CSV is parsed in a child process (PR #154). The children are why the limits are what they are:
+**API container (`backend`) at least 2.5 GB (`2560m`), worker at least 2 GB (`2g`), plus Postgres (2 GB) and Redis (640 MB).**
+The limits in `docker-compose.prod.yml` add up to about 8.8 GB, so plan a 12 GB host; an 8 GB host is not enough to honour every limit at once.
+On Kubernetes the backend limit is `2560Mi` (it was `2Gi`, which did not hold two API processes of about 350 MB each plus a parser child of up to 800 MB each).
+Sizing, measurements and the rule the preflight enforces: [parser-sizing.md](parser-sizing.md). The pilot checklist (B) has the line to tick.
+
 ## Owner decisions
 
 | # | Decision | Recommended default | Configuration it needs |

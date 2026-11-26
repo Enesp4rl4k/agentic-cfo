@@ -308,9 +308,8 @@ async def _read_all_documents(state: CFOState, config: AgentRunConfig) -> SkillR
     islemler: list[dict[str, Any]] = list((sonuc.patch or {}).get("transactions") or [])
     metinler: list[str] = [str((sonuc.patch or {}).get("raw_text") or "")]
     detaylar: list[str] = [f"1) {sonuc.detail}"]
-    sayimlar = (sonuc.patch or {}).get("ingest_counts")
-    guven = sonuc.confidence if sonuc.ok else 1.0
-    inceleme = bool(sonuc.needs_review)
+    sayimlar, okunmayan = (sonuc.patch or {}).get("ingest_counts"), list((sonuc.patch or {}).get("pages_not_read") or [])
+    guven, inceleme = (sonuc.confidence if sonuc.ok else 1.0), bool(sonuc.needs_review)
 
     for i, ek in enumerate(ekler, start=2):
         alt = await _belgeyi_al(ek.get("path", ""), ek.get("type", ""), state, config)
@@ -319,6 +318,7 @@ async def _read_all_documents(state: CFOState, config: AgentRunConfig) -> SkillR
         if alt.ok:
             islemler.extend((alt.patch or {}).get("transactions") or [])
             sayimlar = merge_counts(sayimlar, (alt.patch or {}).get("ingest_counts"))
+            okunmayan.extend((alt.patch or {}).get("pages_not_read") or [])
             metinler.append(str((alt.patch or {}).get("raw_text") or ""))
             guven = min(guven, alt.confidence)
             inceleme = inceleme or bool(alt.needs_review)
@@ -335,7 +335,7 @@ async def _read_all_documents(state: CFOState, config: AgentRunConfig) -> SkillR
     return SkillResult(
         ok=True,
         patch={"raw_text": _BELGE_ARASI.join(t for t in metinler if t)[:_EN_FAZLA_METIN],
-               "transactions": islemler, **({"ingest_counts": sayimlar} if sayimlar else {})},
+               "transactions": islemler, **({"ingest_counts": sayimlar} if sayimlar else {}), **({"pages_not_read": okunmayan} if okunmayan else {})},
         confidence=guven,
         needs_review=inceleme,
         detail=f"{len(ekler) + 1} belge, {len(islemler)} işlem. " + " | ".join(detaylar),

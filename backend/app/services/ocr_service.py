@@ -46,7 +46,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from app.services import pdf_isolation
+from app.services import page_gap, pdf_isolation
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +72,7 @@ class PageResult:
     has_tables: bool = False
     warnings: list[str] = field(default_factory=list)
     had_content: bool = True   # False for a page with no text layer and no image: blank, not "unread"
+    scan_like: bool = False    # an unread page whose raster covers most of it: a scan, not a logo or a stamp
 
 
 @dataclass
@@ -311,6 +312,7 @@ def _read_page(doc: Any, file_path: str, page_num: int, force_ocr: bool) -> Page
 
     return PageResult(
         had_content=(not page_warnings) or bool(page.get_images()) or bool(page.get_text("text").strip()),
+        scan_like=bool(page_warnings) and page_gap.page_is_scan(page),
         page_num=page_num,
         text=best_text,
         confidence=best_conf,
@@ -417,9 +419,7 @@ def _extract_in_process(file_path: str, force_ocr: bool = False) -> OCRResult:
     from collections import Counter
     dominant_strategy = Counter(strategies).most_common(1)[0][0] if strategies else "failed"
 
-    unread_pages = [pr.page_num + 1 for pr in page_results if pr.warnings and pr.had_content]
-    if unread_pages:   # pages that yielded nothing: shown to the user as not read (pdf_isolation.apply_pdf_notes)
-        doc_meta["pages_unread"] = unread_pages
+    doc_meta.update(page_gap.page_meta(page_results))   # text-less pages: a note, a hold only where data may be missing
 
     result = OCRResult(
         text=full_text,

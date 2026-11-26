@@ -66,3 +66,21 @@ describe("IngestCounts: balance verification of a text statement", () => {
     expect(screen.getByText("Bakiye zinciriyle doğrulandı.")).toBeInTheDocument();
   });
 });
+
+describe("IngestCounts: pages of a PDF that yielded no text", () => {
+  const held = [{ file: "ekstre.pdf", pages: [{ page: 3, state: "hold" as const, tr: "3. sayfa taranmış görünüyor ve okunamadı; işlemler eksik olabilir", en: "page 3 looks scanned and could not be read; rows may be missing" }] }];
+  const note = [{ file: "ekstre.pdf", pages: [{ page: 1, state: "note" as const, tr: "1. sayfada okunabilir metin yok (görsel/boş sayfa)", en: "page 1 has no readable text (image or blank page)" }] }];
+
+  it("lists a page that may hide rows as an alert, with its reason", () => {
+    renderWithQuery(<IngestCounts ingest={{ ...base, pages_not_read: held }} />);
+    expect(screen.getByRole("alert")).toHaveTextContent("Okunamayan sayfalar");
+    expect(screen.getByText(/3\. sayfa taranmış görünüyor ve okunamadı/)).toBeInTheDocument();
+  });
+
+  it("shows a decorative page as a plain note, also for an upload with no row counts", () => {
+    renderWithQuery(<IngestCounts ingest={{ processed: 2, pages_not_read: note }} />);
+    expect(screen.getByText("Okunamayan sayfalar")).toBeInTheDocument();
+    expect(screen.getByText(/1\. sayfada okunabilir metin yok \(görsel\/boş sayfa\)/)).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+});
