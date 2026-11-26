@@ -1154,10 +1154,9 @@ class WorkerSettings:
     # read; arq's default of 3600 s would report a dead worker for an hour.
     health_check_interval = 30
 
-    @classmethod
-    def redis_settings(cls) -> RedisSettings:
-        settings = get_settings()
-        return RedisSettings.from_dsn(settings.redis_url)
+    # A plain attribute: arq reads the settings class's `__dict__`, so a classmethod here is handed over as the raw
+    # descriptor and `create_pool` fails with "'classmethod' object has no attribute 'host'" (the worker never started).
+    redis_settings = RedisSettings.from_dsn(get_settings().redis_url)
 
 
 from app.services.privacy.jobs import run_data_export  # KVKK company export
@@ -1180,7 +1179,6 @@ class MaintenanceWorkerSettings:
     job_completion_wait = 300       # docker-compose.prod.yml stop_grace_period stays above this
     health_check_interval = 30      # see WorkerSettings
 
-    @classmethod
-    def redis_settings(cls) -> RedisSettings:
-        settings = get_settings()
-        return RedisSettings.from_dsn(settings.redis_url)
+    # A plain attribute: arq reads the settings class's `__dict__`, so a classmethod here is handed over as the raw
+    # descriptor and `create_pool` fails with "'classmethod' object has no attribute 'host'" (the worker never started).
+    redis_settings = RedisSettings.from_dsn(get_settings().redis_url)
