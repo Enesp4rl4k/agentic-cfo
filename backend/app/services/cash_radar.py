@@ -222,6 +222,13 @@ def _basis_of(
     return KNOWN, "document_due_date", {}
 
 
+def week_index(expected: date, anchor: date) -> int:
+    """The radar week (0-based) a day falls in: week 0 is the anchor through anchor+6, week 1 starts at anchor+7.
+
+    A payment dated before the anchor gives a negative index; callers place those (overdue) themselves."""
+    return (expected - anchor).days // 7
+
+
 def _weeks_from(anchor: date) -> list[tuple[date, date]]:
     return [
         (anchor + timedelta(days=7 * i), anchor + timedelta(days=7 * i + 6))
@@ -361,7 +368,7 @@ async def compute_cash_radar(
             overdue_payables += remaining
             payables[0].append(entry)
         else:
-            index = (expected - anchor).days // 7
+            index = week_index(expected, anchor)
             (receivables if receivable else payables)[index].append(entry)
 
     # 1. Recurring obligations (rent, payroll, subscriptions)
@@ -374,7 +381,7 @@ async def compute_cash_radar(
     recurring_projections = project_recurring_obligations(recurring_obs, anchor, HORIZON_WEEKS)
     total_recurring_cents = 0
     for r_proj in recurring_projections:
-        idx = (r_proj.expected_date - anchor).days // 7
+        idx = week_index(r_proj.expected_date, anchor)
         if 0 <= idx < HORIZON_WEEKS:
             entry = RadarItem(
                 id=r_proj.id,
@@ -403,7 +410,7 @@ async def compute_cash_radar(
     tax_projections = await project_tax_obligations(db, org_id, anchor, HORIZON_WEEKS, cur)
     total_tax_cents = 0
     for t_proj in tax_projections:
-        idx = (t_proj.expected_date - anchor).days // 7
+        idx = week_index(t_proj.expected_date, anchor)
         if 0 <= idx < HORIZON_WEEKS:
             entry = RadarItem(
                 id=t_proj.id,

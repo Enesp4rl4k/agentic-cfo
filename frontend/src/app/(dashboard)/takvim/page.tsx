@@ -10,7 +10,7 @@ import { Card } from "@/components/ui/card";
 import { BasisTag, formatDay, StaleBalanceNotice } from "@/components/radar/basis";
 import { PageHead } from "@/components/brand-app/PageHead";
 import { OodaFooter } from "@/components/brand-app/OodaFooter";
-import { clampWeek, payables, runScenario, shiftDate, weekOf, WEEKS, type Moves } from "@/components/calendar/scenario";
+import { canMoveEarlier, canMoveLater, clampWeek, payables, runScenario, shiftDate, weekOf, WEEKS, type Moves } from "@/components/calendar/scenario";
 import { useCan } from "@/hooks/useCan";
 import { useCurrencyFormat } from "@/hooks/useCurrencyFormat";
 import { useI18n } from "@/hooks/useI18n";
@@ -203,7 +203,7 @@ export default function TakvimPage() {
                               size="sm"
                               className="min-h-[44px] min-w-[44px]"
                               aria-label={copy.earlier.replace("{name}", name)}
-                              disabled={w.week <= 1}
+                              disabled={!canMoveEarlier(w.week)}
                               onClick={() => move(item.id, w.week - 1)}
                             >
                               <ArrowLeft className="h-4 w-4" aria-hidden="true" />
@@ -213,7 +213,7 @@ export default function TakvimPage() {
                               size="sm"
                               className="min-h-[44px] min-w-[44px]"
                               aria-label={copy.later.replace("{name}", name)}
-                              disabled={w.week >= radar.weeks.length}
+                              disabled={!canMoveLater(w.week, radar.weeks.length)}
                               onClick={() => move(item.id, w.week + 1)}
                             >
                               <ArrowRight className="h-4 w-4" aria-hidden="true" />
