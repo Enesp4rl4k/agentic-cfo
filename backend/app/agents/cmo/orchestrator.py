@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph
 
 from app.agents.cmo.campaign_agent import run_campaign_agent
@@ -35,7 +36,7 @@ def _append_log(state: CMOState, log: CMOStepLog) -> dict[str, Any]:
 
 # ── LangGraph Nodes ───────────────────────────────────────────────────────────
 
-async def node_campaigns(state: CMOState, config: dict) -> CMOState:
+async def node_campaigns(state: CMOState, config: RunnableConfig) -> CMOState:
     result = await run_campaign_agent(state, config)
     patch  = _append_log(state, CMOStepLog(
         step="campaigns",
@@ -45,7 +46,7 @@ async def node_campaigns(state: CMOState, config: dict) -> CMOState:
     return {**state, **patch, **result}  # type: ignore[return-value]
 
 
-async def node_funnel(state: CMOState, config: dict) -> CMOState:
+async def node_funnel(state: CMOState, config: RunnableConfig) -> CMOState:
     result = await run_funnel_agent(state, config)
     patch  = _append_log(state, CMOStepLog(
         step="funnel",
@@ -55,7 +56,7 @@ async def node_funnel(state: CMOState, config: dict) -> CMOState:
     return {**state, **patch, **result}  # type: ignore[return-value]
 
 
-async def node_cohort(state: CMOState, config: dict) -> CMOState:
+async def node_cohort(state: CMOState, config: RunnableConfig) -> CMOState:
     result = await run_cohort_agent(state, config)
     patch  = _append_log(state, CMOStepLog(
         step="cohort",
@@ -65,7 +66,7 @@ async def node_cohort(state: CMOState, config: dict) -> CMOState:
     return {**state, **patch, **result}  # type: ignore[return-value]
 
 
-async def node_cmo_summary(state: CMOState, config: dict) -> CMOState:
+async def node_cmo_summary(state: CMOState, config: RunnableConfig) -> CMOState:
     """
     CMO Summary node -- synthesizes all available agent outputs into a
     holistic marketing health score and top-risk list.

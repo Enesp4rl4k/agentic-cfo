@@ -19,6 +19,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, StateGraph
 
 from app.agents.compliance.policies_agent import run_policies_agent
@@ -46,7 +47,7 @@ def _append_log(state: ComplianceState, log: ComplianceStepLog) -> dict[str, Any
 
 # ── Nodes ──────────────────────────────────────────────────────────────────────
 
-async def node_policies(state: ComplianceState, config: dict) -> ComplianceState:
+async def node_policies(state: ComplianceState, config: RunnableConfig) -> ComplianceState:
     if not state.get("policy_csv", "").strip():
         patch = _append_log(state, ComplianceStepLog(
             node="policies_agent",
@@ -66,7 +67,7 @@ async def node_policies(state: ComplianceState, config: dict) -> ComplianceState
     return {**state, **patch}  # type: ignore[return-value]
 
 
-async def node_violations(state: ComplianceState, config: dict) -> ComplianceState:
+async def node_violations(state: ComplianceState, config: RunnableConfig) -> ComplianceState:
     if not state.get("violations_csv", "").strip():
         patch = _append_log(state, ComplianceStepLog(
             node="violations_agent",
@@ -86,7 +87,7 @@ async def node_violations(state: ComplianceState, config: dict) -> ComplianceSta
     return {**state, **patch}  # type: ignore[return-value]
 
 
-async def node_regulations(state: ComplianceState, config: dict) -> ComplianceState:
+async def node_regulations(state: ComplianceState, config: RunnableConfig) -> ComplianceState:
     if not state.get("regulations_csv", "").strip():
         patch = _append_log(state, ComplianceStepLog(
             node="regulations_agent",
@@ -106,7 +107,7 @@ async def node_regulations(state: ComplianceState, config: dict) -> ComplianceSt
     return {**state, **patch}  # type: ignore[return-value]
 
 
-async def node_compliance_summary(state: ComplianceState, config: dict) -> ComplianceState:
+async def node_compliance_summary(state: ComplianceState, config: RunnableConfig) -> ComplianceState:
     """
     Synthesize all three skill outputs into a unified compliance health score
     and actionable risk list. Pure calculation — no LLM required.

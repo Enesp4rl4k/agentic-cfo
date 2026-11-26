@@ -25,9 +25,10 @@ Fatal nodes: data_ingestion, pnl — without these, nothing else can run.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any
 
+from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, StateGraph
 
 from app.agents.state import (
@@ -84,7 +85,7 @@ def _append_log(state: CFOState, log: StepLog) -> dict[str, Any]:
     return {"logs": existing, "min_confidence": min_conf}
 
 
-def _run_config(config: dict) -> AgentRunConfig:
+def _run_config(config: Mapping[str, Any]) -> AgentRunConfig:
     return config.get("configurable", {}).get("run_config", DEFAULT_RUN_CONFIG)
 
 
@@ -121,7 +122,7 @@ def _update_reflection(state: CFOState, agent: str, narrative: str, context: dic
 # ── Node builders ─────────────────────────────────────────────────────────────
 # Fatal nodes (halt on failure)
 
-async def node_data_ingestion(state: CFOState, config: dict) -> CFOState:
+async def node_data_ingestion(state: CFOState, config: RunnableConfig) -> CFOState:
     result = await run_data_ingestion(state, _run_config(config))
     patch = _append_log(state, StepLog(
         step="data_ingestion", ok=result.ok, detail=result.detail, confidence=result.confidence
@@ -171,7 +172,7 @@ async def node_data_ingestion(state: CFOState, config: dict) -> CFOState:
     return {**state, **patch}  # type: ignore[return-value]
 
 
-async def node_pnl(state: CFOState, config: dict) -> CFOState:
+async def node_pnl(state: CFOState, config: RunnableConfig) -> CFOState:
     result = await run_pnl(state, _run_config(config))
     patch = _append_log(state, StepLog(
         step="pnl", ok=result.ok, detail=result.detail, confidence=result.confidence
@@ -190,7 +191,7 @@ async def node_pnl(state: CFOState, config: dict) -> CFOState:
     return {**state, **patch}  # type: ignore[return-value]
 
 
-async def node_cashflow(state: CFOState, config: dict) -> CFOState:
+async def node_cashflow(state: CFOState, config: RunnableConfig) -> CFOState:
     result = await run_cashflow(state, _run_config(config))
     patch = _append_log(state, StepLog(
         step="cashflow", ok=result.ok, detail=result.detail, confidence=result.confidence
@@ -208,7 +209,7 @@ async def node_cashflow(state: CFOState, config: dict) -> CFOState:
     return {**state, **patch}  # type: ignore[return-value]
 
 
-async def node_forecast(state: CFOState, config: dict) -> CFOState:
+async def node_forecast(state: CFOState, config: RunnableConfig) -> CFOState:
     result = await run_forecast(state, _run_config(config))
     patch = _append_log(state, StepLog(
         step="forecast", ok=result.ok, detail=result.detail, confidence=result.confidence
@@ -229,7 +230,7 @@ async def node_forecast(state: CFOState, config: dict) -> CFOState:
 # Non-fatal nodes (failure → log + continue)
 # Each checks routing plan before running — if skipped, returns state unchanged.
 
-async def node_anomaly(state: CFOState, config: dict) -> CFOState:
+async def node_anomaly(state: CFOState, config: RunnableConfig) -> CFOState:
     if _is_skipped(state, "anomaly_agent"):
         logger.debug("Skipping anomaly_agent (routing plan)")
         return state
@@ -243,7 +244,7 @@ async def node_anomaly(state: CFOState, config: dict) -> CFOState:
     return {**state, **patch}  # type: ignore[return-value]
 
 
-async def node_multi_period(state: CFOState, config: dict) -> CFOState:
+async def node_multi_period(state: CFOState, config: RunnableConfig) -> CFOState:
     if _is_skipped(state, "multi_period_agent"):
         logger.debug("Skipping multi_period_agent (routing plan)")
         return state
@@ -257,7 +258,7 @@ async def node_multi_period(state: CFOState, config: dict) -> CFOState:
     return {**state, **patch}  # type: ignore[return-value]
 
 
-async def node_tax(state: CFOState, config: dict) -> CFOState:
+async def node_tax(state: CFOState, config: RunnableConfig) -> CFOState:
     if _is_skipped(state, "tax_agent"):
         logger.debug("Skipping tax_agent (routing plan)")
         return state
@@ -271,7 +272,7 @@ async def node_tax(state: CFOState, config: dict) -> CFOState:
     return {**state, **patch}  # type: ignore[return-value]
 
 
-async def node_budget(state: CFOState, config: dict) -> CFOState:
+async def node_budget(state: CFOState, config: RunnableConfig) -> CFOState:
     if _is_skipped(state, "budget_agent"):
         logger.debug("Skipping budget_agent (routing plan)")
         return state
@@ -285,7 +286,7 @@ async def node_budget(state: CFOState, config: dict) -> CFOState:
     return {**state, **patch}  # type: ignore[return-value]
 
 
-async def node_alert(state: CFOState, config: dict) -> CFOState:
+async def node_alert(state: CFOState, config: RunnableConfig) -> CFOState:
     result = await run_alerts(state, _run_config(config))
     patch = _append_log(state, StepLog(
         step="alert", ok=result.ok, detail=result.detail, confidence=result.confidence
@@ -296,7 +297,7 @@ async def node_alert(state: CFOState, config: dict) -> CFOState:
     return {**state, **patch}  # type: ignore[return-value]
 
 
-async def node_report(state: CFOState, config: dict) -> CFOState:
+async def node_report(state: CFOState, config: RunnableConfig) -> CFOState:
     result = await run_report(state, _run_config(config))
     patch = _append_log(state, StepLog(
         step="report", ok=result.ok, detail=result.detail, confidence=result.confidence
@@ -307,7 +308,7 @@ async def node_report(state: CFOState, config: dict) -> CFOState:
     return {**state, **patch}  # type: ignore[return-value]
 
 
-async def node_hold_for_review(state: CFOState, config: dict) -> CFOState:
+async def node_hold_for_review(state: CFOState, config: RunnableConfig) -> CFOState:
     patch = _append_log(state, StepLog(
         step="review_gate",
         ok=True,

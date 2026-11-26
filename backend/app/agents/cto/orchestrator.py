@@ -18,8 +18,10 @@ At least one data source required to produce a meaningful summary.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import Any
 
+from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, StateGraph
 
 from app.agents.cto.incident_agent import run_incident_agent
@@ -61,13 +63,13 @@ def _append_log(state: CTOState, log: CTOStepLog) -> dict[str, Any]:
     return {"logs": existing, "min_confidence": min_conf}
 
 
-def _run_config(config: dict) -> CTORunConfig:
+def _run_config(config: Mapping[str, Any]) -> CTORunConfig:
     return config.get("configurable", {}).get("cto_run_config", DEFAULT_CTO_RUN_CONFIG)
 
 
 # ── Node builders ──────────────────────────────────────────────────────────────
 
-async def node_infra(state: CTOState, config: dict) -> CTOState:
+async def node_infra(state: CTOState, config: RunnableConfig) -> CTOState:
     result = await run_infra_agent(state, _run_config(config))
     patch = _append_log(state, CTOStepLog(
         step="infra", ok=result.ok, detail=result.detail, confidence=result.confidence
@@ -78,7 +80,7 @@ async def node_infra(state: CTOState, config: dict) -> CTOState:
     return {**state, **patch}  # type: ignore[return-value]
 
 
-async def node_tech_debt(state: CTOState, config: dict) -> CTOState:
+async def node_tech_debt(state: CTOState, config: RunnableConfig) -> CTOState:
     result = await run_tech_debt_agent(state, _run_config(config))
     patch = _append_log(state, CTOStepLog(
         step="tech_debt", ok=result.ok, detail=result.detail, confidence=result.confidence
@@ -89,7 +91,7 @@ async def node_tech_debt(state: CTOState, config: dict) -> CTOState:
     return {**state, **patch}  # type: ignore[return-value]
 
 
-async def node_incidents(state: CTOState, config: dict) -> CTOState:
+async def node_incidents(state: CTOState, config: RunnableConfig) -> CTOState:
     result = await run_incident_agent(state, _run_config(config))
     patch = _append_log(state, CTOStepLog(
         step="incidents", ok=result.ok, detail=result.detail, confidence=result.confidence
@@ -100,7 +102,7 @@ async def node_incidents(state: CTOState, config: dict) -> CTOState:
     return {**state, **patch}  # type: ignore[return-value]
 
 
-async def node_velocity(state: CTOState, config: dict) -> CTOState:
+async def node_velocity(state: CTOState, config: RunnableConfig) -> CTOState:
     result = await run_velocity_agent(state, _run_config(config))
     patch = _append_log(state, CTOStepLog(
         step="velocity", ok=result.ok, detail=result.detail, confidence=result.confidence
@@ -111,7 +113,7 @@ async def node_velocity(state: CTOState, config: dict) -> CTOState:
     return {**state, **patch}  # type: ignore[return-value]
 
 
-async def node_cto_summary(state: CTOState, config: dict) -> CTOState:
+async def node_cto_summary(state: CTOState, config: RunnableConfig) -> CTOState:
     """
     CTO Summary node — synthesizes all available agent outputs into a
     holistic tech health score and top-risk list.
@@ -272,7 +274,7 @@ async def node_cto_summary(state: CTOState, config: dict) -> CTOState:
     return {**state, **patch}  # type: ignore[return-value]
 
 
-async def node_hold_for_review(state: CTOState, config: dict) -> CTOState:
+async def node_hold_for_review(state: CTOState, config: RunnableConfig) -> CTOState:
     patch = _append_log(state, CTOStepLog(
         step="review_gate",
         ok=True,
