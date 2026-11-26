@@ -24,6 +24,7 @@ _LITERAL = re.compile(r"₺|\bTL\b|\bTRY\b|\bUSD\b|\bEUR\b|\bGBP\b")
 
 # A key is a file, or a directory when it ends in "/".
 ALLOWED: dict[str, str] = {
+    "app/platform/llm_egress/detectors.py": "recognises currency words next to a number so an amount is never mistaken for an identifier",
     # ── Upload and ingest: recognising and storing what a document states ─────────────────────────────
     "app/parsers/": "document parsers recognise a stated currency and default per source format on ingest",
     "app/services/ingest/": "the upload path: currency markers read from cells, rows and e-belge fields",
