@@ -17,6 +17,8 @@ from starlette.websockets import WebSocketState
 from app.api import ws_auth
 from app.api.access import can_access
 from app.core.client_ip import client_ip
+from app.core.tenancy import set_current_tenant
+from app.platform.llm_egress import DataMode, effective_mode
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -154,6 +156,7 @@ async def websocket_chat(
                 await websocket.close(code=ws_auth.REFUSED)
                 return
 
+            set_current_tenant(own_org_id)
             if msg_type == "chat":
                 question = msg.get("question", "").strip()
                 job_id = msg.get("job_id") or None
@@ -162,8 +165,11 @@ async def websocket_chat(
                     await _send(websocket, {"type": "error", "message": "Soru boş olamaz"})
                     continue
 
-                if _is_placeholder_key(settings.openai_api_key):
+                ai_off = (await effective_mode(own_org_id)).mode == DataMode.OFF
+                if ai_off or _is_placeholder_key(settings.openai_api_key):
                     mock = (
+                        "Yapay zekâya veri gönderimi bu şirket için kapalı (LLM_DATA_MODE=off); sorunuz yanıtlanmadı."
+                        if ai_off else
                         "Yapay zekâ yanıtı bu ortamda yapılandırılmamış (OpenAI API anahtarı yok); "
                         "sorunuz yanıtlanmadı."
                     )

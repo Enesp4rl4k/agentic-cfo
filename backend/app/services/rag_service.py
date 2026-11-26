@@ -18,9 +18,10 @@ from datetime import UTC, datetime
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import get_settings
 from app.database import session_factory
 from app.models.rag_chunk import RagChunk
+from app.platform import embedding_gateway
+from app.platform.embedding_gateway import Embedded
 
 logger = logging.getLogger(__name__)
 _EVIDENCE_CACHE: dict[str, tuple[float, str]] = {}
@@ -119,32 +120,12 @@ def _vector_literal(values: list[float]) -> str:
 
 
 def _has_embedding_support() -> bool:
-    settings = get_settings()
-    key = (settings.openai_api_key or "").strip()
-    return (
-        settings.rag_embedding_enabled
-        and bool(key)
-        and not key.startswith("llm-placeholder-")
-    )
+    return embedding_gateway.has_embedding_support()
 
 
-def _embed_texts(texts: list[str]) -> list[list[float]] | None:
-    if not texts or not _has_embedding_support():
-        return None
-    try:
-        from langchain_openai import OpenAIEmbeddings
-
-        settings = get_settings()
-        client = OpenAIEmbeddings(
-            model=settings.rag_embedding_model,
-            api_key=settings.openai_api_key,
-            base_url=settings.llm_base_url or None,
-            dimensions=settings.rag_embedding_dimensions,
-        )
-        return client.embed_documents(texts)
-    except Exception as exc:
-        logger.warning("RAG embedding generation failed, using TF-IDF only: %s", exc)
-        return None
+async def _embed_texts(texts: list[str], *, org_id: str | None, purpose: str = "rag_index") -> Embedded | None:
+    """Embeddings through the one embedding gateway (data mode applied there); None = TF-IDF only."""
+    return await embedding_gateway.embed_texts(texts, org_id=org_id, purpose=purpose)
 
 
 async def index_job_text(
@@ -172,8 +153,8 @@ async def index_job_text(
     # embedding round-trip. On SQLite that lock is process-wide — every
     # other writer waited behind an API call. Embed first; delete + insert
     # then commit together in milliseconds.
-    settings = get_settings()
-    embeddings = _embed_texts(chunks)
+    embedded = await _embed_texts(chunks, org_id=org_id)
+    embeddings = embedded.vectors if embedded else None
 
     # Idempotency: delete previous index for this job — same transaction as
     # the inserts below, so old-gone and new-in are published together.
@@ -194,7 +175,7 @@ async def index_job_text(
                 source_type=source_type,
                 chunk_index=i,
                 chunk_text=ch,
-                embedding_model=settings.rag_embedding_model if embeddings else None,
+                embedding_model=embedded.tag if embedded else None,
                 embedding=embeddings[i] if embeddings and i < len(embeddings) else None,
                 created_at=now,
             )

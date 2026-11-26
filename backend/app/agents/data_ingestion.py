@@ -28,6 +28,7 @@ from app.core.row_confidence import parse_confidence
 from app.parsers.base import ParsedStatement
 from app.parsers.invoice import TurkishInvoiceParser
 from app.parsers.registry import ParserRegistry
+from app.platform.llm_egress.policy import begin_document_extraction
 from app.services.ingest.categories import (
     _CATEGORY_MAP,
     CATEGORY_KEYWORDS,
@@ -35,15 +36,9 @@ from app.services.ingest.categories import (
     _guess_category,
     tur_kategori_celiskisi,
 )
-from app.services.ingest.cells import (
-    _detect_currency,
-    _parse_amount,
-    _parse_date,
-)
+from app.services.ingest.cells import _detect_currency, _parse_amount, _parse_date
 from app.services.ingest.door import read_document, read_text_statement
-from app.services.ingest.ebelge import (
-    _try_parse_ubl_xml,
-)
+from app.services.ingest.ebelge import _try_parse_ubl_xml
 from app.services.ingest.hold import resolve_currency, split_uncertain
 from app.services.ingest.okuma import ReadLedger, merge_counts, reconcile
 from app.services.ingest.readers import (
@@ -529,6 +524,8 @@ async def _belgeyi_oku(
 
         # ── Strategy 2: LLM fallback ───────────────────────────────────────
         logger.info("job=%s — no bank or CSV parser matched, using LLM extraction", state.get("job_id"))
+        if skipped := await begin_document_extraction(state.get("org_id")):  # `off` / strict mode: nothing leaves
+            return SkillResult(ok=False, detail=skipped, needs_review=True, confidence=0.4)
         raw_transactions = await _extract_transactions_with_llm(raw_text, settings)
 
         if not raw_transactions:

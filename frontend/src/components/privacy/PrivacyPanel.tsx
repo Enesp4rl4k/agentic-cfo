@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiClient } from "@/lib/api/client";
 import { useI18n } from "@/hooks/useI18n";
+import { AiEgressCard } from "./AiEgressCard";
 import { CompanyPrivacy } from "./CompanyPrivacy";
 import { RetentionCard } from "./RetentionCard";
 import { detailOf, downloadBlob, safeHref, type NoticeStatus, type PrivacyOverview } from "./types";
@@ -52,7 +53,9 @@ export function PrivacyPanel() {
             <li key={tp.key} className="space-y-1 text-sm">
               <p className="font-medium">{tp.name}</p>
               <p>{tp.sends}</p>
-              <p className={tp.masked ? "text-emerald-700" : "text-amber-700"}>{tp.masked ? p.thirdParties.masked : p.thirdParties.notMasked}</p>
+              <p className={tp.masked ? "text-emerald-700" : "text-amber-700"}>
+                {tp.masked ? (tp.key === "llm_provider" ? p.thirdParties.maskedPartly : p.thirdParties.masked) : p.thirdParties.notMasked}
+              </p>
               {tp.reaches_from.length > 0 && (
                 <p className="text-xs text-muted-foreground">{p.thirdParties.reaches}: {tp.reaches_from.join(", ")}</p>
               )}
@@ -60,6 +63,7 @@ export function PrivacyPanel() {
           ))}
         </ul>
       </section>
+      {data.ai_egress && <AiEgressCard view={data.ai_egress} onChanged={() => void load()} />}
       <RetentionCard view={data.retention} onChanged={() => void load()} />
     </main>
   );

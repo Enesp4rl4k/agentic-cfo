@@ -10,7 +10,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Float, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -43,6 +43,12 @@ class LLMCallLog(Base):
     from_cache: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     attempts: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # What left, without the payload (app.platform.llm_egress): the mode the call ran under, the bytes sent
+    # (all attempts), and how many placeholders of each type were substituted.
+    data_mode: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    bytes_out: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    replaced: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, nullable=False, index=True

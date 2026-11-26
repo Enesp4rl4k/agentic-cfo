@@ -201,7 +201,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.platform.model_gateway import LLMUnavailable
+from app.platform.model_gateway import LLMDisabled, LLMUnavailable
 from app.services.pdf import PDFRenderError
 
 
@@ -244,6 +244,12 @@ def _service_unavailable(error: str, code: str) -> JSONResponse:
 @app.exception_handler(LLMUnavailable)
 async def llm_unavailable_handler(request: Request, exc: LLMUnavailable):
     logger.warning("LLM unavailable on %s %s: %s", request.method, request.url.path, exc)
+    if isinstance(exc, LLMDisabled):  # a choice of this company or of the operator, not a missing key
+        return _service_unavailable(
+            "Yapay zekâya veri gönderimi kapalı (LLM_DATA_MODE=off). "
+            "Sayısal analizler etkilenmez; sohbet ve anlatı özellikleri bu ayarla kapalı.",
+            "llm_disabled",
+        )
     return _service_unavailable(
         "Yapay zekâ modeli şu an kullanılamıyor (yapılandırılmamış). "
         "Sayısal analizler etkilenmez; sohbet ve anlatı özellikleri geçici olarak kapalı.",

@@ -31,6 +31,8 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from app.platform import llm_egress as egress
+from app.platform.llm_egress.audit import persist_call_log as _persist_call_log
 from app.platform.model_catalog import (
     ModelConfig,
     Tier,
@@ -70,6 +72,10 @@ _DEFAULT_SYSTEM_PROMPT = (
 
 class LLMUnavailable(RuntimeError):
     """No usable API key is configured — callers should use a deterministic fallback."""
+
+
+class LLMDisabled(LLMUnavailable):
+    """The effective data mode is `off`: no data is sent to a language model; use the deterministic path."""
 
 
 class LLMBudgetExceeded(RuntimeError):
@@ -297,6 +303,17 @@ def _build_messages(system_prompt: str, prompt: str, history: History | None) ->
     return msgs
 
 
+async def _open_egress(org_id: str | None) -> egress.EgressSession:
+    try:
+        return await egress.open_session(org_id)
+    except egress.PolicyOff as exc:
+        raise LLMDisabled(str(exc)) from exc
+
+
+def _texts(messages: list[Any]) -> list[str]:
+    return [str(getattr(m, "content", "")) for m in messages]
+
+
 async def _raw_chat(
     cfg: ModelConfig,
     system_prompt: str,
@@ -307,76 +324,43 @@ async def _raw_chat(
     max_tokens: int | None,
     history: History | None = None,
 ) -> tuple[str, Any | None, int, int]:
-    llm = _build_client(cfg, temperature, max_tokens)
-    messages = _build_messages(system_prompt, prompt, history)
-
-    if schema is not None:
-        structured = llm.with_structured_output(schema)
-        parsed = await structured.ainvoke(messages)
-        text = parsed.to_text() if hasattr(parsed, "to_text") else str(parsed)
-        # structured-output responses rarely expose usage; estimate from text
-        in_tok = int(len((system_prompt + prompt).split()) * 1.3)
-        out_tok = int(len(text.split()) * 1.3)
-        return text, parsed, in_tok, out_tok
-
-    response = await llm.ainvoke(messages)
-    text = response.content or ""
-    usage = getattr(response, "usage_metadata", None) or {}
-    in_tok = int(usage.get("input_tokens", len((system_prompt + prompt).split()) * 1.3))
-    out_tok = int(usage.get("output_tokens", len(text.split()) * 1.3))
-    return text, None, in_tok, out_tok
-
-
-def _persist_call_log(
-    *,
-    org_id: str | None,
-    job_id: str | None,
-    task: str,
-    model: str,
-    res: GatewayResult | None,
-    ok: bool,
-    error: str | None,
-) -> None:
-    """Best-effort write of one LLMCallLog row. Never raises into the caller."""
+    """One send. THE choke point: every payload is masked here (or refused, in `off` mode) before it is built."""
+    llm = _build_client(cfg, temperature, max_tokens)  # raises LLMUnavailable without a key
+    outer = egress.current_tally()
+    tally = outer or egress.CallTally(task="llm_router")  # a direct caller (llm_router) has no `complete` around it
+    sess = await _open_egress(tally.org_id)
+    ok = False
     try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        return
+        out_system, out_prompt, out_history = sess.outbound(system_prompt, prompt, history)
+        messages = _build_messages(out_system, out_prompt, out_history)
+        sess.sent(_texts(messages), tally)
 
-    async def _write() -> None:
-        try:
-            from app.database import session_factory
-            from app.models.llm_call_log import LLMCallLog
+        if schema is not None:
+            structured = llm.with_structured_output(schema)
+            parsed = sess.restore_obj(await structured.ainvoke(messages))
+            text = parsed.to_text() if hasattr(parsed, "to_text") else str(parsed)
+            # structured-output responses rarely expose usage; estimate from text
+            in_tok = int(len((system_prompt + prompt).split()) * 1.3)
+            out_tok = int(len(text.split()) * 1.3)
+            ok = True
+            return text, parsed, in_tok, out_tok
 
-            async with session_factory()() as db:
-                db.add(
-                    LLMCallLog(
-                        org_id=org_id,
-                        job_id=job_id,
-                        task_type=task,
-                        model=model,
-                        input_tokens=res.input_tokens if res else 0,
-                        output_tokens=res.output_tokens if res else 0,
-                        # llm_call_log.cost_usd is NOT NULL (follow-up migration): unpriced rows store 0.0
-                        cost_usd=(res.cost_usd or 0.0) if res else 0.0,
-                        latency_ms=res.latency_ms if res else 0.0,
-                        ok=ok,
-                        from_cache=res.from_cache if res else False,
-                        attempts=res.attempts if res else 1,
-                        error=(error or None),
-                    )
-                )
-                await db.commit()
-        except Exception as exc:  # pragma: no cover - ledger must not break agents
-            logger.debug("LLMCallLog persist skipped: %s", exc)
-
-    from app.core.background import spawn
-
-    spawn(_write(), name="llm-call-log")
+        response = await llm.ainvoke(messages)
+        text = sess.restore(response.content or "")
+        usage = getattr(response, "usage_metadata", None) or {}
+        in_tok = int(usage.get("input_tokens", len((system_prompt + prompt).split()) * 1.3))
+        out_tok = int(usage.get("output_tokens", len(text.split()) * 1.3))
+        ok = True
+        return text, None, in_tok, out_tok
+    finally:
+        if outer is None:
+            _persist_call_log(org_id=sess.org_id, job_id=None, task=tally.task or "llm_router", model=cfg.model_id,
+                              res=None, ok=ok, error=None, tally=tally)
 
 
 # ── Public entry point ─────────────────────────────────────────────────────
 
+@egress.tallied
 async def complete(
     *,
     task: str,
@@ -470,7 +454,7 @@ async def complete(
                     org_id=org_id, job_id=job_id, task=task, model=cfg.model_id,
                     res=GatewayResult(text="", model=cfg.model_id, task=task,
                                       latency_ms=latency_ms, attempts=attempts),
-                    ok=False, error=f"{type(exc).__name__}: {exc}",
+                    ok=False, error=f"{type(exc).__name__}: {exc}", tally=egress.current_tally(),
                 )
                 try:
                     span.set_attribute("llm.ok", False)
@@ -497,7 +481,7 @@ async def complete(
     _LEDGER.record(result, org_id, ok=True)
     _persist_call_log(
         org_id=org_id, job_id=job_id, task=task, model=cfg.model_id,
-        res=result, ok=True, error=None,
+        res=result, ok=True, error=None, tally=egress.current_tally(),
     )
 
     if use_cache:
@@ -568,7 +552,12 @@ async def stream(
     system_prompt = system_prompt or _DEFAULT_SYSTEM_PROMPT
     cfg = _resolve_model(task, len(prompt), None)
     llm = _build_client(cfg, temperature, max_tokens)  # raises LLMUnavailable
-    messages = _build_messages(system_prompt, prompt, history)
+    tally = egress.CallTally(org_id=org_id, task=task)
+    sess = await _open_egress(org_id)  # raises LLMDisabled in `off` mode, before anything is built
+    out_system, out_prompt, out_history = sess.outbound(system_prompt, prompt, history)
+    messages = _build_messages(out_system, out_prompt, out_history)
+    sess.sent(_texts(messages), tally)
+    restorer = sess.stream_restorer()
 
     start = time.time()
     pieces: list[str] = []
@@ -580,9 +569,14 @@ async def stream(
             pass
         async for chunk in llm.astream(messages):
             piece = getattr(chunk, "content", None) or (chunk if isinstance(chunk, str) else "")
+            piece = restorer.feed(piece) if restorer and piece else piece
             if piece:
                 pieces.append(piece)
                 yield piece
+        tail = restorer.flush() if restorer else ""
+        if tail:
+            pieces.append(tail)
+            yield tail
 
     text = "".join(pieces)
     in_tok = int(len((system_prompt + prompt).split()) * 1.3)
@@ -596,5 +590,5 @@ async def stream(
     _LEDGER.record(res, org_id, ok=True)
     _persist_call_log(
         org_id=org_id, job_id=job_id, task=task, model=cfg.model_id,
-        res=res, ok=True, error=None,
+        res=res, ok=True, error=None, tally=tally,
     )

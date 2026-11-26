@@ -124,7 +124,7 @@ TABLES: dict[str, Table] = {
     "audit_logs": Table("who did what, when, from where", S.MEMBER, R.OPERATIONAL,
                         {"user_id": _PSE, "user_email": _CT, "request_body": _TXT, "ip_address": _NET, "user_agent": _NET, "reason": _TXT},
                         note="no organisation column: rows are linked to a company through the member"),
-    "llm_call_logs": Table("one row per model call: task, model, tokens, cost, error (never the prompt)", S.ANYONE,
+    "llm_call_logs": Table("one row per model call: task, model, tokens, cost, data mode, bytes sent, placeholder counts, error (never the prompt)", S.ANYONE,
                            R.OPERATIONAL, {"error": _TXT}),
     "password_reset_tokens": Table("single-use reset links", S.MEMBER, R.OPERATIONAL, {"user_id": _PSE, "token_hash": _CRED}),
     "email_verification_tokens": Table("single-use verification links", S.MEMBER, R.OPERATIONAL, {"user_id": _PSE, "token_hash": _CRED}),

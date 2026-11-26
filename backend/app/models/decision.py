@@ -95,6 +95,8 @@ class DecisionKind(StrEnum):
     DATA_EXPORT = "data_export"
     # An owner changes how long this company's data is kept (the retention choices, day numbers only).
     RETENTION_POLICY_CHANGE = "retention_policy_change"
+    # An owner chooses what may leave for a language model: off, masked or raw (who chose, when, from what to what).
+    LLM_DATA_MODE_CHANGE = "llm_data_mode_change"
 
     # The amount above which a decision needs a senior person: acknowledged as proposed, or set by the owner.
     MATERIALITY = "materiality"
@@ -159,6 +161,7 @@ DECISION_READ: dict[DecisionKind, ReadClass] = {
     _K.ERASURE: _R.DECIDER,
     _K.DATA_EXPORT: _R.DECIDER,
     _K.RETENTION_POLICY_CHANGE: _R.DECIDER,
+    _K.LLM_DATA_MODE_CHANGE: _R.DECIDER,
 }
 
 

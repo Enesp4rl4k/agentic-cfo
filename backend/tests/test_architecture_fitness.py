@@ -81,7 +81,6 @@ _UNIMPORTED: frozenset[str] = frozenset(
     {
         "app.core.crypto",
         "app.core.distributed_lock",
-        "app.core.tenancy",
         "app.services.audit_trail",
         "app.services.benchmark_utils",
         "app.services.consolidation_engine",

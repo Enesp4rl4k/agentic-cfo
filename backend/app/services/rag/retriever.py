@@ -135,8 +135,9 @@ class EmbeddingRagRetriever:
                 min_score=min_score,
             )
 
-        query_embeddings = _embed_texts([query])
-        if not query_embeddings:
+        embedded = await _embed_texts([query], org_id=org_id, purpose="rag_query")
+        query_embeddings = embedded.vectors if embedded else None
+        if embedded is None or not query_embeddings:
             return await self._fallback.retrieve(
                 db=db,
                 org_id=org_id,
@@ -150,9 +151,11 @@ class EmbeddingRagRetriever:
             )
 
         vector = _vector_literal(query_embeddings[0])
-        clauses = ["org_id = :org_id", "embedding IS NOT NULL"]
+        # only rows embedded the way this query was (raw vs masked text are different vector spaces)
+        clauses = ["org_id = :org_id", "embedding IS NOT NULL", "embedding_model = :embedding_model"]
         params: dict[str, object] = {
             "org_id": org_id,
+            "embedding_model": embedded.tag,
             "embedding": vector,
             "limit": max(1, min(top_k, candidate_limit)),
         }
@@ -180,7 +183,7 @@ class EmbeddingRagRetriever:
                     SELECT job_id, chunk_index, source_type, chunk_text,
                            1 - (embedding <=> CAST(:embedding AS vector)) AS score
                     FROM rag_chunks
-                    WHERE org_id = :org_id AND embedding IS NOT NULL
+                    WHERE org_id = :org_id AND embedding IS NOT NULL AND embedding_model = :embedding_model
                     ORDER BY embedding <=> CAST(:embedding AS vector)
                     LIMIT :limit
                 """

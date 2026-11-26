@@ -74,7 +74,9 @@ def test_every_flow_is_described_and_used() -> None:
     used = {f for t in TABLES.values() for f in t.flows} | {f for s in STORES for f in s.flows}
     assert used <= set(Flow)
     assert Flow.LLM in used and Flow.SMTP in used
-    assert not THIRD_PARTIES[Flow.LLM].masked, "if masking lands, say so here and in the documents"
+    llm = THIRD_PARTIES[Flow.LLM]
+    # masking has landed (app/platform/llm_egress): it is said here and in the documents, with its limit
+    assert llm.masked and "free text can still hold personal data" in llm.sends and "LLM_DATA_MODE" in llm.switch
 
 
 def test_credentials_are_a_registered_category() -> None:

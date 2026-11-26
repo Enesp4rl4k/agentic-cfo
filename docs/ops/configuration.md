@@ -160,6 +160,9 @@ rendered environment before trusting a Helm deploy; the supported path is `docke
 | `LLM_TEMPERATURE` | 0.0 | optional | - |  |
 | `LLM_MAX_TOKENS` | 16384 | optional | - |  |
 | `LLM_BASE_URL` | `https://api.deepseek.com` | optional | - |  |
+| `LLM_DATA_MODE` | `masked` | recommended to decide | WARN in production when `raw` and the provider is not local | what may leave for the provider (`LLM_BASE_URL`): `off` no LLM and no embedding call at all (the deterministic paths only), `masked` identifiers (IBAN, TCKN, VKN, card, phone, e-mail, plate) and the names the books hold are replaced by placeholders first and restored in the reply, `raw` the text goes as it is (explicit choice only). A company's owner may tighten it (`PUT /privacy/ai-data-mode`), see `LLM_ORG_MAY_RELAX`. Embeddings obey the same mode. See `docs/kvkk/yapay-zeka-veri-akisi.md` |
+| `LLM_DOCUMENT_TEXT` | `allow` | optional | - | `never`: no uploaded-document text is sent in any mode; extraction uses the deterministic parsers and the upload outcome says the AI step was skipped |
+| `LLM_ORG_MAY_RELAX` | False | optional | - | `true`: a company's owner may choose a MORE permissive mode than `LLM_DATA_MODE` (masked to raw). Default `false`: `LLM_DATA_MODE` is the operator's ceiling and an owner can only tighten it |
 | `PLATFORM_OPERATOR_EMAILS` | (empty) | recommended | WARN if empty | who can mint pilot invites and break-glass an IP allow-list |
 | `SUPPORT_CONTACT` | (empty) | recommended | WARN if empty | named in the lock-out message and on the invite-only sign-up page ("ask here for an invitation") |
 | `REGISTRATION_MODE` | `invite_only` | REQUIRED to decide | FATAL with APP_ENV production/staging when `invite_only` and no mail sender | `open` anyone, `invite_only` a pilot or organisation invite, `closed` as invite_only but a pilot invite no longer creates a company. Governs `/auth/register`, SSO sign-up and `/org/create` |

@@ -3442,7 +3442,17 @@ export type MessageTree = {
         contactWith: string; contactNone: string; reference: string;
       };
     };
-    thirdParties: { title: string; intro: string; masked: string; notMasked: string; reaches: string };
+    thirdParties: { title: string; intro: string; masked: string; maskedPartly: string; notMasked: string; reaches: string };
+    /** "Yapay zekâya giden veri" (owner only): provider, mode, categories sent, 30-day counters. */
+    aiEgress: {
+      title: string; intro: string; provider: string; providerDefault: string; local: string; outside: string;
+      current: string; sourceOrg: string; sourcePlatform: string; chooseTitle: string; capped: string; useDefault: string;
+      saved: string; failed: string; notAllowed: string; categoriesTitle: string; documentNever: string; usageTitle: string; usage: string;
+      usageNote: string; dictionary: string; dictionaryTruncated: string; dictionaryIncomplete: string; residual: string;
+      modes: Record<"off" | "masked" | "raw", { label: string; hint: string }>;
+      categories: Record<string, string>;
+      states: Record<"sent" | "replaced" | "partly" | "not_sent", string>;
+    };
     retention: {
       title: string;
       intro: string;
@@ -6853,6 +6863,7 @@ export const en: MessageTree = {
       briefing_recipients: "Briefing to the accountant",
       data_export: "Company data export",
       retention_policy_change: "Retention periods",
+      llm_data_mode_change: "Data sent to the AI provider",
     },
     outcomes: {
       confirmed: "Confirmed",
@@ -7371,7 +7382,50 @@ export const en: MessageTree = {
       intro: "The services below can receive personal data when the feature is on. Where data is not masked before it is sent, that is said plainly.",
       masked: "Masked before it is sent",
       notMasked: "Not masked before it is sent",
+      maskedPartly: "Identifiers and the names we hold are replaced before sending; free text can remain (see the section below)",
       reaches: "It can come from these records",
+    },
+    aiEgress: {
+      title: "Data sent to the AI provider",
+      intro: "Chat, written summaries and reading uploaded documents can send text to an AI provider. Here you see to whom, in which mode, what kind of data goes, and how much went in the last 30 days. This page describes what the software does; it does not decide whether a transfer is lawful.",
+      provider: "Provider and model",
+      providerDefault: "the provider's default address",
+      local: "On this server or network",
+      outside: "Outside this server or network",
+      current: "Mode in force",
+      sourceOrg: "Chosen by your company's owner.",
+      sourcePlatform: "The platform's setting ({mode}); your company has not chosen its own.",
+      chooseTitle: "What may leave for the AI provider",
+      capped: "Your earlier choice is looser than this installation allows, so the platform's mode applies.",
+      useDefault: "Go back to the platform's mode",
+      saved: "Saved. The choice is recorded in the decision history (who, when).",
+      notAllowed: "Not available here: the platform setting (LLM_DATA_MODE) is stricter; a company can only tighten it.",
+      failed: "The choice could not be saved just now. Try again in a moment.",
+      categoriesTitle: "In the mode in force, this is what goes",
+      documentNever: "Uploaded-document text is never sent (LLM_DOCUMENT_TEXT=never): reading falls back to the built-in readers and the upload says the AI step was skipped.",
+      usageTitle: "Last {days} days",
+      usage: "{calls} calls, {size} sent.",
+      usageNote: "Counts only. No question, document or reply is stored for this count.",
+      dictionary: "Names the masking knows from your books: {n}.",
+      dictionaryTruncated: "The list was cut at its limit: names beyond it are not replaced.",
+      dictionaryIncomplete: "Part of your books could not be read for this list just now.",
+      residual: "Residual risk: free-text descriptions and documents can still hold personal data that neither the patterns (IBAN, tax and ID numbers, cards, phones, e-mail) nor the names in your books catch, for example a person named only in a note. Amounts, dates and currencies are never changed. Replies are restored to the real names before you see them.",
+      modes: {
+        off: { label: "Off", hint: "Nothing is sent. Chat and written summaries are unavailable; the numbers, reports and rule-based texts keep working." },
+        masked: { label: "Masked", hint: "Names the books hold and identifiers are replaced by placeholders before sending and restored in the reply." },
+        raw: { label: "As is", hint: "Everything goes exactly as written. Choose this only on purpose." },
+      },
+      categories: {
+        figures: "Amounts, dates and currencies",
+        counterparties: "Names of customers and suppliers",
+        company: "Your company's name",
+        identifiers: "IBAN, tax and ID numbers, cards, phones, e-mail",
+        descriptions: "Transaction descriptions",
+        document_text: "Text of uploaded documents",
+        chat: "Questions and chat history",
+        embeddings: "Document pieces for search",
+      },
+      states: { sent: "Sent as is", replaced: "Replaced by placeholders", partly: "Only known names and identifiers replaced", not_sent: "Not sent" },
     },
     retention: {
       title: "Retention periods",

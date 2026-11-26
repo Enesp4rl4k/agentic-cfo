@@ -237,6 +237,24 @@ def _degraded_findings(settings: Settings, env: Mapping[str, str]) -> list[Findi
     return out
 
 
+def _llm_egress_findings(settings: Settings, env: Mapping[str, str]) -> list[Finding]:
+    """`raw` sends document text, names and identifiers as they are; against a provider that is not on this
+    host or network that is data leaving the country unmasked, and must never happen by oversight."""
+    from urllib.parse import urlsplit
+
+    if getattr(settings, "llm_data_mode", "masked") != "raw" or not is_production(settings, env):
+        return []
+    host = (urlsplit(settings.llm_base_url or "").hostname or "") if (settings.llm_base_url or "").strip() else "api.openai.com"
+    if host in ("localhost", "127.0.0.1", "::1", "host.docker.internal") or host.endswith((".localhost", ".internal")):
+        return []
+    return [_warn(
+        "llm_raw_foreign",
+        f"LLM_DATA_MODE=raw with the provider at {host}: uploaded-document text, counterparty names, tax numbers and IBANs "
+        "are sent to it unmasked. Choose masked (or off) unless that transfer has been decided on purpose "
+        "(docs/kvkk/yapay-zeka-veri-akisi.md).",
+    )]
+
+
 # cgroup memory limit files: v2 first, then v1. Tests point this at a temporary directory.
 _CGROUP_LIMIT_FILES = (
     Path("/sys/fs/cgroup/memory.max"),
@@ -304,6 +322,7 @@ def check_settings(settings: Settings, environ: Mapping[str, str] | None = None,
         *_exposure_findings(settings, env),
         *_mail_findings(settings, env),
         *_degraded_findings(settings, env),
+        *_llm_egress_findings(settings, env),
         *_parser_memory_findings(settings, process),
     ]
     if settings.use_sqlite and app_env(env) in _PRODUCTION_ENVS:

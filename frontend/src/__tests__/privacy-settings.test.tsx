@@ -32,6 +32,23 @@ function overview(over: Partial<PrivacyOverview> = {}): PrivacyOverview {
       dry_run: true, can_edit: true,
     },
     export: null,
+    ai_egress: aiView(),
+    ...over,
+  };
+}
+
+function aiView(over: Partial<NonNullable<PrivacyOverview["ai_egress"]>> = {}): NonNullable<PrivacyOverview["ai_egress"]> {
+  return {
+    mode: "masked", source: "platform", platform_mode: "masked", organisation_choice: null, choice_capped: false,
+    allowed_modes: ["off", "masked"], provider_host: "api.deepseek.com", provider_is_local: false, model: "deepseek-chat",
+    document_text: "allow",
+    categories: [
+      { key: "figures", state: "sent" }, { key: "counterparties", state: "replaced" }, { key: "company", state: "replaced" },
+      { key: "identifiers", state: "replaced" }, { key: "descriptions", state: "partly" }, { key: "document_text", state: "partly" },
+      { key: "chat", state: "partly" }, { key: "embeddings", state: "partly" },
+    ],
+    usage: { days: 30, calls: 1234, bytes_out: 5_242_880, calls_by_mode: { masked: 1234 } },
+    dictionary: { known_names: 42, truncated: false, complete: true },
     ...over,
   };
 }
@@ -55,6 +72,41 @@ describe("Veri ve gizlilik", () => {
     expect(screen.getByText(tr.settingsPrivacy.thirdParties.notMasked)).toBeTruthy();
     expect(screen.getByText(/transactions, uploads/)).toBeTruthy();
     expect(screen.getByText(tr.settingsPrivacy.retention.dryRunOn)).toBeTruthy();
+  });
+
+  it("shows the owner what leaves for the AI provider: host, model, mode, categories, counters, residual risk", async () => {
+    serve(overview());
+    render(<PrivacyPanel />);
+    const a = tr.settingsPrivacy.aiEgress;
+    expect(await screen.findByText(a.title)).toBeTruthy();
+    expect(screen.getByText(/api\.deepseek\.com · deepseek-chat/)).toBeTruthy();
+    expect(screen.getByText(a.outside)).toBeTruthy();
+    expect((screen.getByLabelText(new RegExp(a.modes.masked.label)) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByLabelText(new RegExp(a.modes.raw.label)) as HTMLInputElement).disabled).toBe(true); // above the operator's ceiling
+    expect(screen.getByText(a.categories.figures)).toBeTruthy();
+    expect(screen.getAllByText(a.states.replaced).length).toBe(3);
+    expect(screen.getByText("1.234 çağrı, 5 MB gönderildi.")).toBeTruthy();
+    expect(screen.getByText(a.residual)).toBeTruthy();
+    expect(screen.getByText(tr.settingsPrivacy.thirdParties.notMasked)).toBeTruthy(); // the LLM card of this fixture says masked:false
+  });
+
+  it("is absent for anyone but the owner", async () => {
+    serve(overview({ role: "analyst", ai_egress: null }));
+    render(<PrivacyPanel />);
+    await screen.findByText("Veri ve gizlilik");
+    expect(screen.queryByText(tr.settingsPrivacy.aiEgress.title)).toBeNull();
+  });
+
+  it("lets the owner tighten the mode and says when an earlier choice is capped", async () => {
+    serve(overview({ ai_egress: aiView({ organisation_choice: "raw", choice_capped: true, source: "platform" }) }));
+    client.put.mockResolvedValue({ data: { data: {} } });
+    render(<PrivacyPanel />);
+    const a = tr.settingsPrivacy.aiEgress;
+    expect(await screen.findByText(a.capped)).toBeTruthy();
+    fireEvent.click(screen.getByLabelText(new RegExp(a.modes.off.label)));
+    await waitFor(() => expect(client.put).toHaveBeenCalledWith("/privacy/ai-data-mode", { mode: "off" }));
+    fireEvent.click(screen.getByText(a.useDefault));
+    await waitFor(() => expect(client.put).toHaveBeenCalledWith("/privacy/ai-data-mode", { mode: null }));
   });
 
   it("records the acceptance of the current versions", async () => {

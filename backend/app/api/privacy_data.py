@@ -7,6 +7,8 @@
   GET  /privacy/exports/{id}/download          owner: the bundle, until its download window closes
   GET  /privacy/retention/preview              owner/admin: what the retention job would purge for THIS company now
   PUT  /privacy/retention                      owner: this company's own (shorter) retention choices, never below the floor
+  GET  /privacy/overview `ai_egress`           owner: what leaves for a language model, in which mode, 30-day counters
+  PUT  /privacy/ai-data-mode                   owner: this company's own choice of that mode (off | masked | raw | null)
   GET  /privacy/notices, POST /privacy/notices/accept    versioned acceptance of the privacy notice and the terms
 """
 from __future__ import annotations
@@ -14,7 +16,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterator
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -34,7 +36,7 @@ from app.models.privacy_records import DataExport, RetentionRun
 from app.models.user import User
 from app.services.acting_role import acting_role
 from app.services.decisions import record_decision
-from app.services.privacy import export_flow, notices, retention
+from app.services.privacy import ai_egress, export_flow, notices, retention
 from app.services.privacy.registry import THIRD_PARTIES
 from app.services.privacy.registry_stores import STORES
 from app.services.privacy.registry_tables import TABLES
@@ -57,6 +59,10 @@ async def _owner_org(db: AsyncSession, user: User) -> str:
 class RetentionBody(BaseModel):
     # day numbers per company setting; null removes the company's choice (the platform default applies again)
     policy: dict[str, int | None]
+
+
+class AiModeBody(BaseModel):
+    mode: Literal["off", "masked", "raw"] | None = None  # null removes the company's choice
 
 
 class NoticeBody(BaseModel):
@@ -84,8 +90,10 @@ async def overview(current_user: User = Depends(get_current_user), db: AsyncSess
             "dry_run": settings.retention_dry_run, "can_edit": role == "owner",
         },
         "export": None,
+        "ai_egress": None,
     }
     if role == "owner" and org is not None:
+        data["ai_egress"] = await ai_egress.view(db, org)
         live = await export_flow.active_export(db, str(org.id))
         data["export"] = export_flow.to_dict(live) if live else None
     return {"data": data, "error": None}
@@ -191,6 +199,22 @@ async def set_retention(body: RetentionBody, current_user: User = Depends(get_cu
     )
     await db.commit()
     return {"data": {"company_choice": after, "effective": retention.effective_policy(org)}, "error": None}
+
+
+@router.put("/privacy/ai-data-mode")
+async def set_ai_data_mode(body: AiModeBody, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    org_id = await _owner_org(db, current_user)
+    org = await db.get(Organization, org_id)
+    if org is None:
+        raise HTTPException(status_code=404, detail=NOT_FOUND)
+    try:
+        await ai_egress.set_mode(db, org, str(current_user.id), body.mode)
+    except ai_egress.ModeRefused as exc:
+        raise HTTPException(status_code=409, detail=(
+            f"'{exc}' modu bu kurulumda izinli değil: platform sınırı daha sıkı (LLM_DATA_MODE). "
+            "Şirket seçimi yalnızca sıkılaştırabilir.")) from exc
+    await db.commit()
+    return {"data": await ai_egress.view(db, org), "error": None}
 
 
 @router.get("/privacy/notices")

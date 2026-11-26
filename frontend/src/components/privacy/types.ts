@@ -38,6 +38,23 @@ export type RetentionView = {
   can_edit: boolean;
 };
 
+export type AiEgressView = {
+  mode: "off" | "masked" | "raw";
+  source: "platform" | "organisation";
+  platform_mode: "off" | "masked" | "raw";
+  organisation_choice: "off" | "masked" | "raw" | null;
+  choice_capped: boolean;
+  allowed_modes: string[];
+  provider_host: string | null;
+  provider_is_local: boolean;
+  model: string;
+  document_text: "allow" | "never";
+  categories: { key: string; state: "sent" | "replaced" | "partly" | "not_sent" }[];
+  /** Counts only: calls that sent something and the bytes sent in the last `days` days. */
+  usage: { days: number; calls: number; bytes_out: number; calls_by_mode: Record<string, number> };
+  dictionary: { known_names: number; truncated: boolean; complete: boolean } | null;
+};
+
 export type PrivacyOverview = {
   role: string | null;
   third_parties: ThirdParty[];
@@ -47,6 +64,8 @@ export type PrivacyOverview = {
   support_contact: string | null;
   retention: RetentionView;
   export: ExportState | null;
+  /** The owner's "Yapay zekâya giden veri" view; null for everyone else. */
+  ai_egress: AiEgressView | null;
 };
 
 export type ErasureRequestRow = {

@@ -78,14 +78,19 @@ class ThirdParty:
 THIRD_PARTIES: dict[Flow, ThirdParty] = {
     Flow.LLM: ThirdParty(
         "LLM provider (default DeepSeek, an OpenAI-compatible endpoint set by LLM_BASE_URL)",
-        "counterparty/vendor names, transaction descriptions, uploaded-document text (up to 8,000 characters per "
-        "extraction call, and 1,800-character chunks for embeddings), the company name and the user's free-text "
-        "questions with the chat history",
-        False,
-        "app/platform/model_gateway.py, app/services/rag_service.py (PR #68 section 4 lists every call)",
-        "no key, or a `llm-placeholder-*` key, makes no network call; there is no per-organisation switch",
-        "Q1: cross-border transfer basis (KVKK Art. 9) for the provider chosen, and whether names, tax numbers and "
-        "IBANs must be masked before the call. No masking exists on master.",
+        "by LLM_DATA_MODE (default `masked`): the figures, dates and currencies as they are in the books; "
+        "counterparty, vendor, company, member and accountant names the books hold, and IBAN, TCKN, VKN, card, phone and "
+        "e-mail patterns, replaced by placeholders and restored in the reply; transaction descriptions, uploaded-document "
+        "text (up to 8,000 characters per extraction call, and 1,800-character chunks for embeddings) and chat questions "
+        "with their history with only those replacements, so free text can still hold personal data that neither the "
+        "patterns nor the known names catch. `raw` sends all of it as it is; `off` sends nothing",
+        True,
+        "app/platform/model_gateway.py, app/platform/embedding_gateway.py, app/platform/llm_egress/ "
+        "(docs/kvkk/yapay-zeka-veri-akisi.md says exactly what leaves in each mode)",
+        "LLM_DATA_MODE=off|masked|raw, per company by its owner (PUT /privacy/ai-data-mode, with a decision record); "
+        "LLM_DOCUMENT_TEXT=never sends no document text; no key, or a `llm-placeholder-*` key, makes no network call",
+        "Q1/Q15: cross-border transfer basis (KVKK Art. 9) for the provider chosen, and whether masking, document-text "
+        "strictness or no AI at all must be required. The options exist; which one is lawful is not decided here.",
     ),
     Flow.SMTP: ThirdParty(
         "SMTP provider (default smtp.gmail.com)",

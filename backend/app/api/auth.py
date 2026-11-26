@@ -30,6 +30,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.email_address import normalize_email
+from app.core.tenancy import set_current_tenant
 from app.database import get_db
 from app.models.user import User, UserRole
 from app.services import email_verification, mail_capability, outbox, pilot_invites, registration
@@ -193,6 +194,7 @@ async def get_current_user(
         # Detached, so every caller gets the same kind of object (reads work; endpoints
         # that change the user re-load it through their own session, see `create_org`).
         db.expunge(user)
+        set_current_tenant(str(user.org_id) if user.org_id else None)  # the LLM data mode and masking follow it
         return user
 
     # ── Try API key ───────────────────────────────────────────────────────────
@@ -208,6 +210,7 @@ async def get_current_user(
         if not email_verification.is_verified(user):
             raise unverified_exception
         _refuse_outside_allow_list(request, user, found[1], found[2])
+        set_current_tenant(str(user.org_id) if user.org_id else None)
         return user
 
     raise credentials_exception

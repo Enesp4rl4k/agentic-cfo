@@ -48,7 +48,7 @@
 | `institutionalization_snapshots` | company | derived maturity score | `recommendations` (free_text), `signals` (free_text) | operational | deleted | - |
 | `journal_entries` | counterparty | double-entry journal | `aciklama` (free_text), `onay_neden` (free_text) | books | kept, columns scrubbed | - |
 | `journal_lines` | counterparty | journal lines | `aciklama` (free_text) | books | kept, columns scrubbed | - |
-| `llm_call_logs` | anyone | one row per model call: task, model, tokens, cost, error (never the prompt) | `error` (free_text) | operational | deleted | - |
+| `llm_call_logs` | anyone | one row per model call: task, model, tokens, cost, data mode, bytes sent, placeholder counts, error (never the prompt) | `error` (free_text) | operational | deleted | - |
 | `open_item_matches` | member | invoice-to-payment matches | `decided_by` (pseudonym) | books | kept, columns scrubbed | - |
 | `open_items` | counterparty | receivables and payables | `counterparty` (identity), `description` (free_text), `payment_note` (free_text) | books | kept, columns scrubbed | llm_provider |
 | `org_erasure_records` | company | hash-chained proof that an erasure ran | - | proof | kept (proof, no personal data) | - |
@@ -99,11 +99,11 @@
 
 ### LLM provider (default DeepSeek, an OpenAI-compatible endpoint set by LLM_BASE_URL)
 
-- Receives: counterparty/vendor names, transaction descriptions, uploaded-document text (up to 8,000 characters per extraction call, and 1,800-character chunks for embeddings), the company name and the user's free-text questions with the chat history.
-- Masked before sending: NO.
-- Code: app/platform/model_gateway.py, app/services/rag_service.py (PR #68 section 4 lists every call).
-- Off / on: no key, or a `llm-placeholder-*` key, makes no network call; there is no per-organisation switch.
-- Open question: Q1: cross-border transfer basis (KVKK Art. 9) for the provider chosen, and whether names, tax numbers and IBANs must be masked before the call. No masking exists on master.
+- Receives: by LLM_DATA_MODE (default `masked`): the figures, dates and currencies as they are in the books; counterparty, vendor, company, member and accountant names the books hold, and IBAN, TCKN, VKN, card, phone and e-mail patterns, replaced by placeholders and restored in the reply; transaction descriptions, uploaded-document text (up to 8,000 characters per extraction call, and 1,800-character chunks for embeddings) and chat questions with their history with only those replacements, so free text can still hold personal data that neither the patterns nor the known names catch. `raw` sends all of it as it is; `off` sends nothing.
+- Masked before sending: yes.
+- Code: app/platform/model_gateway.py, app/platform/embedding_gateway.py, app/platform/llm_egress/ (docs/kvkk/yapay-zeka-veri-akisi.md says exactly what leaves in each mode).
+- Off / on: LLM_DATA_MODE=off|masked|raw, per company by its owner (PUT /privacy/ai-data-mode, with a decision record); LLM_DOCUMENT_TEXT=never sends no document text; no key, or a `llm-placeholder-*` key, makes no network call.
+- Open question: Q1/Q15: cross-border transfer basis (KVKK Art. 9) for the provider chosen, and whether masking, document-text strictness or no AI at all must be required. The options exist; which one is lawful is not decided here.
 - Registry entries that can reach it: `agent_jobs`, `agent_memory`, `anomalies`, `canonical_transactions`, `chat_history`, `company_context_snapshots`, `company_semantic_snapshots`, `llm_provider_side`, `open_items`, `organizations`, `rag_chunks`, `redis_derived`, `transactions`, `uploads`.
 
 ### SMTP provider (default smtp.gmail.com)
