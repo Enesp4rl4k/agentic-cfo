@@ -448,6 +448,12 @@
 ─────────────────────────────────────────────────────────────────────────── */
 @layer base {
   body {
+    /* Each brand family is a latin-ext face plus a latin face (src/lib/brand-fonts.ts); next/font
+       takes only literal options, so the two are joined here. */
+    --tc-font-cinzel:  var(--tcf-cinzel-latin-ext),    var(--tcf-cinzel-latin);
+    --tc-font-display: var(--tcf-cormorant-latin-ext), var(--tcf-cormorant-latin);
+    --tc-font-body:    var(--tcf-plex-sans-latin-ext), var(--tcf-plex-sans-latin);
+    --tc-font-mono:    var(--tcf-plex-mono-latin-ext), var(--tcf-plex-mono-latin);
     font-family: var(--tc-font-body), system-ui, sans-serif;
   }
   h1 {
