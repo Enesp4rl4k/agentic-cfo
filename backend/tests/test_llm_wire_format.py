@@ -7,7 +7,6 @@ gateway pins the wire format it always had. No network: only the payload is buil
 """
 from __future__ import annotations
 
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -23,11 +22,15 @@ class _Out(BaseModel):
 
 @pytest.fixture
 def client(monkeypatch: pytest.MonkeyPatch) -> Any:
-    settings = SimpleNamespace(
-        openai_api_key="sk-real-looking-key-for-payload-test",
-        llm_temperature=0.2,
-        llm_max_tokens=777,
-        llm_base_url="https://api.deepseek.com/v1",
+    from app.config import get_settings
+
+    settings = get_settings().model_copy(
+        update={
+            "openai_api_key": "sk-real-looking-key-for-payload-test",
+            "llm_temperature": 0.2,
+            "llm_max_tokens": 777,
+            "llm_base_url": "https://api.deepseek.com/v1",
+        }
     )
     monkeypatch.setattr("app.config.get_settings", lambda: settings)
     return model_gateway._build_client(config_for_tier("cheap"), None, None)
