@@ -14,7 +14,7 @@
 set -Eeuo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.prod.yml}"
+export COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.prod.yml:docker-compose.ci.yml}"
 APP_HOST="app.ci.internal"
 API_HOST="api.ci.internal"
 APP_URL="https://${APP_HOST}"
@@ -23,7 +23,7 @@ SCRATCH="${RUNNER_TEMP:-$PWD/.tmp-agent}/stack-ci"
 OWNER_EMAIL="owner@pilot.example.test"
 COMPANY="CI Pilot Sirketi"
 
-dc() { docker compose -f "$COMPOSE_FILE" "$@"; }
+dc() { docker compose "$@"; }
 ok() { printf 'ok    %s\n' "$*"; }
 bad() { printf 'FAIL  %s\n' "$*" >&2; exit 1; }
 env_value() { grep -E "^$1=" .env | tail -n1 | tr -d '\r' | cut -d= -f2-; }

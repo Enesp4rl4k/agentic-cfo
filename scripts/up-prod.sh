@@ -19,7 +19,7 @@
 # It does NOT run the smoke test, the backup or the restore drill: those are the next steps of the checklist.
 #
 # Optional environment:
-#   COMPOSE_FILE            default docker-compose.prod.yml
+#   COMPOSE_FILE            default docker-compose.prod.yml (several files: a:b, the compose convention)
 #   UP_TIMEOUT_SECONDS      how long step 5 waits for health, default 600
 #   UP_KEEP_IMAGE_TAG=1     do not overwrite IMAGE_TAG in .env
 #   UP_SKIP_BUILD=1         use the images already on this machine (CI builds them in a cached step)
@@ -28,9 +28,10 @@ set -Eeuo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.prod.yml}"
+# COMPOSE_FILE may name several files (docker-compose.prod.yml:docker-compose.ci.yml); docker compose reads it itself.
+export COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.prod.yml}"
 TIMEOUT="${UP_TIMEOUT_SECONDS:-600}"
-dc() { docker compose -f "$COMPOSE_FILE" "$@"; }
+dc() { docker compose "$@"; }
 log() { printf '%s up-prod: %s\n' "$(date -u +%FT%TZ)" "$*"; }
 die() { printf '%s up-prod: FAIL %s\n' "$(date -u +%FT%TZ)" "$*" >&2; exit 1; }
 

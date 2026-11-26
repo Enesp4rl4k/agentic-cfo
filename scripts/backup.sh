@@ -16,7 +16,7 @@
 #   BACKUP_RETENTION_DAYS  default 14
 #   BACKUP_LOCAL_DIR       staging dir for the archive, default /var/backups/aicfo
 #   BACKUP_KEEP_LOCAL      keep the newest N encrypted archives locally, default 2
-#   COMPOSE_FILE           default docker-compose.prod.yml
+#   COMPOSE_FILE           default docker-compose.prod.yml (several files: a:b)
 #
 # Every delete in this script is limited to its own archives: the remote
 # `rclone delete` is filtered to 'aicfo-*.tar.age*' (and --min-age), the local
@@ -66,7 +66,8 @@ for bin in docker age rclone sha256sum tar flock; do
   command -v "$bin" >/dev/null || { echo "backup: missing '$bin'" >&2; exit 2; }
 done
 
-dc() { docker compose -f "$COMPOSE_FILE" "$@"; }
+export COMPOSE_FILE   # may name several files (a:b), which docker compose reads itself
+dc() { docker compose "$@"; }
 log() { printf '%s backup: %s\n' "$(date -u +%FT%TZ)" "$*"; }
 
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
