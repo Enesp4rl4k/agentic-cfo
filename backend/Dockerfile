@@ -50,6 +50,11 @@ COPY --chown=appuser:appgroup app ./app
 COPY --chown=appuser:appgroup alembic ./alembic
 COPY --chown=appuser:appgroup alembic.ini ./
 
+# The two host-side operator commands the runbooks run INSIDE the container
+# (`dc exec backend python scripts/issue_pilot_invite.py`, `scripts/reapply_erasures.py`
+# after a restore). The demo/seed scripts beside them stay out of the image.
+COPY --chown=appuser:appgroup scripts/issue_pilot_invite.py scripts/reapply_erasures.py ./scripts/
+
 # Directories the app writes at runtime (uploads; boardroom memory under data/)
 RUN mkdir -p /app/uploads /app/data && chown appuser:appgroup /app/uploads /app/data
 

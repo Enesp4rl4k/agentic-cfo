@@ -25,6 +25,29 @@ complete for the preflight: it still offers no way to set `ERASURE_PSEUDONYM_SEC
 or `SUPPORT_CONTACT`, and its deploy step in `.github/workflows/k8s-deploy.yml` is commented out. Run the preflight against the
 rendered environment before trusting a Helm deploy; the supported path is `docker-compose.prod.yml`.
 
+## Minimal production configuration
+
+The smallest `.env` that starts `docker-compose.prod.yml` in production mode and passes the preflight. It is not a
+guess: the CI job `Production stack (compose)` (`.github/workflows/stack.yml`, `scripts/stack-ci.sh env`) builds exactly
+this list from `.env.example` on a clean runner, starts the stack with it and fails if this page or
+[first-deploy-checklist.md](first-deploy-checklist.md) stops naming one of the keys. Everything else in `.env.example` has
+a safe default or only produces a WARN.
+
+| Key | Why it is needed | Without it |
+|---|---|---|
+| `APP_DOMAIN`, `API_DOMAIN`, `ACME_EMAIL` | the two public hostnames and the certificate account | compose refuses to start (`${VAR:?}`) |
+| `POSTGRES_PASSWORD` | the database password | Postgres does not initialise; the preflight refuses `changeme` |
+| `BACKEND_SECRET_KEY` | signs sessions; at least 32 random characters | FATAL `secret_placeholder` / `secret_short` |
+| `NEXTAUTH_SECRET` | the frontend's session secret (also read by the backend's preflight) | compose refuses to start; FATAL `nextauth_placeholder` for the template value |
+| `ERASURE_PSEUDONYM_SECRET` | its own random value, set once, never rotated | FATAL `no_pseudonym_secret` |
+| `PRIVACY_NOTICE_URL`, `TERMS_URL` | public `https` links of the published texts | FATAL `no_notice_url` |
+| `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`, `NOTIFICATION_FROM` | the mail sender: registration is invite-only and the invitation is e-mailed | FATAL `mail_required_no_sender` |
+
+`APP_ENV` is set by the compose file (`production`). The compose file also sets the database host, Redis, the public URLs
+(from the two domains), `SCHEDULER_PROCESS=worker`, `TRUSTED_PROXY_COUNT=1`; values for those in `.env` are ignored.
+`OPENAI_API_KEY`, `SENTRY_DSN`, `FIELD_ENCRYPTION_KEY`, `PLATFORM_OPERATOR_EMAILS`, `SUPPORT_CONTACT` are WARN-level: the stack
+starts without them, the pilot should not.
+
 ## What startup does
 
 1. `Settings.validate_production_security()` (existing): insecure default secret, field encryption on
@@ -110,8 +133,8 @@ rendered environment before trusting a Helm deploy; the supported path is `docke
 | `PARASUT_CLIENT_SECRET` | (empty) | optional | - |  |
 | `SMTP_HOST` | `smtp.gmail.com` | recommended | - | mail sender; the default is smtp.gmail.com |
 | `SMTP_PORT` | 587 | optional | - |  |
-| `SMTP_USER` | (empty) | recommended | WARN if no sender (ERROR log with verification required) | without it no invite, reset, verification or briefing mail leaves |
-| `SMTP_PASSWORD` | (empty) | recommended | WARN if no sender | see SMTP_USER |
+| `SMTP_USER` | (empty) | REQUIRED in production | FATAL `mail_required_no_sender` when APP_ENV is production/staging and REGISTRATION_MODE is `invite_only` (the default) or verification is required; WARN elsewhere | without it no invite, reset, verification or briefing mail leaves, and nobody could ever register; a deployment without mail must set `REGISTRATION_MODE=open` and `EMAIL_VERIFICATION_REQUIRED=false` knowingly |
+| `SMTP_PASSWORD` | (empty) | REQUIRED in production | same as `SMTP_USER` (both must be set) | see SMTP_USER |
 | `NOTIFICATION_FROM` | `noreply@aicfo.app` | recommended | - | From address; its domain needs SPF and DKIM (docs/ops/mail.md) |
 | `OUTBOX_TRANSPORT` | `auto` | optional | WARN if `noop`; FATAL with APP_ENV production/staging when REGISTRATION_MODE=invite_only or verification is required | `noop` means no mail leaves the process |
 | `OUTBOX_KICK_ON_ENQUEUE` | True | optional | - |  |

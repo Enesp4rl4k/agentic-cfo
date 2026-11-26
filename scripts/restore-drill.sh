@@ -28,9 +28,15 @@ set -Eeuo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-if [[ -f .env && -z "${BACKUP_RCLONE_REMOTE:-}" ]]; then
-  line="$(grep -E '^BACKUP_RCLONE_REMOTE=' .env | tail -n1 || true)"
-  [[ -n "$line" ]] && export BACKUP_RCLONE_REMOTE="${line#*=}"
+if [[ -f .env ]]; then
+  # Only the keys this script needs (the .env is not shell-quoted: never `source` it). IMAGE_TAG matters:
+  # the stack's images are tagged with it, and without it the drill would look for `...:latest`.
+  for key in BACKUP_RCLONE_REMOTE IMAGE_TAG; do
+    if [[ -z "${!key:-}" ]]; then
+      line="$(grep -E "^${key}=" .env | tail -n1 | tr -d '\r' || true)"
+      [[ -n "$line" ]] && export "$key=${line#*=}"
+    fi
+  done
 fi
 : "${AGE_IDENTITY_FILE:?AGE_IDENTITY_FILE (age private key file) is not set}"
 [[ -r "$AGE_IDENTITY_FILE" ]] || { echo "drill: cannot read $AGE_IDENTITY_FILE" >&2; exit 2; }

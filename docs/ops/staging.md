@@ -77,14 +77,14 @@ Komutlar sunucuda, `deploy` kullanıcısıyla. Sahibin dizüstünde yapılacakla
    cp .env.example .env && chmod 600 .env
    ```
 5. **`.env`'i doldurun** (dosyanın sonundaki "Staging" bölümü + mevcut anahtarlar):
-   - `APP_DOMAIN`, `API_DOMAIN`, `ACME_EMAIL`
+   - **Üretimde başlamak için zorunlu en küçük küme** ([configuration.md](configuration.md#minimal-production-configuration), CI her seferinde tam bu listeyle yığını sıfırdan kaldırır): `APP_DOMAIN`, `API_DOMAIN`, `ACME_EMAIL`, `POSTGRES_PASSWORD`, `BACKEND_SECRET_KEY`, `NEXTAUTH_SECRET`, `ERASURE_PSEUDONYM_SECRET` (`openssl rand -hex 32`, bir kez yazılır, hiç döndürülmez), `PRIVACY_NOTICE_URL` ve `TERMS_URL` (yayımlanmış metinlerin https bağlantıları), `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`, `NOTIFICATION_FROM`. Biri eksikse ön kontrol konteyneri **başlatmaz** (`mail_required_no_sender`, `no_pseudonym_secret`, `no_notice_url`...). Sıralı liste ve her değerin nereden geldiği: [first-deploy-checklist.md](first-deploy-checklist.md).
    - `POSTGRES_PASSWORD` → `openssl rand -hex 24` (Redis'in parolası yok: yalnız backend konteynerlerinin girebildiği `internal` ağda)
    - `BACKEND_SECRET_KEY` (en az 32 karakter) ve `NEXTAUTH_SECRET` → `openssl rand -base64 32`. İkisi de şablon değerde kalırsa ön kontrol (preflight) konteyneri **başlatmaz**.
    - `BRAND_DOMAIN`, `SUPPORT_CONTACT`, `PLATFORM_OPERATOR_EMAILS`, `OPENAI_API_KEY`/`LLM_*`, `SMTP_*`, `NOTIFICATION_FROM` ([§8](#8-sahibin-açık-kararları) hangi karar için hangi değişken olduğunu söyler).
    - `APP_ENV`: boş bırakın (= `production`); bu kutu staging ise `APP_ENV=staging`.
    - `OPEN_BANKING_SANDBOX`, `GIB_SANDBOX`: staging'de `true` kalır.
    - Compose dosyası kendisi koyar, `.env`'deki değerleri geçersizdir: `APP_ENV`, `USE_SQLITE`, `POSTGRES_HOST/PORT`, `REDIS_URL`, `SCHEDULER_PROCESS=worker`, `TRUSTED_PROXY_COUNT=1`, `ALLOW_INLINE_JOB_FALLBACK=false`, `GIT_SHA`, `BACKEND_CORS_ORIGINS`, `FRONTEND_URL`, `BRAND_APP_URL`, `BACKEND_URL`, frontend'in `NEXTAUTH_URL`/`NEXT_PUBLIC_API_URL`'i (hepsi `APP_DOMAIN`/`API_DOMAIN`'den).
-   - Kayıt (kimler hesap açabilir) için `.env`'de bugün bir değişken **yoktur**: kayıt açıktır ([§8](#8-sahibin-açık-kararları), karar D1). Eski `PILOT_*` değişkenlerini hiçbir kod okumaz; yazmayın.
+   - Kayıt (kimler hesap açabilir): varsayılan `REGISTRATION_MODE=invite_only`, yani yalnızca davetle; davet e-postayla gider, bu yüzden bir posta göndericisi (`SMTP_USER`/`SMTP_PASSWORD`) zorunludur. Eski `PILOT_*` değişkenlerini hiçbir kod okumaz; yazmayın. İlk davet: [runbooks/onboard-company.md](runbooks/onboard-company.md) ("The very first operator").
    - Tam liste: [configuration.md](configuration.md). Hangi servis `.env`'in neresini görür: aynı dosyanın §3'ü. Frontend `.env`'i **hiç görmez**; yalnız `NEXT_PUBLIC_API_URL`, `NEXTAUTH_URL`, `NEXTAUTH_SECRET` alır.
 6. **Yedek anahtarı — sahibin dizüstünde**
    ```bash
@@ -119,15 +119,16 @@ Tek sıra, her adım bir öncekinden sonra. `dc` = `docker compose -f docker-com
 ### 6.1 Birinci deploy (ilk kurulum)
 
 1. [§8](#8-sahibin-açık-kararları)'deki kararlar verildi ve değişkenleri `.env`'e yazıldı; [§4](#4-kurulum-bir-kez) adım 1-8 tamam (sunucu, Docker, `.env`, yedek anahtarı, rclone, DNS çözülüyor).
-2. `sed -i "s/^#\? *IMAGE_TAG=.*/IMAGE_TAG=$(git rev-parse --short HEAD)/" .env` (yoksa satırı ekleyin).
-3. `dc build`
-4. **Migrate**: `dc run --rm migrate alembic upgrade head`: boş veritabanını head'e getirir.
-5. **Ön kontrol**: `dc run --rm migrate python -m app.core.preflight --db`: çıktı `PREFLIGHT ok (production)` olmalı. `FATAL` satırı varsa düzeltin (konteynerler zaten başlamaz). `WARN` satırlarını (posta göndericisi yok, hata takibi yok...) okuyun; her biri bir sahip kararına karşılık gelir ([§8](#8-sahibin-açık-kararları)).
-6. **Başlat**: `dc up -d`; `dc ps`: `migrate` exited (0), diğerleri `healthy` (worker'lar ilk 90 sn `starting` kalabilir).
-7. **Smoke test**: `./scripts/smoke-test.sh --api https://<API_DOMAIN> --app https://<APP_DOMAIN> --expect-commit "$(git rev-parse --short HEAD)"`: hiç `FAIL` olmamalı.
-8. **Hazırlık**: `curl -fsS https://<API_DOMAIN>/api/v1/ready`: `"status": "ready"`. İlk beş dakika `degraded` olabilir (zamanlayıcının ilk outbox geçişi); beş dakika sonra `smoke-test.sh ... --strict` ile yeniden çalıştırın.
-9. Zamanlayıcı: `dc logs worker | grep -i scheduler` → `CFO Scheduler started`.
-10. Gece yedeği cron'u ([§4](#4-kurulum-bir-kez) adım 10), bir elle çalıştırma ve ilk geri yükleme tatbikatı (adım 11) **gerçek veri girmeden önce**.
+2. **Kaldır**: `./scripts/up-prod.sh`. Tek komut: `IMAGE_TAG`'i commit'e ayarlar, imajları derler, `migrate`'i çalıştırır (`alembic upgrade head`, sonra `python -m app.core.preflight --db`; `FATAL` satır varsa burada durur), `dc up -d` yapar ve her servis `healthy` olana kadar (en çok 10 dk, `UP_TIMEOUT_SECONDS`) bekler; hata olursa her servisin logunu basar. CI aynı betiği temiz bir makinede çalıştırır (`.github/workflows/stack.yml`).
+3. **Ön kontrol**: `dc run --rm --no-deps backend python -m app.core.preflight --db`: çıktı `PREFLIGHT ok (production)` olmalı. `WARN` satırlarını (hata takibi yok, LLM anahtarı yok...) okuyun; her biri bir sahip kararına karşılık gelir ([§8](#8-sahibin-açık-kararları)).
+4. **Durum**: `dc ps`: `migrate` exited (0), diğerleri `healthy` (worker'lar ilk 90 sn `starting` kalabilir; `up-prod.sh` bunu bekler).
+5. **Smoke test**: `./scripts/smoke-test.sh --api https://<API_DOMAIN> --app https://<APP_DOMAIN> --expect-commit "$(git rev-parse --short HEAD)"`: hiç `FAIL` olmamalı.
+6. **Hazırlık**: `curl -fsS https://<API_DOMAIN>/api/v1/ready`: `"status": "ready"`. İlk beş dakika `degraded` olabilir (zamanlayıcının ilk outbox geçişi); beş dakika sonra `smoke-test.sh ... --strict` ile yeniden çalıştırın.
+7. Zamanlayıcı: `dc logs worker | grep -i scheduler` → `CFO Scheduler started`.
+8. İlk operatör ve ilk davet: `dc exec backend python scripts/issue_pilot_invite.py --email <adresiniz> --company "<şirket>"` ([runbooks/onboard-company.md](runbooks/onboard-company.md)).
+9. Gece yedeği cron'u ([§4](#4-kurulum-bir-kez) adım 10), bir elle çalıştırma ve ilk geri yükleme tatbikatı (adım 11) **gerçek veri girmeden önce**.
+
+Her satırın CI'da kanıtlanıp kanıtlanmadığı (TLS sertifikası, gerçek posta, gerçek yedek hedefi, DNS elle doğrulanır): [first-deploy-checklist.md](first-deploy-checklist.md).
 
 ### 6.2 Yükseltme (her deploy)
 
@@ -165,7 +166,7 @@ Karar numaraları [operational-readiness-2026-11.md](operational-readiness-2026-
 | D4 Uyarı kanalı | `https://<API_DOMAIN>/api/v1/ready` için bir uptime izleyici + yedek kalp atışı | uygulamada değişken yok; izleyicinin adresi sahipte | [§9](#9-yedek-başarısını-izlemek). |
 | D5 Hata takibi | Sentry (AB bölgesi) ancak KVKK kontrolünden sonra | `SENTRY_DSN`, `SENTRY_ENVIRONMENT` | Boş bırakmak geçerli: hatalar konteyner logunda. [§3](#3-sahibin-açması-gereken-hesaplar)'e bakın. |
 | D6 LLM sağlayıcısı | hukukçuyla; rakamlar LLM'siz çalışır | `OPENAI_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL` | |
-| D1 Kim kayıt olabilir | kapalı kayıt | **bugün yok**: kayıt açık, `PILOT_*` değişkenlerini kod okumaz | Ayrı bir PR gerçek ayarı getirecek; getirdiğinde bu satır ve [configuration.md](configuration.md) güncellenir. Şimdilik `users` tablosunu izleyin. |
+| D1 Kim kayıt olabilir | kapalı kayıt (yalnızca davet) | `REGISTRATION_MODE=invite_only` (varsayılan; `PILOT_*` değişkenlerini kod okumaz) | Davet e-postayla gider: posta göndericisi zorunlu. Ayrıntı: [runbooks/onboard-company.md](runbooks/onboard-company.md). |
 | D7 Silme politikası | yalnız anonimleştirme | `ORG_ERASURE_HARD_DELETE_ENABLED=false` | |
 
 Sabit gizliler (karar değil, kurulum): `POSTGRES_PASSWORD`, `BACKEND_SECRET_KEY`, `NEXTAUTH_SECRET` (rastgele, üretim komutları [§4](#4-kurulum-bir-kez) adım 5'te).
