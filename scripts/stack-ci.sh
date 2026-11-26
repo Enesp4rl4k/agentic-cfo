@@ -179,15 +179,16 @@ phase_edge() {
   [[ "$env" == production ]] || bad "/api/v1/version environment is '$env'"
   ok "/api/v1/version: commit $commit, environment production"
 
-  code="$(curl -sS --max-time 20 -L -o "$SCRATCH/landing.html" -w '%{http_code}' "${APP_URL}/")"
+  code="$(curl -sS --max-time 20 -L --proto '=https' --proto-redir '=https' -o "$SCRATCH/landing.html" -w '%{http_code}' "${APP_URL}/")"
   [[ "$code" == 200 ]] || bad "the frontend landing page answered $code through Caddy"
   grep -qi '<html' "$SCRATCH/landing.html" || bad "the landing page is not HTML"
   curl -fsS --max-time 10 "${APP_URL}/api/health" | jq -e '.status == "ok"' >/dev/null || bad "frontend /api/health"
   ok "frontend landing page (200) and /api/health through Caddy"
 
   # The redirect from http to https that Caddy promises.
-  code="$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' "http://${API_HOST}/health")"
-  [[ "$code" == 308 || "$code" == 301 || "$code" == 302 ]] || bad "http://${API_HOST}/health answered $code (want a redirect)"
+  # NOSONAR: plain http on purpose; the redirect to https is the thing under test, nothing is sent.
+  code="$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' "http://${API_HOST}/health")" # NOSONAR
+  [[ "$code" == 308 || "$code" == 301 || "$code" == 302 ]] || bad "http://${API_HOST}/health answered $code (want a redirect)" # NOSONAR
   ok "plain http redirects to https ($code)"
 }
 
@@ -242,7 +243,7 @@ PY
 }
 
 phase_workers() {
-  local i out
+  local i
   # Both ARQ workers' health keys (and Redis) as the API reports them.
   for i in $(seq 1 24); do
     curl -fsS --max-time 15 "${API_URL}/api/v1/ready" -o "$SCRATCH/ready.json" || true
@@ -301,7 +302,7 @@ phase_onboarding() {
   ok "mail cannot leave in CI; the outbox row records the failure and retries: $row"
   # Registration is invite-only: the same call without the token is refused.
   status="$(curl -sS -o /dev/null -w '%{http_code}' -X POST "${API_URL}/api/v1/auth/register" -H 'Content-Type: application/json' \
-    -d '{"email":"stranger@yenisirket-ci.com","password":"Stranger-pass-123"}')"
+    -d '{"email":"stranger@yenisirket-ci.com","password":"'"$(openssl rand -hex 12)"'"}')"
   [[ "$status" == 403 ]] || bad "register without an invite answered $status (want 403)"
   ok "register without an invite: 403"
   # The link is only in the (mail) body: in CI that is the outbox row, because the mail could not leave.
@@ -309,7 +310,7 @@ phase_onboarding() {
   token="$(sed -n 's/.*token=\([A-Za-z0-9_-]*\).*/\1/p' <<<"$body" | head -n1)"
   [[ -n "$token" ]] || bad "no invitation token in the outbox row"
   printf '::add-mask::%s\n' "$token"
-  password="Ci-$(openssl rand -hex 10)"
+  password="$(openssl rand -hex 12)"
   printf '::add-mask::%s\n' "$password"
   reg="$(curl -sS -w '\n%{http_code}' -X POST "${API_URL}/api/v1/auth/register" -H 'Content-Type: application/json' \
     -d "{\"email\":\"${OWNER_EMAIL}\",\"password\":\"${password}\",\"full_name\":\"CI Owner\",\"invite_token\":\"${token}\"}")"
