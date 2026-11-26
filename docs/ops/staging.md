@@ -103,7 +103,7 @@ Komutlar sunucuda, `deploy` kullanıcısıyla. Sahibin dizüstünde yapılacakla
 
 ## 5. Bilinen açıklar (bu PR kapatmıyor)
 
-- **Worker hiç gerçek ortamda çalışmadı.** Bu makinede Docker daemon, Postgres ve Redis yok; compose dosyası yalnız `docker compose config` ile doğrulandı. İlk açılış, worker'ın ilk gerçek çalışmasıdır — logları izleyin.
+- **Yığın artık CI'da sıfırdan kaldırılıyor** (`.github/workflows/stack.yml`: `scripts/up-prod.sh`, preflight, smoke test, davet, yedek, geri yükleme tatbikatı). İlk koşuda iki worker'ın da açılışta çöktüğü (arq `redis_settings`) ve frontend sağlık kontrolünün hiç geçmediği bulundu ve düzeltildi. CI'ın kanıtlayamadıkları — Let's Encrypt sertifikası, gerçek posta, gerçek yedek hedefi, DNS — [first-deploy-checklist.md](first-deploy-checklist.md)'de "elle doğrulayın" olarak işaretlidir.
 - **LangGraph checkpoint'i Postgres'te değil.** `langgraph-checkpoint-postgres` paketi kurulu değil; uygulama bunu yüksek sesle söyleyip belleğe düşer (yarım kalan bir analiz yeniden hesaplanır, veri kaybı yok).
 - **Marka değişkenleri tarayıcı paketine girmiyor.** `frontend/src/lib/branding.ts` `NEXT_PUBLIC_BRAND_*`'ı dinamik okur; Next.js yalnız harfiyen yazılan `process.env.NEXT_PUBLIC_X`'i derlemeye gömer. `NEXT_PUBLIC_API_URL` için Dockerfile'a build argümanı eklendi (önceden paket `http://localhost:8000`'e gidiyordu); marka için ayrı iş.
 - **Sentry bağlı değil** (3. bölüm).

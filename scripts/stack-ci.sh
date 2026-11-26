@@ -152,7 +152,8 @@ phase_preflight() {
   grep -q 'SERVICE-STARTED' <<<"$out" && bad "the service command ran despite a FATAL finding"
   ok "a backend container without ERASURE_PSEUDONYM_SECRET refuses to start (exit $rc)"
 
-  if dc logs backend worker worker-maintenance 2>&1 | grep -q 'parser_memory'; then
+  startup_logs="$(dc logs backend worker worker-maintenance 2>&1)"   # a variable, not a pipe: `grep -q` closing the pipe early fails under pipefail
+  if grep -q 'parser_memory' <<<"$startup_logs"; then
     bad "a service logged a parser_memory finding at startup"
   fi
   ok "no parser_memory finding at startup of backend, worker, worker-maintenance"
@@ -274,10 +275,11 @@ async def main() -> None:
 asyncio.run(main())
 PY
   ok "a job enqueued by the API side is completed by the maintenance worker"
-  dc logs worker 2>&1 | grep -q 'CFO Scheduler started' || bad "worker log has no 'CFO Scheduler started'"
-  dc logs backend 2>&1 | grep -q 'Scheduler not started' || dc logs backend 2>&1 | grep -qi 'scheduler not started' \
-    || bad "backend log has no 'scheduler not started ... owned by worker'"
-  if dc logs worker-maintenance 2>&1 | grep -q 'CFO Scheduler started'; then bad "the maintenance worker started the scheduler"; fi
+  local worker_logs backend_logs maint_logs
+  worker_logs="$(dc logs worker 2>&1)" backend_logs="$(dc logs backend 2>&1)" maint_logs="$(dc logs worker-maintenance 2>&1)"
+  grep -q 'CFO Scheduler started' <<<"$worker_logs" || bad "worker log has no 'CFO Scheduler started'"
+  grep -qi 'scheduler not started' <<<"$backend_logs" || bad "backend log has no 'Scheduler not started ... owned by worker'"
+  if grep -q 'CFO Scheduler started' <<<"$maint_logs"; then bad "the maintenance worker started the scheduler"; fi
   ok "the scheduler runs in the worker only"
 }
 
