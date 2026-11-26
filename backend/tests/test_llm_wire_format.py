@@ -38,8 +38,10 @@ def client(monkeypatch: pytest.MonkeyPatch) -> Any:
 
 def test_output_cap_is_sent_as_max_tokens(client: Any) -> None:
     payload = client._get_request_payload([("user", "merhaba")])
-    assert payload["max_tokens"] == 777
+    # extra_body is merged into the JSON body by the OpenAI client, so the provider receives max_tokens
+    assert payload["extra_body"] == {"max_tokens": 777}
     assert "max_completion_tokens" not in payload
+    assert "max_tokens" not in payload
     assert str(client.openai_api_base).startswith("https://api.deepseek.com")
 
 
