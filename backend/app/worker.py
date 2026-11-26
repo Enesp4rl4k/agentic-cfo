@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import functools
 import logging
+import os
 import sys
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
@@ -32,6 +33,16 @@ from app.config import get_settings
 from app.core.preflight import enforce_or_exit
 
 logger = logging.getLogger(__name__)
+
+# The same logging as the API (app/main.py): JSON on stdout, the redaction filter, LOG_LEVEL. The arq command only
+# configures its own loggers, so without this the worker's application lines (INFO: "CFO Scheduler started", outbox and
+# job results) never reached the container log, and `dc logs worker | grep -i scheduler` (runbook) found nothing.
+from app.services.telemetry import initialize_telemetry
+
+initialize_telemetry(
+    log_level=os.environ.get("LOG_LEVEL", "INFO"),
+    json_logs=os.environ.get("LOG_FORMAT", "json").lower() == "json",
+)
 
 # The worker runs the scheduler and sends the mail: it gets the same production preflight as the API. A
 # fatal finding (placeholder secret, no APP_ENV on Postgres, mail required but no sender) stops it here.

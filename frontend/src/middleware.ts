@@ -71,8 +71,9 @@ export const config = {
   matcher: [
     /*
      * Protect these routes — everything under the dashboard group.
-     * Public: /, /pricing, /auth/*, /api/auth/*, /_next/*, /favicon.ico
+     * Public: /, /pricing, /auth/*, /api/auth/*, /api/health (the container health check, the smoke test and an
+     * uptime monitor must get 200, not a redirect to the login page), /_next/*, /favicon.ico
      */
-    "/((?!$|pricing|auth|api/auth|_next/static|_next/image|favicon.ico).*)",
+    "/((?!$|pricing|auth|api/auth|api/health$|_next/static|_next/image|favicon.ico).*)",
   ],
 };

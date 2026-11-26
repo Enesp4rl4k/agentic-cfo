@@ -20,7 +20,7 @@ API_HOST="api.ci.internal"
 APP_URL="https://${APP_HOST}"
 API_URL="https://${API_HOST}"
 SCRATCH="${RUNNER_TEMP:-$PWD/.tmp-agent}/stack-ci"
-OWNER_EMAIL="owner@pilot.example.test"
+OWNER_EMAIL="owner@yenisirket-ci.com"
 COMPANY="CI Pilot Sirketi"
 
 dc() { docker compose "$@"; }
@@ -65,8 +65,8 @@ phase_env() {
   setenv SMTP_USER "ci-user"
   setenv SMTP_PASSWORD "$(openssl rand -hex 12)" secret
   setenv NOTIFICATION_FROM "noreply@ci.internal"
-  setenv PLATFORM_OPERATOR_EMAILS "operator@pilot.example.test"
-  setenv SUPPORT_CONTACT "destek@pilot.example.test"
+  setenv PLATFORM_OPERATOR_EMAILS "operator@yenisirket-ci.com"
+  setenv SUPPORT_CONTACT "destek@yenisirket-ci.com"
   # Backups: an age key pair made here (the private half stays in $SCRATCH, as on the owner's laptop) and a local
   # rclone destination in place of the Turkish object store.
   command -v age-keygen >/dev/null || bad "age is not installed"
@@ -299,7 +299,7 @@ phase_onboarding() {
   ok "mail cannot leave in CI; the outbox row records the failure and retries: $row"
   # Registration is invite-only: the same call without the token is refused.
   status="$(curl -sS -o /dev/null -w '%{http_code}' -X POST "${API_URL}/api/v1/auth/register" -H 'Content-Type: application/json' \
-    -d '{"email":"stranger@example.test","password":"Stranger-pass-123"}')"
+    -d '{"email":"stranger@yenisirket-ci.com","password":"Stranger-pass-123"}')"
   [[ "$status" == 403 ]] || bad "register without an invite answered $status (want 403)"
   ok "register without an invite: 403"
   # The link is only in the (mail) body: in CI that is the outbox row, because the mail could not leave.
