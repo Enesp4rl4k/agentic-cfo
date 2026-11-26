@@ -66,6 +66,9 @@ jobs:
         if: ${{ !cancelled() && steps.up.outcome == 'success' }}
         run: ./scripts/stack-ci.sh tls
 
+      - name: Production Caddyfile validates (CADDY_EXTRA_GLOBAL unset)
+        run: ./scripts/stack-ci.sh caddyfile
+
       - name: migrate exited 0, Alembic at head
         if: ${{ !cancelled() && steps.up.outcome == 'success' }}
         run: ./scripts/stack-ci.sh migrations

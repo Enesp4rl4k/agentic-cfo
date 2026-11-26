@@ -222,7 +222,9 @@ def _degraded_findings(settings: Settings, env: Mapping[str, str]) -> list[Findi
     elif not (settings.smtp_user and settings.smtp_password):
         out.append(_warn("no_mail_sender", "No mail sender (SMTP_USER / SMTP_PASSWORD): invitations, resets and briefings end as failed outbox rows."))
     key = settings.openai_api_key
-    if not key or key.startswith("llm-placeholder"):
+    from app.core.llm_key import is_placeholder_key
+
+    if is_placeholder_key(key):
         out.append(_warn("no_llm_key", "OPENAI_API_KEY is a placeholder: chat and narrative text answer 503; the numbers are unaffected."))
     if not env.get("SENTRY_DSN"):
         out.append(_warn("no_error_tracking", "SENTRY_DSN is not set: unhandled errors are only in the container log."))

@@ -32,6 +32,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from app.core.currency_totals import fmt_amount
+from app.core.llm_key import is_placeholder_key as _is_placeholder_key  # one shared predicate
 from app.services.runway import watch_phrase
 from app.services.runway_display import runway_for_display
 
@@ -621,16 +622,5 @@ async def get_forecast_narrative(
 
 # ── Helper ────────────────────────────────────────────────────────────────────
 
-def _is_placeholder_key(api_key: str) -> bool:
-    """Return True if the API key is a placeholder (dev mode)."""
-    if not api_key:
-        return True
-    placeholders = {
-        "llm-placeholder-dev",
-        "llm-placeholder-demo",
-        "llm-placeholder-ci",
-        "",
-    }
-    return api_key in placeholders or api_key.startswith("llm-placeholder-")
 
 

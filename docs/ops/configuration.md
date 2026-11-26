@@ -41,7 +41,8 @@ a safe default or only produces a WARN.
 | `NEXTAUTH_SECRET` | the frontend's session secret (also read by the backend's preflight) | compose refuses to start; FATAL `nextauth_placeholder` for the template value |
 | `ERASURE_PSEUDONYM_SECRET` | its own random value, set once, never rotated | FATAL `no_pseudonym_secret` |
 | `PRIVACY_NOTICE_URL`, `TERMS_URL` | public `https` links of the published texts | FATAL `no_notice_url` |
-| `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`, `NOTIFICATION_FROM` | the mail sender: registration is invite-only and the invitation is e-mailed | FATAL `mail_required_no_sender` |
+| `SMTP_USER`, `SMTP_PASSWORD` | the mail sender: registration is invite-only and the invitation is e-mailed | FATAL `mail_required_no_sender` |
+| `SMTP_HOST`, `NOTIFICATION_FROM` | the provider's endpoint and the From address (not checked by the preflight; the defaults are `smtp.gmail.com` and an address that is not yours) | mail goes to the wrong place or lands in spam |
 
 `APP_ENV` is set by the compose file (`production`). The compose file also sets the database host, Redis, the public URLs
 (from the two domains), `SCHEDULER_PROCESS=worker`, `TRUSTED_PROXY_COUNT=1`; values for those in `.env` are ignored.

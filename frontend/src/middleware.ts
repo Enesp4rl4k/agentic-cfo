@@ -11,6 +11,7 @@
  *
  * Public routes (no auth):
  *   /               (landing page)
+ *   /api/health     (container health check, smoke test, uptime monitor)
  *   /pricing
  *   /auth/*         (login, register)
  *   /api/auth/*     (NextAuth endpoints)

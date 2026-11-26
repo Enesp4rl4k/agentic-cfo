@@ -136,6 +136,9 @@ phase_preflight() {
   grep -q '^FATAL' <<<"$out" && bad "preflight printed a FATAL finding"
   grep -q 'parser_memory' <<<"$out" && bad "preflight reports a parser memory finding for the shipped limits"
   ok "production preflight passes inside the backend container"
+  # The template LLM key (llm-placeholder-dev, the .env.example value) is only a WARN: the product works without a model.
+  grep -q '\[no_llm_key\]' <<<"$out" || bad "preflight did not WARN [no_llm_key] for the template key"
+  ok "preflight WARNs [no_llm_key] for the template LLM key (not fatal)"
 
   # Negative: a required setting removed must fail, and name the finding.
   for pair in "ERASURE_PSEUDONYM_SECRET:no_pseudonym_secret" "SMTP_USER:mail_required_no_sender" "PRIVACY_NOTICE_URL:no_notice_url"; do
@@ -157,6 +160,12 @@ phase_preflight() {
     bad "a service logged a parser_memory finding at startup"
   fi
   ok "no parser_memory finding at startup of backend, worker, worker-maintenance"
+}
+
+phase_caddyfile() {
+  # The PRODUCTION rendering: CADDY_EXTRA_GLOBAL unset (CI itself runs with local_certs), validated by the pinned image.
+  docker run --rm -e APP_DOMAIN=app.example.com -e API_DOMAIN=api.example.com -e ACME_EMAIL=ops@example.com     -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2.8-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+  ok "deploy/Caddyfile validates with CADDY_EXTRA_GLOBAL unset"
 }
 
 phase_edge() {
@@ -375,6 +384,6 @@ phase_scheduler() {
 
 phase="${1:-}"
 case "$phase" in
-  env|tls|migrations|preflight|edge|memory|parser|workers|smoke|onboarding|backup|restore|scheduler) "phase_$phase" ;;
+  env|tls|caddyfile|migrations|preflight|edge|memory|parser|workers|smoke|onboarding|backup|restore|scheduler) "phase_$phase" ;;
   *) echo "usage: $0 env|tls|migrations|preflight|edge|memory|parser|workers|smoke|onboarding|backup|restore|scheduler" >&2; exit 2 ;;
 esac
