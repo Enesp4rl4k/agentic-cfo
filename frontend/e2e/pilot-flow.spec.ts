@@ -553,7 +553,10 @@ test.describe("Pilot flow", () => {
     // API refuses smmm (PROPOSER_ROLES) and the screen no longer offers a button that can only answer 403.
     await inNewContext(browser, ACCOUNTANT, async (page) => {
       await page.goto("/takvim");
-      await page.getByRole("button", { name: /1 hafta (ötele|öne al)/ }).first().click();
+      // A payment in the first radar week cannot be brought forward (its "öne al" is disabled), and which
+      // payment is in week 1 depends on the day the suite runs (the rent projected on the 2nd is there
+      // from the 26th to the 2nd). So: the first date change the screen actually offers, whatever day it is.
+      await page.getByRole("button", { name: /1 hafta (ötele|öne al)/, disabled: false }).first().click();
       const send = page.getByRole("button", { name: /: Onaya gönder$/ }).first();
       await expect(send).toHaveAttribute("aria-disabled", "true");
       await expect(send).toHaveAttribute("title", /mali müşavir tavsiye eder/);
