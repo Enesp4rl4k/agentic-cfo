@@ -311,7 +311,9 @@ async def _raw_chat(
     messages = _build_messages(system_prompt, prompt, history)
 
     if schema is not None:
-        structured = llm.with_structured_output(schema)
+        # langchain-openai >= 0.3 defaults to response_format=json_schema; the request this
+        # gateway has always made, and every OpenAI-compatible base_url accepts, is a tool call.
+        structured = llm.with_structured_output(schema, method="function_calling")
         parsed = await structured.ainvoke(messages)
         text = parsed.to_text() if hasattr(parsed, "to_text") else str(parsed)
         # structured-output responses rarely expose usage; estimate from text
