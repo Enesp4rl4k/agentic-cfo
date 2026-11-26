@@ -74,3 +74,9 @@ export function shiftDate(iso: string, weeks: number): string {
   const moved = new Date(Date.UTC(y, m - 1, d + weeks * 7));
   return moved.toISOString().slice(0, 10);
 }
+
+/** A payment in week 1 (the anchor day to anchor+6) cannot be brought forward: there is no earlier week. */
+export const canMoveEarlier = (week: number): boolean => week > 1;
+
+/** ...and one in the last week of the radar cannot be pushed later. */
+export const canMoveLater = (week: number, last = WEEKS): boolean => week < last;
