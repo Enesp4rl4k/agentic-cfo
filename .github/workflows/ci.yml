@@ -700,23 +700,19 @@ jobs:
           docker run --rm --network none --entrypoint node agentic-cfo-frontend:ci \
             -e 'require("fs").accessSync("server.js"); require("fs").accessSync(".next/static"); console.log("server.js and .next/static present")'
 
-  # ── Security scan: REPORT ONLY (INTENTIONALLY NON-BLOCKING) ───────────────
-  # A HIGH/CRITICAL finding does NOT fail this job: both scans use exit-code 0.
-  # It used to scan ./backend only, where Trivy reads requirements.txt (the direct
-  # pins) and ignores constraints.txt, so no transitive package was ever looked at.
-  # The full pinned set (constraints.txt) is now copied to a scratch requirements.txt
-  # and scanned too; the totals are written to the job summary (last step).
-  # State on 2026-11-24, fixable findings only: 5 in the direct pins and 8 in the full
-  # set (4 HIGH + 1 CRITICAL, and 7 HIGH + 1 CRITICAL), all in the langchain family:
-  # langchain 0.2.17, langchain-core 0.2.43 (CRITICAL CVE-2025-68664) and, transitive,
-  # langchain-text-splitters 0.2.4 and langsmith 0.1.147. Before this can be made
-  # blocking (`exit-code: 1` on both scans) those four must be upgraded in
-  # backend/requirements.txt and constraints.txt (langchain 0.3.30+, langchain-core
-  # 0.3.81+, langchain-text-splitters 0.3.9+, langsmith 0.8.0+; check each fix against
-  # the app, the 0.2 to 0.3 step is a migration), or the remaining ones accepted by
-  # name in a .trivyignore with a reason.
+  # ── Security scan: BLOCKING ────────────────────────────────────────────────
+  # A fixable HIGH or CRITICAL finding fails this job: both scans use exit-code 1.
+  # Trivy reads requirements.txt (the direct pins) when pointed at ./backend and
+  # ignores constraints.txt, so the full pinned set (constraints.txt, direct and
+  # transitive) is copied to a scratch requirements.txt and scanned too; the totals
+  # are written to the job summary (last step).
+  # History: report-only until 2026-11-26, when the langchain family was upgraded
+  # (docs/ops/dependency-pinning.md) and both scans reached 0. Findings with no fixed
+  # release are not counted (`ignore-unfixed`): python-jose and ecdsa are listed, with
+  # their reachability, in that document. To accept a fixable finding, name it in a
+  # .trivyignore with a reason; do not turn the exit code back to 0.
   security:
-    name: Security Scan (REPORT ONLY, findings do not fail; .env check does)
+    name: Security Scan (BLOCKING, fixable HIGH or CRITICAL findings fail)
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
 
@@ -729,35 +725,35 @@ jobs:
           mkdir -p .trivy-scan
           cp backend/constraints.txt .trivy-scan/requirements.txt
 
-      - name: Trivy report - direct pins in backend/ (REPORT ONLY)
+      - name: Trivy - direct pins in backend/ (BLOCKING)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type:   fs
           scan-ref:    ./backend
           scanners:    vuln
           format:      table
-          exit-code:   0    # REPORT ONLY - see the comment above the job
+          exit-code:   1    # BLOCKING - see the comment above the job
           ignore-unfixed: true
           severity:    CRITICAL,HIGH
 
-      - name: Trivy report - full pinned set incl. transitive (REPORT ONLY)
+      - name: Trivy - full pinned set incl. transitive (BLOCKING)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type:   fs
           scan-ref:    ./.trivy-scan
           scanners:    vuln
           format:      table
-          exit-code:   0    # REPORT ONLY - see the comment above the job
+          exit-code:   1    # BLOCKING - see the comment above the job
           ignore-unfixed: true
           severity:    CRITICAL,HIGH
 
       # Totals in the run's summary page, so the count is visible without opening the log.
-      # Report only: this step never fails the job.
-      - name: Trivy totals in the job summary (REPORT ONLY)
+      # This step only reports; the two scans above are the gate.
+      - name: Trivy totals in the job summary
         if: always()
         run: |
           {
-            echo "### Trivy: fixable HIGH/CRITICAL findings (report only, they do not fail this job)"
+            echo "### Trivy: fixable HIGH/CRITICAL findings (the scans above fail the job on any)"
             echo
             echo "| Scan | CRITICAL | HIGH | Total |"
             echo "|---|---|---|---|"

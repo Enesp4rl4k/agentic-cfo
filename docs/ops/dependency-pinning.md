@@ -14,7 +14,7 @@ The lock is a plain version list for Python 3.12 on Linux (it includes `uvloop`,
 
 ## Bump one dependency deliberately
 
-1. Read the changelog. Do not take a major version here without a migration plan (Sentry 3.x and LangChain 0.3 are such cases; Pillow 13 and WeasyPrint 70 were taken deliberately in the PDF-parser security PR, see below).
+1. Read the changelog. Do not take a major version here without a migration plan (Sentry 3.x is such a case; the LangChain 0.2 to 1.x move was taken deliberately, see below; Pillow 13 and WeasyPrint 70 were taken deliberately in the PDF-parser security PR, see below).
 2. Edit the one line in `backend/requirements.txt`.
 3. Regenerate the lock on Linux with Python 3.12 (a throwaway `python:3.12-slim` container or a CI job; not a Windows or macOS environment, whose resolution differs). Install **without** `-c`, so pip resolves the new set, then freeze it:
 
@@ -28,6 +28,10 @@ The lock is a plain version list for Python 3.12 on Linux (it includes `uvloop`,
 5b. **PDF libraries (`pdfminer.six`, `pdfplumber`, `pymupdf`, `pillow`):** the suite generates its PDFs and has no real bank-statement fixture, so it cannot see a change in extracted text. Run `backend/scripts/pdf_extraction_snapshot.py` (usage in its docstring) in the old and the new environment and diff the two JSON files; any difference in text, tables or word boxes is a finding to read, not to merge past. For the 0.11.3 -> 0.11.9 / 20231228 -> 20251230 bump the diff was empty on the seven-file synthetic corpus.
 6. **Crypto and auth (`cryptography`, `bcrypt`, `passlib`, `python-jose`, `ecdsa`, `rsa`):** confirm login, token issue and verify, and the connector-secret decrypt of an existing ciphertext still work.
 7. Commit `requirements.txt` and `constraints.txt` together, one dependency (or one coherent group) per PR.
+
+## Security scan is blocking
+
+The `security` job in `.github/workflows/ci.yml` runs Trivy on `backend/` (direct pins) and on a copy of `constraints.txt` (the full set) with `exit-code: 1`, `ignore-unfixed` and severity HIGH/CRITICAL: a fixable finding fails the pull request. Both scans reported 0 on 2026-11-26 after the langchain upgrade (job summary table). Unfixed advisories (python-jose, ecdsa, below) are not counted; a fixable one that cannot be taken is named in a `.trivyignore` with a reason. Follow-ups left open: Sentry 3.x, base images, GitHub Actions pinning, replacing python-jose, and openai 2.x (which would also clear the LOW advisory GHSA-r7w7-9xr2-qq2r in langchain-openai).
 
 ## Known advisories and why they are, or are not, reachable
 
