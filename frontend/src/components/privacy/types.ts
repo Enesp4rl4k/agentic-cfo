@@ -48,11 +48,19 @@ export type AiEgressView = {
   provider_host: string | null;
   provider_is_local: boolean;
   model: string;
+  /** The model ids the tiers really call (a tier override wins over LLM_MODEL). */
+  models: string[];
   document_text: "allow" | "never";
   categories: { key: string; state: "sent" | "replaced" | "partly" | "not_sent" }[];
   /** Counts only: calls that sent something and the bytes sent in the last `days` days. */
-  usage: { days: number; calls: number; bytes_out: number; calls_by_mode: Record<string, number> };
+  usage: {
+    days: number; calls: number; bytes_out: number; calls_by_mode: Record<string, number>;
+    /** Calls masked mode refused (fail closed: nothing was sent), by reason. */
+    refused: Record<string, number>; refused_total: number;
+  };
   dictionary: { known_names: number; truncated: boolean; complete: boolean } | null;
+  /** Stored embeddings not made under the current mode / pseudonym key: re-embedded by the maintenance job. */
+  embeddings: { pending_reindex: number };
 };
 
 export type PrivacyOverview = {

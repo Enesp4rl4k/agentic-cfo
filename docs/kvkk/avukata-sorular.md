@@ -32,10 +32,15 @@ Aşağıdakiler **seçeneklerdir**; hangisinin yeterli olduğu hukukçunun ve sa
 
 - **Tek geçit ve kanıtı.** Model ve gömme çağrılarının hepsi iki dosyadan geçer; başka kod istemci kuramaz (AST testi). 49 çağrı yeri, sağlayıcının
   aldığını kaydeden sahte bir sağlayıcıyla çalıştırılır; maskeli kipte kanarya değerlerin hiçbiri hiçbir yükte yoktur.
-- **(b) Maskeleme artık vardır.** `LLM_DATA_MODE=masked`: IBAN (mod 97), TCKN, VKN, kart (Luhn), telefon, e-posta, plaka ve defterin kendi tablolarından
-  bilinen adlar (şirket, karşı taraf, tedarikçi, üye, mali müşavir) yer tutucuyla gider, yanıtta geri çevrilir. Tutar, tarih ve para birimi **değişmez**.
-  **Bedeli:** adın anlamına dayanan çıkarımlarda kalite biraz değişebilir. **Sınırı:** serbest metinde (açıklama, belge) kalıpların ve defterin
-  bilmediği kişisel veri gidebilir; bu, tam güvence değildir.
+- **(b) Maskeleme artık vardır.** `LLM_DATA_MODE=masked`: IBAN (mod 97), TCKN, VKN, kart (Luhn), telefon, e-posta, plaka **açık kanıtla** (etiket ya da
+  şaşmaz biçim) ve defterin kendi tablolarından bilinen adlar (şirket, karşı taraf, tedarikçi, üye, mali müşavir; ekli, satır bölünmüş, yalnızca ad ya da
+  soyad yazımları dahil) yer tutucuyla gider, yanıtta baytı baytına geri çevrilir. Tutar, tarih ve para birimi **değişmez** (200.000+ satırlık
+  bulanık testte sıfır değişiklik). **Bedeli:** adın anlamına dayanan çıkarımlarda kalite biraz değişebilir. **Sınırı:** serbest metinde kalıpların ve
+  defterin bilmediği kişisel veri gidebilir: özellikle **okunan belgede ilk kez geçen, henüz defterde olmayan adlar olduğu gibi gider**; etiketsiz
+  TCKN/VKN/kart numarası ve `+90`/boşluksuz cep numarası, tutarlarla karışmasın diye bilinçli olarak kalıpla maskelenmez. Bu, tam güvence değildir.
+- **Kapalı kalarak başarısız olma.** Maskeli kipte bir çağrının şirketi bilinmiyorsa ya da şirketin isim listesi okunamazsa o çağrı **yapılmaz**
+  (adlar maskesiz gitmez); ret kaydedilir, sahibin ekranında ve işletmeciye uyarıda görünür. Şirketsiz çalışmasına izin verilen sistem işi listesi bugün boştur.
+- **İzleme (LangSmith).** Varsayılan kapalı; açılırsa bile girdi ve çıktılar gizlenir (yük gitmez), üretimde başlangıç denetimi uyarır.
 - **(c) Şirket başına seçim artık vardır.** Sahip, Ayarlar > Veri ve gizlilik'ten `off`, `masked` veya (işletmeci izin verirse) `raw` seçer; her seçim kim/ne zaman
   ile karar kaydına yazılır. `off` kipinde hiçbir çağrı yapılmaz; ürün rakamlar ve kural tabanlı metinlerle çalışır, sohbet ve yazılı özetler kapalıdır.
 - **Belge metni için sıkı kip.** `LLM_DOCUMENT_TEXT=never`: hiçbir kipte belge metni gitmez; belge okuma deterministik ayrıştırıcılara kalır ve yükleme sonucu yapay zekâ adımının

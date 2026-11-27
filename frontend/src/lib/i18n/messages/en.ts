@@ -3449,6 +3449,7 @@ export type MessageTree = {
       current: string; sourceOrg: string; sourcePlatform: string; chooseTitle: string; capped: string; useDefault: string;
       saved: string; failed: string; notAllowed: string; categoriesTitle: string; documentNever: string; usageTitle: string; usage: string;
       usageNote: string; dictionary: string; dictionaryTruncated: string; dictionaryIncomplete: string; residual: string;
+      refused: string; reindexPending: string;
       modes: Record<"off" | "masked" | "raw", { label: string; hint: string }>;
       categories: Record<string, string>;
       states: Record<"sent" | "replaced" | "partly" | "not_sent", string>;
@@ -7408,11 +7409,13 @@ export const en: MessageTree = {
       usageNote: "Counts only. No question, document or reply is stored for this count.",
       dictionary: "Names the masking knows from your books: {n}.",
       dictionaryTruncated: "The list was cut at its limit: names beyond it are not replaced.",
-      dictionaryIncomplete: "Part of your books could not be read for this list just now.",
-      residual: "Residual risk: free-text descriptions and documents can still hold personal data that neither the patterns (IBAN, tax and ID numbers, cards, phones, e-mail) nor the names in your books catch, for example a person named only in a note. Amounts, dates and currencies are never changed. Replies are restored to the real names before you see them.",
+      dictionaryIncomplete: "Part of your books could not be read for this list just now: in masked mode nothing is sent until it can be.",
+      refused: "{n} AI calls were not made in masked mode, so nothing was sent and you saw the result without AI text (company not known for the call: {context}; names list unreadable: {dictionary}).",
+      reindexPending: "{n} document chunks have search vectors made under a different mode or key: they are left out of vector search until the maintenance job re-computes them.",
+      residual: "Residual risk: free-text descriptions and documents can still hold personal data that neither the patterns nor the names in your books catch: a person named only in a note, and names that appear for the first time in a document being read (not yet in your books) go as written. Identifiers are replaced only with clear evidence (a label such as IBAN, TCKN, Tel, or an unmistakable format), so an unlabelled ID number or a mobile number written without +90 or spaces goes as written. Amounts, dates and currencies are never changed (tested on 200,000+ lines). Replies are restored to the exact original spelling before you see them; a placeholder the model invents is shown as \"[bilinmeyen taraf]\" and never written into your books.",
       modes: {
         off: { label: "Off", hint: "Nothing is sent. Chat and written summaries are unavailable; the numbers, reports and rule-based texts keep working." },
-        masked: { label: "Masked", hint: "Names the books hold and identifiers are replaced by placeholders before sending and restored in the reply." },
+        masked: { label: "Masked", hint: "Names the books hold and identifiers are replaced by placeholders before sending and restored in the reply. If the company or its names list is not known for a call, nothing is sent." },
         raw: { label: "As is", hint: "Everything goes exactly as written. Choose this only on purpose." },
       },
       categories: {

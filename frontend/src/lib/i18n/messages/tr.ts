@@ -3933,11 +3933,13 @@ export const tr: MessageTree = {
       usageNote: "Yalnızca sayılar. Bu sayım için hiçbir soru, belge veya yanıt saklanmaz.",
       dictionary: "Maskelemenin defterlerinizden bildiği ad sayısı: {n}.",
       dictionaryTruncated: "Liste sınırında kesildi: sınırın ötesindeki adlar değiştirilmez.",
-      dictionaryIncomplete: "Defterlerinizin bir kısmı bu liste için şu an okunamadı.",
-      residual: "Kalan risk: serbest metin açıklamalar ve belgeler, ne kalıpların (IBAN, vergi ve kimlik numarası, kart, telefon, e-posta) ne de defterlerinizdeki adların yakalamadığı kişisel veri taşıyabilir; örneğin yalnızca bir notta geçen bir kişi. Tutarlar, tarihler ve para birimleri hiçbir zaman değiştirilmez. Yanıtlar siz görmeden önce gerçek adlara geri çevrilir.",
+      dictionaryIncomplete: "Defterlerinizin bir kısmı bu liste için şu an okunamadı: maskeli modda okunana kadar hiçbir şey gönderilmez.",
+      refused: "Maskeli modda {n} yapay zekâ çağrısı yapılmadı; hiçbir veri gönderilmedi, sonucu yapay zekâ metni olmadan gördünüz (çağrının şirketi bilinmiyordu: {context}; isim listesi okunamadı: {dictionary}).",
+      reindexPending: "{n} belge parçasının arama vektörü başka bir kip ya da anahtarla hesaplanmış: bakım işi yeniden hesaplayana kadar vektör aramasında kullanılmaz (maskeli modda yeniden dizinlenmeyi bekliyor).",
+      residual: "Kalan risk: serbest metin açıklamalar ve belgeler, ne kalıpların ne de defterlerinizdeki adların yakalamadığı kişisel veri taşıyabilir: yalnızca bir notta geçen bir kişi ve okunan belgede ilk kez geçen (henüz defterlerinizde olmayan) adlar yazıldığı gibi gider. Kimlikler yalnızca açık bir kanıt varken değiştirilir (IBAN, TCKN, Tel gibi bir etiket ya da şaşmaz bir biçim); etiketsiz bir kimlik numarası ya da +90 veya boşluk olmadan yazılmış bir cep numarası yazıldığı gibi gider. Tutarlar, tarihler ve para birimleri hiçbir zaman değiştirilmez (200.000'i aşkın satırda sınandı). Yanıtlar siz görmeden önce birebir özgün yazımına geri çevrilir; modelin uydurduğu bir yer tutucu \"[bilinmeyen taraf]\" olarak gösterilir ve defterlerinize asla yazılmaz.",
       modes: {
         off: { label: "Kapalı", hint: "Hiçbir şey gönderilmez. Sohbet ve yazılı özetler kullanılamaz; rakamlar, raporlar ve kural tabanlı metinler çalışmaya devam eder." },
-        masked: { label: "Maskeli", hint: "Defterlerdeki adlar ve kimlikler gönderilmeden önce yer tutucularla değiştirilir, yanıtta geri çevrilir." },
+        masked: { label: "Maskeli", hint: "Defterlerdeki adlar ve kimlikler gönderilmeden önce yer tutucularla değiştirilir, yanıtta geri çevrilir. Şirket ya da isim listesi bilinmiyorsa hiçbir şey gönderilmez." },
         raw: { label: "Olduğu gibi", hint: "Her şey yazıldığı gibi gider. Bunu yalnızca bilerek seçin." },
       },
       categories: {

@@ -47,7 +47,7 @@ export function AiEgressCard({ view, onChanged }: { view: AiEgressView; onChange
       <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
         <div>
           <dt className="text-muted-foreground">{a.provider}</dt>
-          <dd className="font-medium">{view.provider_host ?? a.providerDefault} · {view.model}</dd>
+          <dd className="font-medium">{view.provider_host ?? a.providerDefault} · {(view.models?.length ? view.models : [view.model]).join(", ")}</dd>
           <dd className={view.provider_is_local ? "text-emerald-700" : "text-amber-700"}>
             {view.provider_is_local ? a.local : a.outside}
           </dd>
@@ -110,6 +110,19 @@ export function AiEgressCard({ view, onChanged }: { view: AiEgressView; onChange
         <h3 className="font-medium">{a.usageTitle.replace("{days}", String(view.usage.days))}</h3>
         <p>{a.usage.replace("{calls}", view.usage.calls.toLocaleString(locale)).replace("{size}", formatBytes(view.usage.bytes_out, locale))}</p>
         <p className="text-xs text-muted-foreground">{a.usageNote}</p>
+        {view.usage.refused_total > 0 && (
+          <p className="text-amber-700">
+            {a.refused
+              .replace("{n}", view.usage.refused_total.toLocaleString(locale))
+              .replace("{context}", String(view.usage.refused.no_organisation_context ?? 0))
+              .replace("{dictionary}", String(view.usage.refused.dictionary_unavailable ?? 0))}
+          </p>
+        )}
+        {view.embeddings.pending_reindex > 0 && (
+          <p className="text-xs text-muted-foreground">
+            {a.reindexPending.replace("{n}", view.embeddings.pending_reindex.toLocaleString(locale))}
+          </p>
+        )}
         {view.dictionary && (
           <p className="text-xs text-muted-foreground">
             {a.dictionary.replace("{n}", String(view.dictionary.known_names))}

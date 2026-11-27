@@ -47,8 +47,10 @@ function aiView(over: Partial<NonNullable<PrivacyOverview["ai_egress"]>> = {}): 
       { key: "identifiers", state: "replaced" }, { key: "descriptions", state: "partly" }, { key: "document_text", state: "partly" },
       { key: "chat", state: "partly" }, { key: "embeddings", state: "partly" },
     ],
-    usage: { days: 30, calls: 1234, bytes_out: 5_242_880, calls_by_mode: { masked: 1234 } },
+    usage: { days: 30, calls: 1234, bytes_out: 5_242_880, calls_by_mode: { masked: 1234 }, refused: {}, refused_total: 0 },
     dictionary: { known_names: 42, truncated: false, complete: true },
+    embeddings: { pending_reindex: 0 },
+    models: ["deepseek-chat"],
     ...over,
   };
 }
@@ -88,6 +90,25 @@ describe("Veri ve gizlilik", () => {
     expect(screen.getByText("1.234 çağrı, 5 MB gönderildi.")).toBeTruthy();
     expect(screen.getByText(a.residual)).toBeTruthy();
     expect(screen.getByText(tr.settingsPrivacy.thirdParties.notMasked)).toBeTruthy(); // the LLM card of this fixture says masked:false
+  });
+
+  it("tells the owner when masked mode refused calls and when embeddings await re-indexing", async () => {
+    serve(overview({
+      ai_egress: aiView({
+        usage: {
+          days: 30, calls: 10, bytes_out: 2048, calls_by_mode: { masked: 10 },
+          refused: { no_organisation_context: 2, dictionary_unavailable: 1 }, refused_total: 3,
+        },
+        embeddings: { pending_reindex: 17 },
+        models: ["deepseek-chat", "deepseek-reasoner"],
+      }),
+    }));
+    render(<PrivacyPanel />);
+    const a = tr.settingsPrivacy.aiEgress;
+    expect(await screen.findByText(a.title)).toBeTruthy();
+    expect(screen.getByText(/deepseek-chat, deepseek-reasoner/)).toBeTruthy();
+    expect(screen.getByText(a.refused.replace("{n}", "3").replace("{context}", "2").replace("{dictionary}", "1"))).toBeTruthy();
+    expect(screen.getByText(a.reindexPending.replace("{n}", "17"))).toBeTruthy();
   });
 
   it("is absent for anyone but the owner", async () => {
