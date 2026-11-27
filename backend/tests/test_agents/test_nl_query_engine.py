@@ -265,11 +265,13 @@ class TestInsightMoneyFormat:
 
         seen: list[str] = []
 
-        async def fake_complete_text(**kwargs):
+        async def fake_complete(**kwargs):  # the insight asks for a JSON reply (parsed before placeholders are restored)
             seen.append(kwargs.get("prompt", ""))
-            return '{"answer": "ok", "follow_ups": []}'
+            assert kwargs.get("json_reply") == "narrative"
+            return model_gateway.GatewayResult(text='{"answer": "ok", "follow_ups": []}', model="m", task="quick_analysis",
+                                               parsed={"answer": "ok", "follow_ups": []})
 
-        monkeypatch.setattr(model_gateway, "complete_text", fake_complete_text)
+        monkeypatch.setattr(model_gateway, "complete", fake_complete)
 
         from app.agents.nl_query_engine import generate_nl_insight
 
@@ -292,7 +294,7 @@ class TestInsightMoneyFormat:
         async def boom(**_kwargs):
             raise RuntimeError("no llm")
 
-        monkeypatch.setattr(model_gateway, "complete_text", boom)
+        monkeypatch.setattr(model_gateway, "complete", boom)
 
         from app.agents.nl_query_engine import generate_nl_insight
 
