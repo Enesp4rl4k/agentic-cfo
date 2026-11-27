@@ -206,7 +206,7 @@ jobs:
 
       # The langgraph checkpoint tables are created by the library when the saver first connects (not by Alembic).
       # A skipped safety test is a defect: the summary line is checked, as for the atomicity test below.
-      - name: LangGraph checkpoints on Postgres (resume in a rebuilt app, tenant isolation, erasure, retention)
+      - name: LangGraph checkpoints on Postgres (tenant isolation, CEO path and legacy rows erased, no-org runs unsaved, retention)
         working-directory: backend
         run: |
           out="$(python -m pytest tests/test_checkpointer_postgres.py -q -p no:randomly -rs)"

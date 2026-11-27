@@ -12,8 +12,9 @@ decisions are kept (Turkish commercial and tax law has long statutory periods: l
   platform-wide (settings only)
     tokens             password-reset / e-mail-verification tokens, spent or expired invitations    30 days after expiry
     audit_ip           audit-log IP address truncated (/24, /48), browser string removed; row stays 365 days
-    checkpoints        LangGraph agent-run checkpoints (PostgreSQL), 30 days after the run's last step; org erasure
-                       deletes them at once (privacy.ephemeral)
+    checkpoints        LangGraph agent-run checkpoints (PostgreSQL), 3 days after the run's last step (nothing reads
+                       them back); threads not namespaced by an organisation at once, whatever their age; org
+                       erasure deletes the org's at once (privacy.ephemeral)
   not here: expired export bundles (the 24-hour download lifetime, its own hourly job `export_expiry`, never gated
   by the dry-run flag), demo guest workspaces (their own hourly job, `DEMO_GUEST_TTL_HOURS`), chat history (Redis, 7 days),
   LLM prompts and responses (never stored by this product; the provider's own retention is Q1), soft-deleted rows
@@ -213,10 +214,13 @@ async def purge_platform(db: AsyncSession, policy: dict[str, int], *, dry_run: b
     if days > 0:
         out["audit_ip"] = await _audit_ip(db, now - timedelta(days=days), dry_run)
     days = policy.get("checkpoint_days", 0)
-    if days > 0 and db.bind is not None and db.bind.dialect.name == "postgresql":
-        from app.services.checkpoint_data import purge_old_checkpoints
+    if db.bind is not None and db.bind.dialect.name == "postgresql":
+        from app.services.checkpoint_data import purge_old_checkpoints, purge_unscoped_checkpoints
 
-        out["checkpoints"] = await purge_old_checkpoints(db, days=days, dry_run=dry_run, now=now)
+        if days > 0:
+            out["checkpoints"] = await purge_old_checkpoints(db, days=days, dry_run=dry_run, now=now)
+        # Whatever the age and even with checkpoint_days = 0: a thread without its organisation is an orphan.
+        out["checkpoints_unscoped"] = await purge_unscoped_checkpoints(db, dry_run=dry_run)
     return out
 
 

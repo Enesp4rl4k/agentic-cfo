@@ -25,6 +25,7 @@ Fatal nodes: data_ingestion, pnl — without these, nothing else can run.
 from __future__ import annotations
 
 import logging
+import uuid
 from collections.abc import Callable, Mapping
 from typing import Any
 
@@ -451,8 +452,9 @@ def build_cfo_graph() -> StateGraph:
 
 
 
-# Compiled graph — reused across requests (thread-safe)
-# Checkpointer enables resume of interrupted runs via thread_id=job_id.
+# Compiled graphs — reused across requests (thread-safe). `cfo_graph` checkpoints every super-step under the run's
+# own thread (`checkpointer.checkpoint_config`); `cfo_graph_ephemeral` has no checkpointer and serves runs without an
+# organisation, whose rows no erasure could find (checkpointer.py).
 def _compile_cfo_graph():
     from app.agents.checkpointer import CheckpointerUnavailable, get_checkpointer
 
@@ -466,6 +468,7 @@ def _compile_cfo_graph():
 
 
 cfo_graph = _compile_cfo_graph()
+cfo_graph_ephemeral = build_cfo_graph().compile()
 
 
 # ── Public entry point ────────────────────────────────────────────────────────
@@ -510,7 +513,7 @@ async def run_cfo_pipeline(
         3. AgentMemoryStore — episode saved after pipeline completes;
            memory_episode_ids stored in state.
     """
-    from app.agents.checkpointer import checkpoint_config
+    from app.agents.checkpointer import checkpoint_config, ephemeral_config, persists
 
     cfg = run_config or DEFAULT_RUN_CONFIG
     initial_state: CFOState = {
@@ -541,10 +544,14 @@ async def run_cfo_pipeline(
     if budget_input:
         initial_state["budget_input"] = budget_input  # type: ignore[assignment]
 
-    result: CFOState = await cfo_graph.ainvoke(
-        initial_state,
-        config=checkpoint_config(job_id, org_id=org_id, run_config=cfg),
-    )
+    # A fresh thread per run: nothing resumes a checkpoint, so no run may inherit an earlier run's channel values
+    # (`budget_input`, a skipped node's output) or share a thread with a concurrent run on the same job.
+    if persists(org_id):
+        graph, config = cfo_graph, checkpoint_config(job_id, org_id=org_id, run_id=uuid.uuid4().hex, run_config=cfg)
+    else:
+        logger.warning("CFO pipeline job=%s has no organisation: running without a checkpointer", job_id)
+        graph, config = cfo_graph_ephemeral, ephemeral_config(cfg)
+    result: CFOState = await graph.ainvoke(initial_state, config=config)
 
     logger.info(
         "CFO pipeline finished: job=%s halted=%s awaiting_review=%s "

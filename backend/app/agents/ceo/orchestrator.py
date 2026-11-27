@@ -112,6 +112,9 @@ async def node_run_pipelines(state: CEOState, config: RunnableConfig) -> CEOStat
                     file_path=cfo_input.get("file_path", ""),
                     file_type=cfo_input.get("file_type", ""),
                     budget_input=cfo_input.get("budget"),
+                    # The organisation whose statement this is: its checkpoints are namespaced by it, so its
+                    # erasure finds them. Without one the CFO run is not checkpointed at all.
+                    org_id=cfo_input.get("org_id"),
                 )
                 cfo_result = dict(result)
             logger.info("CEO: CFO pipeline finished for job=%s", job_id)
@@ -446,6 +449,7 @@ async def run_ceo_pipeline(
     company_name: str | None = None,
     period: str | None = None,
     run_config: CEORunConfig | None = None,
+    org_id: str | None = None,
 ) -> CEOState:
     """
     Run the full CEO analysis pipeline.
@@ -455,6 +459,9 @@ async def run_ceo_pipeline(
     CFO input modes (mutually exclusive, file-based takes priority):
       a) file-based: cfo_file_path + cfo_file_type
       b) direct JSON: cfo_transactions list
+
+    `org_id`: the organisation the CFO file belongs to (the job's). The file-based CFO run is checkpointed under it;
+    without one it is not checkpointed.
 
     Returns final CEOState with:
       - financial_summary, tech_summary
@@ -466,7 +473,7 @@ async def run_ceo_pipeline(
 
     cfo_input: dict[str, Any] = {}
     if cfo_file_path and cfo_file_type:
-        cfo_input = {"file_path": cfo_file_path, "file_type": cfo_file_type, "budget": cfo_budget}
+        cfo_input = {"file_path": cfo_file_path, "file_type": cfo_file_type, "budget": cfo_budget, "org_id": org_id}
     elif cfo_transactions:
         cfo_input = {"transactions": cfo_transactions, "budget": cfo_budget}
 

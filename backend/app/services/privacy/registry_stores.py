@@ -28,12 +28,16 @@ STORES: tuple[Store, ...] = (
     Store("agent_memory", "one narrative and summary per agent run per organisation",
           "table agent_memory_episodes (PostgreSQL) / agent_memory (SQLite), outside the ORM metadata",
           S.COUNTERPARTY, R.OPERATIONAL, "no expiry before this work", "privacy.ephemeral", (Flow.LLM,)),
-    Store("agent_checkpoints", "the state of an agent run between steps (what resume reloads): can hold the "
-          "statement's rows, figures and narrative of one run",
+    Store("agent_checkpoints", "the state of a CFO pipeline run after each step: can hold the statement's rows, "
+          "figures and narrative of one run. Nothing reads it back (no resume); a run without an organisation is "
+          "not checkpointed",
           "tables checkpoints, checkpoint_blobs, checkpoint_writes (PostgreSQL, created by the langgraph library, "
-          "outside the ORM metadata; thread id `<org_id>:<job_id>`)",
-          S.COUNTERPARTY, R.OPERATIONAL, "30 days after the run's last step (RETENTION_CHECKPOINT_DAYS)",
-          "privacy.ephemeral (inside the erase transaction) and the retention job"),
+          "outside the ORM metadata; thread id `<org_id>:<job_id>:<run_id>`, one per run). Development with SQLite: "
+          "the file CHECKPOINT_SQLITE_PATH, which erasure does not touch",
+          S.COUNTERPARTY, R.OPERATIONAL, "3 days after the run's last step (RETENTION_CHECKPOINT_DAYS); a thread "
+          "not namespaced by an organisation at the next retention run",
+          "privacy.ephemeral inside the erase transaction (the organisation's threads, and un-namespaced threads of "
+          "its jobs written before 2026-11-27) and the retention job"),
     Store("llm_provider_side", "prompts and responses as the model provider keeps them", "the provider",
           S.ANYONE, R.OPERATIONAL, "set by the provider, outside our control",
           "cannot be erased by us: lawyer question Q1", (Flow.LLM,)),

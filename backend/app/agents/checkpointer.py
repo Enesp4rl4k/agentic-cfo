@@ -1,5 +1,5 @@
 """
-LangGraph checkpointer factory — resume failed / interrupted agent runs.
+LangGraph checkpointer factory — durable per-step state of CFO pipeline runs (nothing resumes it today).
 
 Backend selection (DDIA Ch.1 — durable state cannot live in one process):
   - explicit LANGGRAPH_CHECKPOINT=memory|sqlite|postgres always wins
@@ -16,9 +16,17 @@ Before this file was fixed, all three branches of `get_checkpointer` called
 the "durable" claim in the run ledger was false. The failure mode was silent,
 which is worse than slow.
 
-Thread id convention: `<org_id>:<AnalysisJob.id>` (`thread_key`), passed as configurable.thread_id. The
-organisation prefix is what keeps one tenant from ever loading another's checkpoint (job ids are UUIDs, but
-isolation does not rest on that) and what organisation erasure and retention select on.
+Thread id convention: `<org_id>:<job_id>:<run_id>` (`thread_key`), built ONLY by `checkpoint_config` (a structural
+test, `tests/test_checkpoint_thread_ids.py`, fails on any other construction). The organisation prefix is what keeps
+one tenant from ever loading another's checkpoint and what organisation erasure selects on. The run id is fresh for
+every run (`run_cfo_pipeline`): no production code resumes a checkpoint, so a run must not start on top of an earlier
+run's channel values, and two runs on one job must not write one thread. A run without an organisation (a job whose
+`org_id` is NULL) is NOT checkpointed at all: `run_cfo_pipeline` runs it on a graph compiled without a checkpointer,
+because a row that does not start with its organisation is a row no erasure can find.
+
+Nothing reads the durable rows back today (no resume, no inspection tool); they exist for at most
+`RETENTION_CHECKPOINT_DAYS` (default 3). Deserialisation is strict (`_serde`): only the library's safe types and the
+app's own state dataclasses are rebuilt from a row, anything else comes back as plain data.
 
 Production never falls back: LANGGRAPH_CHECKPOINT=postgres (or sqlite) that cannot be built raises
 `CheckpointerUnavailable` there, and startup stops (`verify_checkpointer`, called by the API lifespan and the
@@ -34,7 +42,7 @@ from __future__ import annotations
 import inspect
 import logging
 import os
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, TypeGuard, cast
 
 if TYPE_CHECKING:
     from langgraph.checkpoint.base import CheckpointMetadata
@@ -247,11 +255,32 @@ def _compatify(saver: Any, *, async_via_thread: bool = False) -> Any:
     return obj
 
 
+# The app's own types that live in CFO state (`logs` holds StepLog; the run config may be stored with a run).
+STATE_TYPES: tuple[tuple[str, str], ...] = (
+    ("app.agents.state", "StepLog"),
+    ("app.agents.state", "AgentRunConfig"),
+)
+
+# The CFO graph is acyclic with 13 nodes (one super-step each); 25 leaves room and still stops a routing loop.
+RECURSION_LIMIT = 25
+
+
+def _serde() -> Any:
+    """Strict msgpack: a checkpoint row can rebuild only the library's safe types and `STATE_TYPES`.
+
+    The library's default allows any importable type (with a warning), so a row written by anyone who can write to
+    these tables could construct arbitrary objects when it is read (GHSA-g48c-2wqr-h844). Blocked types come back as
+    their plain serialised data."""
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+    return JsonPlusSerializer(allowed_msgpack_modules=STATE_TYPES)
+
+
 def _memory_saver() -> Any:
     try:
         from langgraph.checkpoint.memory import MemorySaver
 
-        return _compatify(MemorySaver())
+        return _compatify(MemorySaver(serde=_serde()))
     except Exception as exc:
         logger.warning("langgraph MemorySaver unavailable (%s) — using stub", exc)
 
@@ -293,7 +322,7 @@ def _sqlite_saver(path: str) -> Any:
         conn.execute("PRAGMA journal_mode=WAL")
     except sqlite3.Error:
         pass  # network filesystems refuse WAL — durability still holds
-    return _compatify(SqliteSaver(conn), async_via_thread=True)
+    return _compatify(SqliteSaver(conn, serde=_serde()), async_via_thread=True)
 
 
 def _acquire_setup_lock(conn: Any, timeout: float = 90.0) -> None:
@@ -342,7 +371,7 @@ def _postgres_saver(dsn: str) -> Any:
     )
     pool.open(wait=True, timeout=15)
     try:
-        saver = PostgresSaver(cast("Any", pool))
+        saver = PostgresSaver(cast("Any", pool), serde=_serde())
         with pool.connection() as lock_conn:  # session-level advisory lock, held while setup() runs on another one
             _acquire_setup_lock(lock_conn)
             try:
@@ -440,15 +469,30 @@ def reset_checkpointer() -> None:
     _STATUS.update(backend=None, durable=None, error=None)
 
 
-def checkpoint_config(
-    thread_id: str, *, org_id: str | None = None, run_config: Any = None
-) -> dict[str, Any]:
-    """Build ainvoke config dict with the thread id for resume; with `org_id` the thread is namespaced by it."""
-    key = thread_key(org_id, str(thread_id)) if org_id is not None else str(thread_id)
-    configurable: dict[str, Any] = {"thread_id": key, "checkpoint_ns": ""}
+def persists(org_id: str | None) -> TypeGuard[str]:
+    """Whether a run for this organisation may be checkpointed durably: only with an organisation UUID."""
+    from app.services.privacy.erasure_cleanup import valid_id
+
+    return valid_id(org_id)
+
+
+def checkpoint_config(job_id: str, *, org_id: str, run_id: str, run_config: Any = None) -> dict[str, Any]:
+    """The ainvoke config of a CHECKPOINTED run: thread `<org_id>:<job_id>:<run_id>`, explicit recursion limit.
+
+    Fails closed: without an organisation UUID it raises `InvalidTargetError` and nothing is written. A caller that
+    may have no organisation checks `persists(org_id)` first and runs uncheckpointed (`ephemeral_config`)."""
+    configurable: dict[str, Any] = {"thread_id": thread_key(org_id, str(job_id), str(run_id)), "checkpoint_ns": ""}
     if run_config is not None:
         configurable["run_config"] = run_config
-    return {"configurable": configurable}
+    return {"recursion_limit": RECURSION_LIMIT, "configurable": configurable}
+
+
+def ephemeral_config(run_config: Any = None) -> dict[str, Any]:
+    """The ainvoke config of a run on a graph compiled WITHOUT a checkpointer: no thread id, nothing persisted."""
+    configurable: dict[str, Any] = {}
+    if run_config is not None:
+        configurable["run_config"] = run_config
+    return {"recursion_limit": RECURSION_LIMIT, "configurable": configurable}
 
 
 def checkpointer_status() -> dict[str, Any]:

@@ -120,6 +120,7 @@ async def run_ceo_analysis(
             sprint_csv=body.sprint_csv,
             company_name=body.company_name,
             period=body.period,
+            org_id=str(current_user.org_id) if current_user.org_id else None,
         )
 
         logs_serializable = [
@@ -264,6 +265,7 @@ async def run_ceo_analysis_async(
             sprint_csv=body.sprint_csv,
             company_name=body.company_name,
             period=body.period,
+            org_id=str(current_user.org_id) if current_user.org_id else None,
         )
     except Exception as exc:
         logger.exception("Failed to enqueue CEO analysis job=%s", job_id)
@@ -479,6 +481,8 @@ async def run_ceo_from_job(
             compensation_csv=domain_kwargs.get("compensation_csv"),
             company_name=params.company_name,
             period=params.period,
+            # The job's organisation: the CFO run's checkpoints carry it, so that organisation's erasure removes them.
+            org_id=str(job.org_id) if job.org_id else None,
         )
     except Exception as exc:
         logger.exception("CEO pipeline failed for job=%s", job_id)

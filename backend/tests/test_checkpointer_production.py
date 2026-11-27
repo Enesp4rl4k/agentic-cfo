@@ -27,14 +27,53 @@ def _explode(dsn: str):
     raise ImportError("langgraph.checkpoint.postgres is not installed")
 
 
-def test_thread_ids_are_namespaced_by_organisation() -> None:
+def test_thread_ids_are_namespaced_by_organisation_and_run() -> None:
     a, b, job = "11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222", "job-1"
-    ta = cp.checkpoint_config(job, org_id=a)["configurable"]["thread_id"]
-    tb = cp.checkpoint_config(job, org_id=b)["configurable"]["thread_id"]
-    assert ta == f"{a}:{job}" and tb == f"{b}:{job}" and ta != tb
+    ta = cp.checkpoint_config(job, org_id=a, run_id="r1")["configurable"]["thread_id"]
+    tb = cp.checkpoint_config(job, org_id=b, run_id="r1")["configurable"]["thread_id"]
+    assert ta == f"{a}:{job}:r1" and tb == f"{b}:{job}:r1" and ta != tb
+    assert cp.checkpoint_config(job, org_id=a, run_id="r2")["configurable"]["thread_id"] != ta  # one thread per run
     assert cp.thread_like(a) == f"{a}:%"
-    # without an organisation the id is what it always was (callers that have none, tests)
-    assert cp.checkpoint_config(job)["configurable"]["thread_id"] == job
+    assert cp.checkpoint_config(job, org_id=a, run_id="r1")["recursion_limit"] == cp.RECURSION_LIMIT
+
+
+@pytest.mark.parametrize("org", [None, "", "-", "org-1", "%", "11111111-1111-4111-8111-11111111111X"])
+def test_no_organisation_no_checkpoint_thread(org) -> None:
+    """Fail closed: a thread that does not start with its organisation is one no erasure can find."""
+    from app.services.privacy.erasure_cleanup import InvalidTargetError
+
+    assert cp.persists(org) is False
+    with pytest.raises(InvalidTargetError):
+        cp.checkpoint_config("job-1", org_id=org, run_id="r1")
+    eph = cp.ephemeral_config({"x": 1})
+    assert "thread_id" not in eph["configurable"] and eph["recursion_limit"] == cp.RECURSION_LIMIT
+
+
+async def test_a_run_without_an_organisation_uses_the_graph_without_a_checkpointer(monkeypatch, tmp_path) -> None:
+    from app.agents import orchestrator
+
+    assert orchestrator.cfo_graph_ephemeral.checkpointer is None
+    seen: dict[str, object] = {}
+
+    class _Graph:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+        async def ainvoke(self, state, config):
+            seen.update(graph=self.name, config=config)
+            return {**state, "halted": True}
+
+    monkeypatch.setattr(orchestrator, "cfo_graph", _Graph("durable"))
+    monkeypatch.setattr(orchestrator, "cfo_graph_ephemeral", _Graph("ephemeral"))
+    await orchestrator.run_cfo_pipeline(job_id="j", file_path="", file_type="csv", org_id=None, base_currency="TRY")
+    assert seen["graph"] == "ephemeral" and "thread_id" not in seen["config"]["configurable"]
+
+    org = "11111111-1111-4111-8111-111111111111"
+    await orchestrator.run_cfo_pipeline(job_id="j", file_path="", file_type="csv", org_id=org, base_currency="TRY")
+    first = seen["config"]["configurable"]["thread_id"]
+    assert seen["graph"] == "durable" and first.startswith(f"{org}:j:")
+    await orchestrator.run_cfo_pipeline(job_id="j", file_path="", file_type="csv", org_id=org, base_currency="TRY")
+    assert seen["config"]["configurable"]["thread_id"] != first, "a second run on the job reused the first run's thread"
 
 
 def test_production_does_not_fall_back_to_memory(monkeypatch: pytest.MonkeyPatch) -> None:
