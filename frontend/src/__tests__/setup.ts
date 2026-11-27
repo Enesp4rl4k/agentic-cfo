@@ -2,7 +2,30 @@
  * Vitest global setup — runs before every test file.
  */
 import "@testing-library/jest-dom";
-import { vi, beforeAll, afterAll } from "vitest";
+import { vi, beforeAll, afterAll, beforeEach } from "vitest";
+
+// ── One clock ──────────────────────────────────────────────────────────────────
+// Every test starts at the instant the backend suite is pinned to (backend/app/core/clock.py TEST_INSTANT, a
+// Wednesday 10:00 UTC) and Date ticks from there. Only Date moves: timers stay real, and a test's own
+// vi.useFakeTimers() starts from this instant too (it reads Date.now()). A test that truly needs the wall
+// clock says so: vi.useFakeTimers({ toFake: ["Date"], now: performance.timeOrigin + performance.now() }).
+// Guarded by backend/tests/test_clock_guard.py.
+const TEST_INSTANT = "2026-11-25T10:00:00Z";
+const WallDate = Date;
+let offsetMs = WallDate.parse(TEST_INSTANT) - WallDate.now(); // module-level code sees the instant too
+class PinnedDate extends WallDate {
+  constructor(...args: unknown[]) {
+    if (args.length === 0) super(WallDate.now() + offsetMs);
+    else super(...(args as [number]));
+  }
+  static now(): number {
+    return WallDate.now() + offsetMs;
+  }
+}
+globalThis.Date = PinnedDate as DateConstructor;
+beforeEach(() => {
+  offsetMs = WallDate.parse(TEST_INSTANT) - WallDate.now();
+});
 
 // ── Mock next/navigation ───────────────────────────────────────────────────────
 vi.mock("next/navigation", () => ({

@@ -12,8 +12,7 @@ written from its public shape and not checked against a real account.
 
 from __future__ import annotations
 
-import time
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import httpx
 import pytest
@@ -36,7 +35,7 @@ class ParasutWithContacts(Parasut):
     """Invoices that name their contact, as JSON:API does with `include=contact`."""
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
-        today = time.strftime("%Y-%m-%d")
+        today = datetime.now(UTC).date().isoformat()  # the pinned test day (UTC)
         due = (date.today() + timedelta(days=20)).isoformat()
         if request.url.path == "/v4/123456/sales_invoices":
             return httpx.Response(200, json={

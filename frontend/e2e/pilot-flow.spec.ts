@@ -1,6 +1,6 @@
-import { expect, test, type APIRequestContext, type Browser, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { API, API_WITH_MODEL, PASSWORD, acceptInvite, acceptNoticePrompt, noteSignIns, bearer, login, loginInBrowser, probe, register, type OutboxRow } from "./support/api";
-import { OPENING_BALANCE_TL, bankStatement, bankStatementWithoutCurrency, cashShortStatement, invoiceList, iso, tr } from "./support/fixtures";
+import { E2E_NOW, OPENING_BALANCE_TL, bankStatement, bankStatementWithoutCurrency, cashShortStatement, invoiceList, iso, tr } from "./support/fixtures";
 
 /**
  * The pilot's core flow as one story, told in order, in a real browser against the real stack.
@@ -21,7 +21,7 @@ const bank = bankStatement();
 const invoices = invoiceList();
 const asOf = tr(bank.asOf); // "19.11.2026": how the setup page writes the statement date
 const asOfLong = bank.asOf.toLocaleDateString("tr-TR", { day: "numeric", month: "long" }); // "19 Kasım"
-const todayLong = new Date().toLocaleDateString("tr-TR", { day: "numeric", month: "long" });
+const todayLong = E2E_NOW.toLocaleDateString("tr-TR", { day: "numeric", month: "long" });
 
 const S: {
   bankJob?: string;
@@ -35,8 +35,15 @@ const S: {
   para?: { email: string; token: string; jobId: string };
 } = {};
 
-async function inNewContext<T>(browser: Browser, email: string, body: (page: Page) => Promise<T>): Promise<T> {
+/** A browser context whose clock starts at the journey's simulated instant (E2E_NOW) and runs from there. */
+async function simulatedContext(browser: Browser): Promise<BrowserContext> {
   const ctx = await browser.newContext({ locale: "tr-TR", timezoneId: "Europe/Istanbul" });
+  await ctx.clock.install({ time: E2E_NOW });
+  return ctx;
+}
+
+async function inNewContext<T>(browser: Browser, email: string, body: (page: Page) => Promise<T>): Promise<T> {
+  const ctx = await simulatedContext(browser);
   const page = await ctx.newPage();
   try {
     await loginInBrowser(page, email);
@@ -74,7 +81,7 @@ async function addColleague(browser: Browser, request: APIRequestContext, email:
 
 /** The invitation link of the e-mail, opened in a browser with no session. */
 async function openInvitation(browser: Browser, token: string): Promise<{ page: Page; close: () => Promise<void> }> {
-  const ctx = await browser.newContext({ locale: "tr-TR", timezoneId: "Europe/Istanbul" });
+  const ctx = await simulatedContext(browser);
   const page = await ctx.newPage();
   const res = await page.goto(`/auth/accept-invite?token=${token}`);
   expect(res?.status(), "the page the e-mail links to exists").toBe(200);
@@ -85,6 +92,11 @@ async function openInvitation(browser: Browser, token: string): Promise<{ page: 
 const screen = (page: Page) => page.locator("main").last();
 
 test.describe.configure({ mode: "serial" });
+
+// The browser's clock is the journey's simulated one, as the APIs' are (fixtures.ts E2E_NOW).
+test.beforeEach(async ({ context }) => {
+  await context.clock.install({ time: E2E_NOW });
+});
 
 test.describe("Pilot flow", () => {
   test("1. a new owner registers and creates a company", async ({ page }) => {
