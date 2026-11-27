@@ -12,7 +12,11 @@ docstring never counts and an import inside a function does):
 * no module outside `config.py` contains a literal provider host;
 * tool calling is not used anywhere (its arguments would not be masked): adding it is a decision
   to make here, not an accident;
-* the gateways really open an egress session before they build a payload.
+* the gateways really open an egress session before they build a payload;
+* no module imports a model library dynamically (importlib / __import__) or builds a client through a
+  factory (init_chat_model, init_embeddings), and an environment-variable spelling of a setting
+  (`os.getenv("LLM_BASE_URL")`) counts as reading it;
+* only telemetry and the egress tracing guard touch the LangSmith / LangChain tracing switches.
 
 Every allow-list entry says why. The lists may only shrink: a stale entry fails.
 """
@@ -34,8 +38,22 @@ GATEWAYS = {
 MODEL_LIBRARIES = (
     "langchain_openai", "openai", "anthropic", "langchain_anthropic", "langchain_google_genai", "langchain_ollama",
     "langchain_mistralai", "langchain_cohere", "langchain_groq", "litellm", "cohere", "mistralai", "ollama",
-    "google.generativeai", "google.genai", "vertexai",
+    "google.generativeai", "google.genai", "vertexai", "langchain.chat_models", "langchain.embeddings",
+    "langchain.llms", "langchain_community.chat_models", "langchain_community.llms",
+    "langchain_community.embeddings", "langchain_huggingface", "huggingface_hub", "transformers",
 )
+CLIENT_FACTORIES = frozenset({"init_chat_model", "init_embeddings", "load_llm", "load_chat_model"})
+DYNAMIC_IMPORTS = frozenset({"import_module", "__import__", "find_spec", "spec_from_file_location"})
+# The switches that make LangSmith / LangGraph export runs, and the flags that hide their payloads.
+TRACING_SWITCHES = frozenset({
+    "LANGCHAIN_TRACING_V2", "LANGCHAIN_TRACING", "LANGSMITH_TRACING", "LANGSMITH_TRACING_V2", "LANGCHAIN_API_KEY",
+    "LANGSMITH_API_KEY", "LANGCHAIN_ENDPOINT", "LANGSMITH_ENDPOINT", "LANGSMITH_HIDE_INPUTS",
+    "LANGSMITH_HIDE_OUTPUTS", "LANGCHAIN_HIDE_INPUTS", "LANGCHAIN_HIDE_OUTPUTS",
+})
+TRACING_WRITERS: dict[str, str] = {
+    "services/telemetry.py": "the only place tracing may be switched on (explicit setting), and where it is locked off",
+    "platform/llm_egress/tracing.py": "forces the hide-inputs/outputs flags on, so a trace never carries a payload",
+}
 CLIENT_CLASSES = frozenset({
     "ChatOpenAI", "OpenAIEmbeddings", "AsyncOpenAI", "OpenAI", "AzureChatOpenAI", "AzureOpenAIEmbeddings",
     "ChatAnthropic", "ChatGoogleGenerativeAI", "ChatOllama", "ChatMistralAI", "ChatCohere", "ChatGroq",
@@ -120,13 +138,49 @@ def _class_names(tree: ast.AST) -> set[str]:
 
 
 def _reads(tree: ast.AST, *names: str) -> bool:
-    """`x.<name>` or a string constant exactly `<name>` (getattr(settings, "llm_base_url"))."""
+    """`x.<name>`, or a string constant that is `<name>` in any case: getattr(settings, "llm_base_url") and
+    the environment spelling os.getenv("LLM_BASE_URL") / os.environ["OPENAI_API_KEY"] alike."""
+    wanted = {n.lower() for n in names}
     for node in ast.walk(tree):
-        if isinstance(node, ast.Attribute) and node.attr in names:
+        if isinstance(node, ast.Attribute) and node.attr.lower() in wanted:
             return True
-        if isinstance(node, ast.Constant) and node.value in names:
+        if isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value.lower() in wanted:
             return True
     return False
+
+
+def _factories(tree: ast.AST) -> set[str]:
+    found: set[str] = set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Name) and n.id in CLIENT_FACTORIES:
+            found.add(n.id)
+        elif isinstance(n, ast.Attribute) and n.attr in CLIENT_FACTORIES:
+            found.add(n.attr)
+        elif isinstance(n, ast.alias) and n.name in CLIENT_FACTORIES:
+            found.add(n.name)
+    return found
+
+
+def _dynamic_model_imports(tree: ast.AST) -> set[str]:
+    """importlib.import_module("langchain_openai") / __import__("openai"): a model library by name."""
+    hit: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        fn = node.func.id if isinstance(node.func, ast.Name) else getattr(node.func, "attr", "")
+        if fn not in DYNAMIC_IMPORTS:
+            continue
+        for arg in node.args:
+            if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                hit |= {lib for lib in MODEL_LIBRARIES if arg.value == lib or arg.value.startswith(lib + ".")}
+    return hit
+
+
+def _tracing_switches(tree: ast.AST) -> set[str]:
+    return {
+        n.value for n in ast.walk(tree) if isinstance(n, ast.Constant) and isinstance(n.value, str)
+        and n.value in TRACING_SWITCHES
+    }
 
 
 def _host_literals(tree: ast.AST) -> set[str]:
@@ -148,13 +202,27 @@ def test_client_classes_are_named_only_by_the_gateways() -> None:
     assert _offenders(_class_names, GATEWAYS) == {}, "a model client class is used outside the gateways"
 
 
+_BASE_URL_NAMES = ("llm_base_url", "openai_base_url", "openai_api_base")
+_API_KEY_NAMES = ("openai_api_key", "openai_key", "llm_api_key", "deepseek_api_key")
+
+
+def test_no_client_factory_and_no_dynamic_import_of_a_model_library() -> None:
+    assert _offenders(_factories, GATEWAYS) == {}, "a model client is built through a factory outside the gateways"
+    assert _offenders(_dynamic_model_imports, GATEWAYS) == {}, "a model library is imported by name at run time"
+
+
+def test_only_telemetry_and_the_tracing_guard_touch_the_tracing_switches() -> None:
+    off = _offenders(_tracing_switches, TRACING_WRITERS)
+    assert off == {}, f"LangSmith / LangChain tracing switched outside telemetry (traces bypass masking): {off}"
+
+
 def test_only_listed_modules_read_the_provider_base_url() -> None:
-    off = _offenders(lambda t: {"llm_base_url"} if _reads(t, "llm_base_url") else set(), BASE_URL_READERS)
+    off = _offenders(lambda t: {"llm_base_url"} if _reads(t, *_BASE_URL_NAMES) else set(), BASE_URL_READERS)
     assert off == {}, f"reads LLM_BASE_URL without being on the allow-list (and so without masking): {sorted(off)}"
 
 
 def test_only_listed_modules_read_the_api_key() -> None:
-    off = _offenders(lambda t: {"key"} if _reads(t, "openai_api_key", "openai_key") else set(), API_KEY_READERS)
+    off = _offenders(lambda t: {"key"} if _reads(t, *_API_KEY_NAMES) else set(), API_KEY_READERS)
     assert off == {}, f"reads the LLM API key without being on the allow-list: {sorted(off)}"
 
 
@@ -175,9 +243,10 @@ def test_tool_calling_is_not_used_anywhere() -> None:
 def test_allow_lists_have_no_dead_entries() -> None:
     trees = _modules()
     for name, table, rule in (
-        ("BASE_URL_READERS", BASE_URL_READERS, lambda t: _reads(t, "llm_base_url")),
-        ("API_KEY_READERS", API_KEY_READERS, lambda t: _reads(t, "openai_api_key", "openai_key")),
+        ("BASE_URL_READERS", BASE_URL_READERS, lambda t: _reads(t, *_BASE_URL_NAMES)),
+        ("API_KEY_READERS", API_KEY_READERS, lambda t: _reads(t, *_API_KEY_NAMES)),
         ("HOST_LITERALS", HOST_LITERALS, lambda t: bool(_host_literals(t))),
+        ("TRACING_WRITERS", TRACING_WRITERS, lambda t: bool(_tracing_switches(t))),
     ):
         dead = sorted(rel for rel in table if rel not in trees or not rule(trees[rel]))
         assert not dead, f"{name} lists modules that no longer do this: {dead}"
@@ -227,3 +296,13 @@ def test_the_rules_see_a_violation(tmp_path: Path) -> None:
     assert _reads(tree, "llm_base_url") and _reads(tree, "openai_api_key")
     assert _host_literals(tree) == {"api.deepseek.com"}
     assert any(isinstance(n, ast.Attribute) and n.attr == "bind_tools" for n in ast.walk(tree))
+    sneaky = ast.parse(
+        "import importlib, os\nfrom langchain.chat_models import init_chat_model\n"
+        "m = importlib.import_module('langchain_openai')\nu = os.getenv('LLM_BASE_URL')\n"
+        "k = os.environ['OPENAI_API_KEY']\nos.environ['LANGCHAIN_TRACING_V2'] = 'true'\n"
+    )
+    assert _uses_library(sneaky) == {"langchain.chat_models"}
+    assert _factories(sneaky) == {"init_chat_model"}
+    assert _dynamic_model_imports(sneaky) == {"langchain_openai"}
+    assert _reads(sneaky, *_BASE_URL_NAMES) and _reads(sneaky, *_API_KEY_NAMES)
+    assert _tracing_switches(sneaky) == {"LANGCHAIN_TRACING_V2"}

@@ -242,12 +242,22 @@ def _llm_egress_findings(settings: Settings, env: Mapping[str, str]) -> list[Fin
     host or network that is data leaving the country unmasked, and must never happen by oversight."""
     from urllib.parse import urlsplit
 
-    if getattr(settings, "llm_data_mode", "masked") != "raw" or not is_production(settings, env):
+    if not is_production(settings, env):
         return []
+    out = []
+    if str(env.get("LANGSMITH_ENABLED", "false")).lower() == "true":
+        out.append(_warn(
+            "langsmith_tracing_on",
+            "LANGSMITH_ENABLED=true: run traces (timings, structure) go to LangSmith, a third party. Inputs and "
+            "outputs are hidden (LANGSMITH_HIDE_INPUTS/OUTPUTS forced on by app/platform/llm_egress/tracing.py), "
+            "but turn it off unless it was decided on purpose (docs/kvkk/yapay-zeka-veri-akisi.md).",
+        ))
+    if getattr(settings, "llm_data_mode", "masked") != "raw":
+        return out
     host = (urlsplit(settings.llm_base_url or "").hostname or "") if (settings.llm_base_url or "").strip() else "api.openai.com"
-    if host in ("localhost", "127.0.0.1", "::1", "host.docker.internal") or host.endswith((".localhost", ".internal")):
-        return []
-    return [_warn(
+    if host in ("localhost", "127.0.0.1", "::1", "host.docker.internal") or host.endswith(".localhost"):
+        return out
+    return [*out, _warn(
         "llm_raw_foreign",
         f"LLM_DATA_MODE=raw with the provider at {host}: uploaded-document text, counterparty names, tax numbers and IBANs "
         "are sent to it unmasked. Choose masked (or off) unless that transfer has been decided on purpose "
