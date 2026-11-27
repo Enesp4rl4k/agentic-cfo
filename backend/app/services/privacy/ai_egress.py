@@ -31,9 +31,10 @@ class ModeRefused(ValueError):
 
 
 def _embeddings_on() -> bool:
+    from app.core.llm_key import is_placeholder_key
+
     s = get_settings()
-    key = (s.openai_api_key or "").strip()
-    return bool(s.rag_embedding_enabled and key and not key.startswith("llm-placeholder-"))
+    return bool(s.rag_embedding_enabled and not is_placeholder_key(s.openai_api_key))
 
 
 def categories(mode: DataMode) -> list[dict[str, str]]:

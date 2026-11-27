@@ -25,8 +25,6 @@ from app.platform.llm_egress.session import STABLE_TAG, CallTally, key_version, 
 
 logger = logging.getLogger(__name__)
 
-_PLACEHOLDER_PREFIX = "llm-placeholder-"
-
 
 @dataclass(frozen=True)
 class Embedded:
@@ -40,9 +38,12 @@ def embedding_tag(mode: DataMode) -> str:
 
 
 def _has_embedding_support() -> bool:
+    from app.core.llm_key import (
+        is_placeholder_key,  # the one shared predicate: a template key never leaves
+    )
+
     settings = get_settings()
-    key = (settings.openai_api_key or "").strip()
-    return settings.rag_embedding_enabled and bool(key) and not key.startswith(_PLACEHOLDER_PREFIX)
+    return settings.rag_embedding_enabled and not is_placeholder_key(settings.openai_api_key)
 
 
 def has_embedding_support() -> bool:

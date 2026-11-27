@@ -31,6 +31,9 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from app.core.llm_key import (
+    is_placeholder_key,  # one shared predicate (re-exported: chat.py imports it from here)
+)
 from app.platform import llm_egress as egress
 from app.platform.llm_egress.audit import persist_call_log as _persist_call_log
 from app.platform.model_catalog import (
@@ -57,13 +60,6 @@ from app.platform.policies import (
 )
 
 logger = logging.getLogger(__name__)
-
-_PLACEHOLDER_KEYS = {
-    "llm-placeholder-dev",
-    "llm-placeholder-demo",
-    "llm-placeholder-ci",
-    "",
-}
 
 _DEFAULT_SYSTEM_PROMPT = (
     "Sen C-Suite düzeyinde bir Türk iş danışmanısın. "
@@ -99,10 +95,6 @@ class LLMBudgetExceeded(RuntimeError):
         self.budget_usd = budget_usd
 
 
-def is_placeholder_key(api_key: str | None) -> bool:
-    if not api_key:
-        return True
-    return api_key in _PLACEHOLDER_KEYS or api_key.startswith("llm-placeholder-")
 
 
 # ── Result type ──────────────────────────────────────────────────────────────

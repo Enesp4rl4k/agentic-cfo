@@ -136,6 +136,7 @@ def test_a_missing_nextauth_secret_is_not_the_backends_business() -> None:
         ({"smtp_user": "", "smtp_password": "", **NO_MAIL_NEEDED}, CLEAN_ENV, "no_mail_sender"),
         ({"outbox_transport": "noop", **NO_MAIL_NEEDED}, CLEAN_ENV, "outbox_noop"),
         ({"openai_api_key": "llm-placeholder-dev"}, CLEAN_ENV, "no_llm_key"),
+        ({"openai_api_key": "your-llm-api-key-here"}, CLEAN_ENV, "no_llm_key"),
         ({}, {"NEXTAUTH_SECRET": "n" * 40, "APP_ENV": "production"}, "no_error_tracking"),
         ({"trusted_proxy_count": 0}, CLEAN_ENV, "no_trusted_proxy"),
         ({"field_encryption_key": ""}, CLEAN_ENV, "no_field_key"),

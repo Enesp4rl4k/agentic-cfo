@@ -35,6 +35,18 @@ def test_worker_settings_have_redis_settings() -> None:
     assert hasattr(MaintenanceWorkerSettings, "redis_settings")
 
 
+def test_arq_receives_redis_settings_objects_not_descriptors() -> None:
+    """arq reads the settings class's `__dict__`: a classmethod there reaches create_pool as a raw descriptor and the
+    worker crash-loops with "'classmethod' object has no attribute 'host'" (found by the production-stack CI job)."""
+    from arq.connections import RedisSettings
+    from arq.worker import get_kwargs
+
+    from app.worker import MaintenanceWorkerSettings, WorkerSettings
+
+    for settings_class in (WorkerSettings, MaintenanceWorkerSettings):
+        assert isinstance(get_kwargs(settings_class)["redis_settings"], RedisSettings)
+
+
 @pytest.mark.asyncio
 async def test_enqueue_maintenance_job_uses_lock_and_queue() -> None:
     mock_pool = AsyncMock()
