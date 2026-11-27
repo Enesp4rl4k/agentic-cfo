@@ -52,6 +52,9 @@ def wire(monkeypatch: pytest.MonkeyPatch) -> Any:
     monkeypatch.setattr(s, "llm_model_strong", None)
     monkeypatch.setattr(s, "llm_model_prices", {})
     monkeypatch.setattr(s, "llm_max_tokens", MAX_TOKENS)
+    # the wire shape, not data minimisation: `raw` needs no company context (masked mode fails closed without one;
+    # the masked payloads are proven by tests/test_llm_egress_matrix.py)
+    monkeypatch.setattr(s, "llm_data_mode", "raw")
     monkeypatch.setattr(mg, "_persist_call_log", lambda **_: None)
 
     async def _spend(_org: Any) -> float:
