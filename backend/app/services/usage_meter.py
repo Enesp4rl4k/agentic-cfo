@@ -32,6 +32,15 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+
+async def _rollback(db: Any) -> None:
+    """After a failed statement: on Postgres the transaction is aborted until it is rolled back, and every later
+    statement on the session (the plan lookup, the count, the caller's own queries) fails with it."""
+    try:
+        await db.rollback()
+    except Exception as exc:  # the connection itself is gone: nothing left to protect
+        logger.debug("UsageMeter: rollback failed: %s", exc)
+
 # ── Plan limit definitions ─────────────────────────────────────────────────────
 
 PLAN_LIMITS: dict[str, dict[str, Any]] = {
@@ -102,6 +111,7 @@ async def record_usage_event(
     except Exception as exc:
         # Table may not exist yet (migration pending) — non-fatal
         logger.debug("UsageMeter: record failed (non-fatal): %s", exc)
+        await _rollback(db)
 
 
 # ── Plan resolution ────────────────────────────────────────────────────────────
@@ -129,6 +139,7 @@ async def get_org_plan(org_id: str, db: Any) -> str:
             return row[0]
     except Exception as exc:
         logger.debug("UsageMeter: plan lookup failed: %s", exc)
+        await _rollback(db)
     return "free"
 
 
@@ -165,6 +176,7 @@ async def get_monthly_usage(
         return int(row[0]) if row else 0
     except Exception as exc:
         logger.debug("UsageMeter: count failed: %s", exc)
+        await _rollback(db)
         return 0
 
 
@@ -301,4 +313,5 @@ async def prune_old_usage_events(db: Any, days: int = 90) -> int:
         return deleted
     except Exception as exc:
         logger.debug("UsageMeter: prune failed: %s", exc)
+        await _rollback(db)
         return 0
