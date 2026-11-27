@@ -11,7 +11,7 @@ import re
 from typing import Any
 
 NOT_JSON = object()  # the reply could not be parsed as JSON (the caller decides; nothing is guessed)
-_FENCE = re.compile(r"^```[a-zA-Z]*\s*|\s*```$")
+_FENCE = re.compile(r"(?:^```[a-zA-Z]*s*)|(?:s*```$)")
 
 
 def parse_json_text(text: str) -> Any:
