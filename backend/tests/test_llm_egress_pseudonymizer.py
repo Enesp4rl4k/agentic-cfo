@@ -1,11 +1,16 @@
-"""Detection and pseudonymisation: checksums, context rules, Turkish casing, round trip, hallucinations.
+"""Detection and pseudonymisation: checksums AND shape AND evidence, Turkish casing, exact restore, invented
+placeholders, streaming, stable embedding tokens, and a mapping that never shows up in a repr or a pickle.
 
-The invariant behind every test here: amounts, dates and currencies are never masked or altered.
+The invariant behind every test here (fuzzed at scale in test_llm_egress_fidelity.py): figures are never
+masked or altered.
 """
 from __future__ import annotations
 
-import random
+import logging
+import pickle
 import re
+
+import pytest
 
 from app.platform.llm_egress import detectors as d
 from app.platform.llm_egress.names import NameDictionary, fold
@@ -33,6 +38,7 @@ IBAN = make_iban()
 TCKN = "10000000146"
 VKN = make_vkn()
 PAN = "4111111111111111"
+TOKEN = re.compile(r"\[\[([A-Z]+)_([A-Z0-9]{3})_(\d+)([a-z]?)\]\]")
 
 
 def spaced(iban: str) -> str:
@@ -43,202 +49,178 @@ def labels(text: str) -> list[str]:
     return [s.label for s in d.find_identifiers(text)]
 
 
+def names() -> NameDictionary:
+    nd = NameDictionary()
+    nd.add(COUNTERPARTY, "Atlas Lojistik Ltd. Şti.")
+    nd.add(COMPANY, "Menekşe Tekstil Sanayi A.Ş.")
+    nd.add(PERSON, "Ahmet Yılmaz", person=True)
+    nd.add_identifier(VKN)
+    return nd
+
+
 # ── checksums ────────────────────────────────────────────────────────────────
 
-def test_iban_checksum_true_and_false() -> None:
-    assert d.iban_ok(IBAN)
-    assert d.iban_ok("DE89370400440532013000") and d.iban_ok("GB82WEST12345698765432")
-    assert not d.iban_ok(IBAN[:-1] + "2")                  # one digit off: mod 97 fails
-    assert not d.iban_ok("TR" + IBAN[2:] + "0")            # a Turkish IBAN is exactly 26 characters
-    assert not d.iban_ok("1234567890123456789012345")
-
-
-def test_tckn_vkn_luhn_checksums() -> None:
+def test_checksums_true_and_false() -> None:
+    assert d.iban_ok(IBAN) and d.iban_ok("DE89370400440532013000") and d.iban_ok("GB82WEST12345698765432")
+    assert not d.iban_ok(IBAN[:-1] + ("2" if IBAN[-1] != "2" else "3"))
+    assert not d.iban_ok("TR" + IBAN[2:-1])              # a Turkish IBAN is exactly 26 characters
+    assert not d.iban_ok("ZZ89370400440532013000")       # no such country: never an IBAN
     assert d.tckn_ok(TCKN) and not d.tckn_ok("10000000147") and not d.tckn_ok("01234567890")
     assert d.vkn_ok(VKN) and not d.vkn_ok(VKN[:-1] + str((int(VKN[-1]) + 1) % 10))
     assert d.luhn_ok(PAN) and not d.luhn_ok("4111111111111112")
 
 
-# ── identifiers: true positives ──────────────────────────────────────────────
+# ── identifiers need evidence ────────────────────────────────────────────────
 
-def test_iban_is_found_spaced_unspaced_lowercase_and_general() -> None:
-    for text in (f"IBAN {IBAN} tutar", f"IBAN {spaced(IBAN)} tutar", f"iban {IBAN.lower()} tutar"):
-        assert labels(text) == ["IBAN"], text
-    assert labels("DE89 3704 0044 0532 0130 00") == ["IBAN"]
-    span = d.find_identifiers(f"x {spaced(IBAN)} y")[0]
-    assert f"x {spaced(IBAN)} y"[span.start:span.end] == spaced(IBAN)  # the span is exactly the IBAN, no trailing word
-
-
-def test_an_iban_with_a_wrong_check_is_left_alone() -> None:
-    assert labels(f"IBAN {IBAN[:-1]}2 ödendi") == []
+def test_iban_in_every_spelling_and_never_with_a_wrong_check() -> None:
+    for text in (IBAN, spaced(IBAN), IBAN.lower(), "-".join(IBAN[i:i + 4] for i in range(0, 26, 4)),
+                 f"{IBAN[:9]}\n{IBAN[9:]}", f"IBAN: {IBAN[2:]}", "DE89370400440532013000"):
+        assert labels(f"hesap {text} kaydı") == [d.IBAN], text
+    assert labels(IBAN[:-1] + ("2" if IBAN[-1] != "2" else "3")) == []
+    assert labels(IBAN[2:]) == []                         # 24 digits with no "TR" and no label: just a number
 
 
-def test_tckn_needs_its_checksum_and_a_non_amount_context() -> None:
-    assert labels(f"T.C. Kimlik No: {TCKN}") == ["TCKN"]
-    assert labels(f"sahibi {TCKN} olan kişi") == ["TCKN"]
-    assert labels("T.C. Kimlik No: 10000000147") == []                      # checksum false
-    assert labels(f"Tutar: {TCKN}") == []                                    # an amount field
-    assert labels(f"{TCKN} TL ödendi") == []                                 # a currency next to it
-    assert labels(f"toplam {TCKN},00") == []                                 # decimal comma: an amount
-    assert labels(f"1.{TCKN}") == [] and labels(f"{TCKN}.50") == []          # glued to amount punctuation
+def test_tckn_and_vkn_need_checksum_and_their_label() -> None:
+    assert labels(f"TCKN {TCKN}") == [d.TCKN] and labels(f"T.C. Kimlik No: {TCKN}") == [d.TCKN]
+    assert labels(f'"tc_kimlik_no": "{TCKN}"') == [d.TCKN]
+    for bare in (f"kişi {TCKN}", f"Net kâr {TCKN}", f"Tutar: {TCKN}", f"{TCKN} TL", TCKN):
+        assert labels(bare) == [], bare                   # no label: a number, never a person
+    assert labels("TCKN 10000000147") == []               # a label without the checksum is not enough
+    assert labels(f"VKN: {VKN}") == [d.VKN] and labels(f"Vergi No {VKN}") == [d.VKN]
+    assert labels(f"firma {VKN}") == []
 
 
-def test_vkn_needs_checksum_and_its_label() -> None:
-    assert labels(f"Vergi No: {VKN}") == ["VKN"] and labels(f"VKN {VKN}") == ["VKN"]
-    assert labels(f"referans {VKN}") == []                                   # ten digits without the label: a document no.
-    assert labels(f"VKN {VKN[:-1]}{(int(VKN[-1]) + 1) % 10}") == []          # checksum false
+def test_cards_need_luhn_issuer_and_a_label_or_the_printed_grouping() -> None:
+    assert labels(f"Kart No: {PAN}") == [d.PAN] and labels("4111 1111 1111 1111") == [d.PAN]
+    assert labels(f"ödeme {PAN} referansı") == [] and labels(f"Ref {PAN}") == []
+    assert labels("Kart No: 4111111111111112") == []      # Luhn fails
 
 
-def test_card_numbers_by_luhn_with_context_or_shape() -> None:
-    assert labels("kart 4111 1111 1111 1111") == ["KART"]
-    assert labels("4111-1111-1111-1111") == ["KART"]
-    assert labels(f"pan {PAN}") == ["KART"] and labels(PAN) == ["KART"]       # a 16-digit run with a card prefix
-    assert labels("4111 1111 1111 1112") == []                               # Luhn false
-    assert labels("1700000000003") == []                                      # an epoch-millisecond timestamp
+def test_phones_need_a_phone_shape_or_a_label_never_a_decimal() -> None:
+    for text in ("0532 987 65 43", "+90 532 987 65 43", "(0212) 555 12 34", "+905329876543", "0532-987-65-43",
+                 "Tel: 5329876543", "GSM 05329876543", "Tel: 532 987 65 43"):
+        assert labels(text) == [d.PHONE], text
+    for text in ("Net 41176993.01 TL", "Dekont 05321234567", "05321234567", "532.987.65.43", "20240315 60 TL"):
+        assert labels(text) == [], text
 
 
-def test_turkish_phone_formats_email_and_plate() -> None:
-    for number in ("0532 123 45 67", "+90 532 123 45 67", "0 (532) 123 45 67", "0532-123-45-67", "05321234567",
-                   "0212 555 12 34", "tel: 5321234567"):
-        assert labels(f"ara {number} lütfen") == ["TELEFON"], number
-    assert labels("5321234567") == []                                         # bare ten digits: not claimed
-    assert labels("yaz ahmet.k+fatura@firma.com.tr şimdi") == ["E_POSTA"]
-    assert labels("araç 34 ABC 123 geldi") == ["PLAKA"] and labels("34 ABC 123") == ["PLAKA"]
-    assert labels("05 MAR 24 tarihli") == [] and labels("12 TL 100") == []   # a date and an amount are not plates
+def test_email_plate_and_account_number() -> None:
+    assert labels("info@ışık.com.tr") == [d.EMAIL] and labels("a.b+c@örnek.com.tr") == [d.EMAIL]
+    assert labels("Plaka: 34 ABC 123") == [d.PLATE] and labels("34 ABC 123") == []   # a plate needs its label
+    assert labels("30 GÜN 45 TL") == []
+    assert labels("Hesap No: 1234 5678 90") == [d.ACCOUNT_NO] and labels("Hesap No: 120.01.001") == []
 
 
-def test_account_number_after_its_label() -> None:
-    assert labels("Hesap No: 12345678 aidat") == ["HESAP_NO"]
+# ── round trip and figures ───────────────────────────────────────────────────
 
-
-# ── amounts, dates, currencies are never touched ─────────────────────────────
-
-def test_amounts_dates_and_currencies_are_byte_identical_through_a_round_trip() -> None:
-    rng = random.Random(7)
-    lines = []
-    for _ in range(400):
-        whole = rng.randint(1, 10 ** rng.randint(1, 13))
-        amount = f"{whole:,}".replace(",", ".") + f",{rng.randint(0, 99):02d}"
-        lines.append(f"{rng.randint(1, 28):02d}.{rng.randint(1, 12):02d}.2026 {amount} TL fatura {rng.randint(1, 99999)}")
-        lines.append(f"{whole} kuruş; tutar {whole}.{rng.randint(0, 99):02d} USD; 2026-0{rng.randint(1, 9)}-1{rng.randint(0, 9)}")
-    text = "\n".join(lines)
-    p = Pseudonymizer(None)
-    assert p.mask(text) == text and p.total == 0
-    assert p.restore(text) == text
-
-
-def test_amounts_survive_next_to_masked_names_and_identifiers() -> None:
-    nd = NameDictionary()
-    nd.add(COUNTERPARTY, "Atlas Lojistik A.Ş.")
-    text = f"Atlas Lojistik A.Ş. 1.234.567,89 TL, IBAN {IBAN}, 15.03.2026, 250,00 EUR, TC {TCKN}"
-    p = Pseudonymizer(nd)
-    masked = p.mask(text)
-    numerals = r"\d{1,3}(?:\.\d{3})*,\d{2}|\d{2}\.\d{2}\.\d{4}"
-    assert re.findall(numerals, masked) == re.findall(numerals, text)
-    assert "TL" in masked and "EUR" in masked
-    assert "Atlas" not in masked and IBAN not in masked and TCKN not in masked
-    assert re.findall(numerals, p.restore(masked)) == re.findall(numerals, text)
-
-
-# ── known names: Turkish casing and legal suffixes ───────────────────────────
-
-def dictionary() -> NameDictionary:
-    nd = NameDictionary()
-    nd.add(COMPANY, "Yıldız Tekstil Ltd. Şti.")
-    nd.add(COUNTERPARTY, "Atlas Lojistik Ticaret A.Ş.")
-    nd.add(COUNTERPARTY, "Işık İnşaat San. ve Tic. Ltd. Şti.")
-    nd.add(PERSON, "Ahmet Yılmaz")
-    return nd
+def test_figures_next_to_masked_values_survive_byte_for_byte() -> None:
+    p = Pseudonymizer(names())
+    line = (f"Atlas Lojistik'e 1.234.567,89 TL (15.03.2026) IBAN {spaced(IBAN)}; KDV %20; 41176993.01 USD; "
+            f"TCKN {TCKN}; 120.01.001 hesabı; Fatura No: GIB2024000000123")
+    masked = p.mask(line)
+    for figure in ("1.234.567,89 TL", "15.03.2026", "%20", "41176993.01 USD", "120.01.001", "GIB2024000000123"):
+        assert figure in masked
+    assert IBAN not in masked.replace(" ", "") and TCKN not in masked and "Atlas" not in masked
+    assert p.restore(masked) == line
 
 
 def test_fold_is_length_preserving_and_handles_dotted_and_dotless_i() -> None:
-    for s in ("İSTANBUL", "ışık", "Işık İnşaat", "ÇAĞRI Öğüt Şükrü", "Éclair"):
-        assert len(fold(s)) == len(s)
-    assert fold("İI ıi") == "ii ii" and fold("ŞĞÜÖÇ") == "sguoc"
+    assert fold("İSTANBUL ışık IĞDIR") == "istanbul isik igdir"
+    assert len(fold("İı")) == 2
 
 
-def test_a_known_name_matches_in_any_turkish_casing_with_or_without_suffix() -> None:
-    nd = dictionary()
-    for spelling in ("IŞIK İNŞAAT", "ışık inşaat", "Isik Insaat", "ISIK INSAAT LTD STI", "Işık İnşaat San. ve Tic. Ltd. Şti.",
-                     "işik inşaat ltd.şti."):
-        p = Pseudonymizer(nd)
-        masked = p.mask(f"{spelling} ödemesi")
-        assert masked == f"[{COUNTERPARTY}_1] ödemesi", (spelling, masked)
-    for spelling in ("ATLAS LOJİSTİK", "atlas lojistik a.ş.", "Atlas Lojistik Ticaret AŞ", "Atlas Lojistik Ticaret"):
-        assert Pseudonymizer(nd).mask(spelling) == f"[{COUNTERPARTY}_1]", spelling
+def test_known_names_in_any_casing_spacing_and_with_suffixes() -> None:
+    p = Pseudonymizer(names())
+    for text in ("ATLAS LOJİSTİK", "atlas lojistik ltd sti", "Atlas\n  Lojistik", "Atlas Lojistiğe", "Atlas Lojistiğin",
+                 "Atlas Lojistikten", "Menekşe Tekstil Sanayi A.Ş.'nin", "menekse tekstil", "Ahmet Yılmaz", "Yılmazın",
+                 "dün Ahmet aradı"):
+        assert "[[" in p.mask(text), text
 
 
-def test_word_boundaries_and_turkish_apostrophe_suffixes() -> None:
-    nd = dictionary()
-    assert Pseudonymizer(nd).mask("Atlasyan Lojistikçi") == "Atlasyan Lojistikçi"   # not the same word
-    assert Pseudonymizer(nd).mask("Atlas Lojistik'e ödendi") == f"[{COUNTERPARTY}_1]'e ödendi"
-    assert Pseudonymizer(nd).mask("Ahmet Yılmaz'a") == f"[{PERSON}_1]'a"
-    assert Pseudonymizer(nd).mask("Ahmet Kaya") == "Ahmet Kaya"                       # not in the books
+def test_an_apostrophe_suffix_stays_outside_the_placeholder_and_words_are_whole() -> None:
+    p = Pseudonymizer(names())
+    assert re.fullmatch(r"\[\[CP_[A-Z0-9]{3}_1\]\]'e ödendi", p.mask("Atlas Lojistik'e ödendi"))
+    assert p.mask("Atlasçılar Lojistikçiler") == "Atlasçılar Lojistikçiler"   # "çılar" is not in the suffix grammar
 
 
-def test_placeholders_are_typed_numbered_by_first_appearance_and_stable_within_a_call() -> None:
-    p = Pseudonymizer(dictionary())
-    out = p.mask("Işık İnşaat, Atlas Lojistik, tekrar IŞIK İNŞAAT; Yıldız Tekstil; Ahmet Yılmaz")
-    assert out == (f"[{COUNTERPARTY}_1], [{COUNTERPARTY}_2], tekrar [{COUNTERPARTY}_1]; [{COMPANY}_1]; [{PERSON}_1]")
-    assert p.mask("Atlas Lojistik") == f"[{COUNTERPARTY}_2]"       # the same value, the same placeholder, in a later message
-    assert p.counts[COUNTERPARTY] == 4 and p.counts[COMPANY] == 1 and p.total == 6
+def test_placeholders_are_ascii_typed_numbered_per_entity_with_one_nonce_per_call() -> None:
+    p = Pseudonymizer(names())
+    masked = p.mask("Atlas Lojistik, ATLAS LOJİSTİK ve Atlas Lojistik; Ahmet Yılmaz")
+    found = TOKEN.findall(masked)
+    assert masked.isascii() or all(t.isascii() for t in re.findall(r"\[\[[^\]]+\]\]", masked))
+    assert [f[0] for f in found] == ["CP", "CP", "CP", "PER"]
+    assert found[0][2] == found[1][2] == "1" and found[0][3] == "" and found[1][3] == "b"   # one entity, two spellings
+    assert found[2] == found[0]                                                            # same spelling, same token
+    assert len({f[1] for f in found}) == 1 and Pseudonymizer(names()).nonce != "" and len(p.nonce) == 3
 
 
-def test_a_known_tax_number_is_found_without_a_label() -> None:
-    nd = NameDictionary()
-    nd.add_identifier(VKN)
-    nd.add_identifier(TCKN)
-    p = Pseudonymizer(nd)
-    assert p.mask(f"firma {VKN} ve {TCKN}.") == "firma [VKN_1] ve [TCKN_1]."
+def test_a_tax_number_the_books_hold_is_found_without_a_label_unless_it_is_a_figure() -> None:
+    p = Pseudonymizer(names())
+    assert "[[VKN_" in p.mask(f"firma {VKN} ile")
+    assert p.mask(f"Tutar {VKN} TL") == f"Tutar {VKN} TL"
 
 
 def test_identifiers_win_over_names_where_they_overlap() -> None:
-    nd = NameDictionary()
-    nd.add(COUNTERPARTY, "Atlas Lojistik")
-    out = Pseudonymizer(nd).mask("yaz muhasebe@atlas-lojistik.com ve Atlas Lojistik")
-    assert out == f"yaz [E_POSTA_1] ve [{COUNTERPARTY}_1]"
+    p = Pseudonymizer(names())
+    out = p.mask("yaz atlas.lojistik@firma.com ve Atlas Lojistik")
+    assert re.fullmatch(r"yaz \[\[MAIL_\w+\]\] ve \[\[CP_\w+\]\]", out)
 
 
-# ── restoring the reply ──────────────────────────────────────────────────────
-
-def test_restore_returns_the_books_own_spelling_and_the_original_identifier() -> None:
-    p = Pseudonymizer(dictionary())
-    masked = p.mask(f"ATLAS LOJISTIK a.s. IBAN {spaced(IBAN)} gönderdi")
-    assert p.restore(masked) == f"Atlas Lojistik Ticaret A.Ş. IBAN {spaced(IBAN)} gönderdi"
-
-
-def test_a_placeholder_the_call_never_issued_becomes_unknown_never_a_wrong_name() -> None:
-    p = Pseudonymizer(dictionary())
-    p.mask("Atlas Lojistik")
-    reply = f"[{COUNTERPARTY}_7] ve [{COUNTERPARTY}_1] ve [IBAN_3] ve [KİŞİ_2] ve [bir not]"
-    assert p.restore(reply) == f"{UNKNOWN_NAME} ve Atlas Lojistik Ticaret A.Ş. ve {UNKNOWN_VALUE} ve {UNKNOWN_NAME} ve [bir not]"
+def test_restore_is_byte_exact_and_never_guesses() -> None:
+    p = Pseudonymizer(names())
+    masked = p.mask("ATLAS LOJİSTİK ödedi, Tel: 0532 987 65 43")
+    cp = TOKEN.search(masked).group(0)
+    assert p.restore(masked) == "ATLAS LOJİSTİK ödedi, Tel: 0532 987 65 43"   # the original spelling, not the books'
+    assert p.restore(f"{cp} ve [[CP_{p.nonce}_9]]") == f"ATLAS LOJİSTİK ve {UNKNOWN_NAME}"
+    assert p.restore("[[TEL_ZZZ_1]]") == UNKNOWN_VALUE                       # another call's nonce: unknown
+    assert p.restore(cp.lower().replace("[[", "[ [").replace(" ", "")) == "ATLAS LOJİSTİK"
+    assert p.restore(cp[1:-1]) == "ATLAS LOJİSTİK"                            # single brackets: still ours
+    assert p.restore("[normal bir parantez]") == "[normal bir parantez]"
 
 
-def test_a_placeholder_written_without_diacritics_or_with_spaces_is_still_understood() -> None:
-    p = Pseudonymizer(dictionary())
-    p.mask("Ahmet Yılmaz")
-    assert p.restore("[KISI_1] ve [ KİŞİ_1 ]") == "Ahmet Yılmaz ve Ahmet Yılmaz"
+def test_restore_strict_returns_none_for_anything_unresolved() -> None:
+    p = Pseudonymizer(names())
+    masked = p.mask("Atlas Lojistik")
+    assert p.restore_strict(masked) == "Atlas Lojistik"
+    assert p.restore_strict(f"{masked} ve [[CP_{p.nonce}_7]]") is None
+    assert p.restore_strict("[[CP_a1b2c3d4]]") is None                        # a stable token is never data
+    assert p.restore_strict("düz metin") == "düz metin"
 
 
 def test_a_streamed_placeholder_split_across_chunks_is_restored_whole() -> None:
-    p = Pseudonymizer(dictionary())
-    p.mask("Atlas Lojistik")
-    r = StreamRestorer(p)
-    pieces = ["Ödeme [KARŞI_", "TARAF_", "1] yapıldı, [not", " bir yer] ve [KARŞI_TARAF_9", "]"]
-    out = "".join(r.feed(x) for x in pieces) + r.flush()
-    assert out == f"Ödeme Atlas Lojistik Ticaret A.Ş. yapıldı, [not bir yer] ve {UNKNOWN_NAME}"
-    r2 = StreamRestorer(p)
-    assert r2.feed("açık [KARŞI") + r2.flush() == "açık [KARŞI"        # an unfinished bracket is released at the end
+    p = Pseudonymizer(names())
+    token = TOKEN.search(p.mask("Atlas Lojistik")).group(0)
+    text = f"Ödeme {token} yapıldı, [not bir yer] ve {token} tamam."
+    for size in range(1, 12):
+        r = StreamRestorer(p)
+        out = "".join(r.feed(text[i:i + size]) for i in range(0, len(text), size)) + r.flush()
+        assert out == p.restore(text) == "Ödeme Atlas Lojistik yapıldı, [not bir yer] ve Atlas Lojistik tamam."
 
-
-# ── stable pseudonyms (embeddings) ───────────────────────────────────────────
 
 def test_stable_pseudonyms_are_the_same_across_calls_and_differ_across_organisations() -> None:
-    nd = dictionary()
-    a1, a2 = Pseudonymizer(nd, stable_key=b"org-a"), Pseudonymizer(nd, stable_key=b"org-a")
-    b = Pseudonymizer(nd, stable_key=b"org-b")
-    text = f"Atlas Lojistik IBAN {IBAN}"
-    m1, m2, mb = a1.mask(text), a2.mask("sorgu: ATLAS LOJISTIK " + f"IBAN {spaced(IBAN)}"), b.mask(text)
-    assert m1.split()[0:2] == ["[KARŞI_TARAF_" + m1.split("_")[2].split("]")[0] + "]", "IBAN"]
-    assert re.findall(r"\[[A-ZÇĞİÖŞÜ_]+_[0-9a-f]{8}\]", m1) == re.findall(r"\[[A-ZÇĞİÖŞÜ_]+_[0-9a-f]{8}\]", m2)
-    assert m1 != mb and "Atlas" not in m1 + mb and IBAN not in m1 + mb
+    nd = names()
+    a1, a2, b = Pseudonymizer(nd, stable_key=b"org-a"), Pseudonymizer(nd, stable_key=b"org-a"), Pseudonymizer(nd, stable_key=b"org-b")
+    t1, t2, t3 = (x.mask("Atlas Lojistik") for x in (a1, a2, b))
+    assert t1 == t2 != t3 and re.fullmatch(r"\[\[CP_[0-9a-f]{8}\]\]", t1)
+
+
+# ── the mapping never leaks through a repr, a log line or a pickle ───────────
+
+def test_repr_and_str_show_counts_never_the_mapping_or_a_name(caplog) -> None:
+    from app.platform.llm_egress.dictionary import LoadedDictionary
+    from app.platform.llm_egress.policy import DataMode, ModeDecision
+    from app.platform.llm_egress.session import EgressSession
+
+    nd = names()
+    p = Pseudonymizer(nd)
+    p.mask(f"Atlas Lojistik, Ahmet Yılmaz, IBAN {IBAN}")
+    sess = EgressSession(ModeDecision(DataMode.MASKED, "platform", DataMode.MASKED, None, False), "org", p, set())
+    shown = " ".join([repr(p), str(p), repr(nd), str(nd), repr(LoadedDictionary(nd)), repr(sess), repr(StreamRestorer(p)),
+                      f"{p!r} {sess}"])
+    for secret in ("Atlas", "atlas", "Yılmaz", "yilmaz", IBAN, VKN, "Menekşe", "menekse"):
+        assert secret not in shown, secret
+    with caplog.at_level(logging.DEBUG):
+        logging.getLogger("x").warning("session %s pseudo %r", sess, p)
+    assert "Atlas" not in caplog.text and IBAN not in caplog.text
+    with pytest.raises(TypeError):
+        pickle.dumps(p)

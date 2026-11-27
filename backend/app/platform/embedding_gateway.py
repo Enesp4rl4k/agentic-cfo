@@ -5,8 +5,11 @@ Nothing else may construct an embeddings client. It applies the same data mode a
   off     no call; the caller falls back to TF-IDF (the product's own retrieval, local)
   masked  the text is pseudonymised with STABLE per-organisation tokens before it leaves, for indexing
           AND for the query, so a name in a chunk and the same name in a question embed alike. The stored
-          row is tagged `<model>+pseud1`; a query only searches rows of its own tag, so vectors computed
-          on raw text (before masking existed) are never compared with vectors of masked text.
+          row is tagged `<model>+pseud2.<key version>`; a query only searches rows of its own tag, so
+          vectors of raw text (before masking existed) or of an older pseudonym key are never compared with
+          these. Such rows are counted as awaiting re-index (`rag_reindex`) and re-embedded by the
+          re-index job; until then retrieval for them is TF-IDF, and the owner's screen says so.
+          No company known (or its names unreadable): no call (fail closed, TF-IDF), recorded.
   raw     today's behaviour, byte for byte, tagged with the bare model name.
 """
 from __future__ import annotations
@@ -18,7 +21,7 @@ from dataclasses import dataclass
 from app.config import get_settings
 from app.platform.llm_egress import audit
 from app.platform.llm_egress.policy import DataMode, PolicyOff
-from app.platform.llm_egress.session import STABLE_TAG, CallTally, open_session
+from app.platform.llm_egress.session import STABLE_TAG, CallTally, key_version, open_session
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +36,7 @@ class Embedded:
 
 def embedding_tag(mode: DataMode) -> str:
     model = get_settings().rag_embedding_model
-    return model + STABLE_TAG if mode == DataMode.MASKED else model
+    return f"{model}{STABLE_TAG}.{key_version()}" if mode == DataMode.MASKED else model
 
 
 def _has_embedding_support() -> bool:
@@ -64,8 +67,8 @@ async def embed_texts(texts: list[str], *, org_id: str | None, purpose: str = "r
     if not texts or not _has_embedding_support():
         return None
     try:
-        session = await open_session(org_id, stable=True)
-    except PolicyOff:
+        session = await open_session(org_id, stable=True, task=purpose)
+    except PolicyOff:  # off, or masked mode refused (recorded by `refusals`): TF-IDF only
         return None
     outbound = session.outbound_texts(texts)
     tally = CallTally()

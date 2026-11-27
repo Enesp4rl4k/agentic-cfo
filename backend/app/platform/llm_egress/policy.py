@@ -41,6 +41,15 @@ class PolicyOff(RuntimeError):
     """The effective mode is `off`: nothing is sent, the caller takes its deterministic path."""
 
 
+class EgressRefused(PolicyOff):
+    """`masked` mode, fail closed: the company or its names are unknown for this call, so nothing is sent.
+    The caller takes the same deterministic path as `off`; `reason` says why (see `refusals`)."""
+
+    def __init__(self, message: str, *, reason: str) -> None:
+        super().__init__(message)
+        self.reason = reason
+
+
 @dataclass(frozen=True)
 class ModeDecision:
     mode: DataMode
@@ -71,7 +80,9 @@ def is_local_provider(host: str | None = None) -> bool:
     host = host if host is not None else provider_host()
     if not host:
         return False
-    return host in _LOCAL_HOSTS or host.endswith((".localhost", ".internal"))
+    # ".internal" is not local in general (cloud-internal hosts are someone else's machines); only the names
+    # that always resolve to this machine or its own container host count
+    return host in _LOCAL_HOSTS or host.endswith(".localhost")
 
 
 def resolve(platform: DataMode, choice: DataMode | None, may_relax: bool) -> ModeDecision:

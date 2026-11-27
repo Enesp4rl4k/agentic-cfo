@@ -25,7 +25,7 @@ import hashlib
 import logging
 import time
 from collections import OrderedDict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC
 from typing import Any
 
@@ -44,6 +44,7 @@ from app.platform.model_catalog import (
     llm_config_report,
     select_model,
 )
+from app.platform.model_ledger import Ledger as _Ledger
 from app.platform.policies import (
     LLM_CACHE_MAX_ENTRIES,
     LLM_CACHE_TTL_SECONDS,
@@ -76,6 +77,14 @@ class LLMUnavailable(RuntimeError):
 
 class LLMDisabled(LLMUnavailable):
     """The effective data mode is `off`: no data is sent to a language model; use the deterministic path."""
+
+
+class LLMEgressRefused(LLMDisabled):
+    """`masked` mode failed closed (company or its names unknown for this call): nothing was sent."""
+
+    def __init__(self, message: str, reason: str) -> None:
+        super().__init__(message)
+        self.reason = reason
 
 
 class LLMBudgetExceeded(RuntimeError):
@@ -112,52 +121,7 @@ class GatewayResult:
     attempts: int = 1
 
 
-# ── In-process cost ledger (survives without a DB) ───────────────────────────
-
-@dataclass
-class _Ledger:
-    calls: int = 0
-    ok_calls: int = 0
-    total_cost_usd: float = 0.0
-    unpriced_calls: int = 0
-    total_input_tokens: int = 0
-    total_output_tokens: int = 0
-    by_model: dict[str, dict[str, float]] = field(default_factory=dict)
-    by_org: dict[str, dict[str, float]] = field(default_factory=dict)
-
-    def record(self, res: GatewayResult, org_id: str | None, ok: bool) -> None:
-        self.calls += 1
-        if ok:
-            self.ok_calls += 1
-        cost = res.cost_usd or 0.0
-        self.unpriced_calls += res.cost_usd is None
-        self.total_cost_usd = round(self.total_cost_usd + cost, 6)
-        self.total_input_tokens += res.input_tokens
-        self.total_output_tokens += res.output_tokens
-        m = self.by_model.setdefault(res.model, {"calls": 0, "cost_usd": 0.0})
-        m["calls"] += 1
-        m["cost_usd"] = round(m["cost_usd"] + cost, 6)
-        key = org_id or "(none)"
-        o = self.by_org.setdefault(key, {"calls": 0, "cost_usd": 0.0})
-        o["calls"] += 1
-        o["cost_usd"] = round(o["cost_usd"] + cost, 6)
-
-    def snapshot(self) -> dict[str, Any]:
-        return {
-            "calls": self.calls,
-            "ok_calls": self.ok_calls,
-            "total_cost_usd": self.total_cost_usd,
-            "unpriced_calls": self.unpriced_calls,
-            "total_input_tokens": self.total_input_tokens,
-            "total_output_tokens": self.total_output_tokens,
-            "avg_cost_usd": round(self.total_cost_usd / self.calls, 6) if self.calls else 0.0,
-            "by_model": self.by_model,
-            "by_org": self.by_org,
-        }
-
-    def reset(self) -> None:
-        self.__init__()  # type: ignore[misc]
-
+# ── In-process cost ledger (survives without a DB): app/platform/model_ledger.py ──
 
 _LEDGER = _Ledger()
 _CACHE: OrderedDict[str, tuple[GatewayResult, float]] = OrderedDict()
@@ -303,9 +267,11 @@ def _build_messages(system_prompt: str, prompt: str, history: History | None) ->
     return msgs
 
 
-async def _open_egress(org_id: str | None) -> egress.EgressSession:
+async def _open_egress(org_id: str | None, task: str | None) -> egress.EgressSession:
     try:
-        return await egress.open_session(org_id)
+        return await egress.open_session(org_id, task=task)
+    except egress.EgressRefused as exc:
+        raise LLMEgressRefused(str(exc), exc.reason) from exc
     except egress.PolicyOff as exc:
         raise LLMDisabled(str(exc)) from exc
 
@@ -323,12 +289,16 @@ async def _raw_chat(
     temperature: float | None,
     max_tokens: int | None,
     history: History | None = None,
+    json_reply: str | None = None,
 ) -> tuple[str, Any | None, int, int]:
-    """One send. THE choke point: every payload is masked here (or refused, in `off` mode) before it is built."""
+    """One send. THE choke point: every payload is masked here (or refused, in `off` mode) before it is built.
+
+    json_reply ("strict" | "narrative"): the reply is JSON; it is parsed BEFORE restoring and the parsed
+    string values are restored (strict: an unknown placeholder makes that value None)."""
     llm = _build_client(cfg, temperature, max_tokens)  # raises LLMUnavailable without a key
     outer = egress.current_tally()
     tally = outer or egress.CallTally(task="llm_router")  # a direct caller (llm_router) has no `complete` around it
-    sess = await _open_egress(tally.org_id)
+    sess = await _open_egress(tally.org_id, tally.task)
     ok = False
     try:
         out_system, out_prompt, out_history = sess.outbound(system_prompt, prompt, history)
@@ -336,7 +306,8 @@ async def _raw_chat(
         sess.sent(_texts(messages), tally)
 
         if schema is not None:
-            structured = llm.with_structured_output(schema)
+            # the wire format has always been a tool call (langchain-openai >= 0.3 would default to json_schema)
+            structured = llm.with_structured_output(schema, method="function_calling")
             parsed = sess.restore_obj(await structured.ainvoke(messages))
             text = parsed.to_text() if hasattr(parsed, "to_text") else str(parsed)
             # structured-output responses rarely expose usage; estimate from text
@@ -346,12 +317,18 @@ async def _raw_chat(
             return text, parsed, in_tok, out_tok
 
         response = await llm.ainvoke(messages)
-        text = sess.restore(response.content or "")
+        parsed_json: Any | None = None
+        if json_reply is not None:
+            text, parsed_json = egress.restore_json_reply(sess, response.content or "", strict=json_reply == "strict")
+            if parsed_json is not egress.NOT_JSON and sess.unresolved:
+                tally.flags.add("unresolved_placeholder")
+        else:
+            text = sess.restore(response.content or "")
         usage = getattr(response, "usage_metadata", None) or {}
         in_tok = int(usage.get("input_tokens", len((system_prompt + prompt).split()) * 1.3))
         out_tok = int(usage.get("output_tokens", len(text.split()) * 1.3))
         ok = True
-        return text, None, in_tok, out_tok
+        return text, parsed_json, in_tok, out_tok
     finally:
         if outer is None:
             _persist_call_log(org_id=sess.org_id, job_id=None, task=tally.task or "llm_router", model=cfg.model_id,
@@ -376,6 +353,7 @@ async def complete(
     use_cache: bool = False,
     timeout_s: float = LLM_CALL_TIMEOUT_SECONDS,
     max_attempts: int = LLM_CALL_MAX_ATTEMPTS,
+    json_reply: str | None = None,
 ) -> GatewayResult:
     """
     Run one LLM completion: routing, retry, timeout, caching, cost log, tracing.
@@ -389,7 +367,9 @@ async def complete(
     schema_name = schema.__name__ if schema is not None else ""
 
     if use_cache:
-        key = _cache_key(cfg.model_id, system_prompt, prompt, schema_name)
+        if (await egress.effective_mode(org_id)).mode == egress.DataMode.OFF:
+            raise LLMDisabled("Yapay zekâya veri gönderimi kapalı (LLM_DATA_MODE=off): önbellekteki yanıt da verilmez")
+        key = _cache_key(cfg.model_id, system_prompt, prompt, schema_name + (json_reply or ""))
         hit = _CACHE.get(key)
         if hit and hit[1] > time.time():
             cached = hit[0]
@@ -424,6 +404,7 @@ async def complete(
                         temperature=temperature,
                         max_tokens=max_tokens,
                         history=history,
+                        **({"json_reply": json_reply} if json_reply else {}),
                     ),
                     timeout=timeout_s,
                 )
@@ -527,6 +508,18 @@ async def complete_text(
     return result.text
 
 
+async def complete_json(*, task: str, prompt: str, strict: bool, **kwargs: Any) -> Any:
+    """A completion whose reply is JSON, parsed and THEN restored (never textual replacement inside JSON).
+
+    strict=True for data that may reach the books: a value holding an unknown or mangled placeholder comes
+    back as None (the field is missing). strict=False for narratives: it reads "[bilinmeyen taraf]".
+    Raises ValueError when the reply is not JSON, LLMUnavailable like `complete`."""
+    result = await complete(task=task, prompt=prompt, json_reply="strict" if strict else "narrative", **kwargs)
+    if result.parsed is egress.NOT_JSON or result.parsed is None:
+        raise ValueError("the model's reply is not JSON")
+    return result.parsed
+
+
 async def stream(
     *,
     task: str,
@@ -553,7 +546,7 @@ async def stream(
     cfg = _resolve_model(task, len(prompt), None)
     llm = _build_client(cfg, temperature, max_tokens)  # raises LLMUnavailable
     tally = egress.CallTally(org_id=org_id, task=task)
-    sess = await _open_egress(org_id)  # raises LLMDisabled in `off` mode, before anything is built
+    sess = await _open_egress(org_id, task)  # raises LLMDisabled in `off` mode, before anything is built
     out_system, out_prompt, out_history = sess.outbound(system_prompt, prompt, history)
     messages = _build_messages(out_system, out_prompt, out_history)
     sess.sent(_texts(messages), tally)

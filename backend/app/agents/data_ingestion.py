@@ -18,7 +18,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import re
 from typing import Any
 
 from app.agents.state import AgentRunConfig, CFOState, SkillResult
@@ -89,7 +88,7 @@ async def _extract_transactions_with_llm(
     Use LLM (DeepSeek / OpenAI compatible) to extract structured transactions.
     Returns list of dicts: date, amount, type, description, vendor, confidence.
     """
-    from app.platform.model_gateway import LLMUnavailable, complete_text
+    from app.platform.model_gateway import LLMUnavailable, complete_json
 
     system = (
         "You are a financial data extraction specialist. "
@@ -106,21 +105,19 @@ async def _extract_transactions_with_llm(
         'Example: [{"date": "15.03.2024", "amount": 1500.00, "type": "expense", '
         '"description": "Electricity bill", "vendor": "City Power Co.", "confidence": 0.95}]'
     )
-    import json
     try:
-        content = (await complete_text(
+        # parsed, then restored value by value (strict): an unknown placeholder is None, never booked as text
+        rows = await complete_json(
             task="simple_extraction",
             system_prompt=system,
             prompt=f"Document text:\n\n{raw_text[:8000]}",
             temperature=0.0,
             max_tokens=4096,
-        )).strip()
+            strict=True,
+        )
     except LLMUnavailable:
         return []
-    if content.startswith("```"):
-        content = re.sub(r"^```[a-z]*\n?", "", content)
-        content = re.sub(r"\n?```$", "", content)
-    return json.loads(content)
+    return [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else []
 
 
 def _csv_sonucu(
@@ -552,6 +549,9 @@ async def _belgeyi_oku(
             conf = parse_confidence(t.get("confidence"))
             if conf is not None and not (amount_cents and parsed_date):
                 conf = min(conf, 0.55)  # an unreadable amount or date is a weak row
+            unresolved = bool(t.pop("__unresolved__", None))  # a field came back as an unknown placeholder
+            if unresolved:  # not read: the row is held for a person, the field is empty, never placeholder text
+                conf = min(conf if conf is not None else 0.55, 0.55)
 
             # The row's own currency, else the document's; None when neither
             # says (the caller assumes the organisation's, marked, or holds it).
@@ -564,12 +564,13 @@ async def _belgeyi_oku(
                 # Direction is not defaulted: a row the model did not call income
                 # or expense is held (app.services.ingest.hold), not booked as a cost.
                 "type": tx_type,
-                "category": _guess_category(t.get("description", ""), tx_type or "expense"),
-                "description": t.get("description", ""),
+                "category": _guess_category(t.get("description") or "", tx_type or "expense"),
+                "description": t.get("description") or "",
                 "vendor": t.get("vendor"),
                 "transaction_date": parsed_date.isoformat() if parsed_date else None,
                 "raw_text": str(t),
                 "confidence": conf,
+                **({"line_unreadable": True} if unresolved else {}),
             })
 
         parseable = sum(

@@ -19,6 +19,8 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from app.core.tenancy import set_current_tenant
+
 logger = logging.getLogger(__name__)
 
 BEKLIYOR = "bekliyor"
@@ -85,6 +87,8 @@ async def devam_et(job_id: str) -> dict[str, Any]:
         job = await db.get(AnalysisJob, job_id)
         if job is None or job.status != JobStatus.COMPLETED or not job.org_id:
             return {"ok": False, "neden": "iş yok ya da tamamlanmamış"}
+        # queued work carries no request context: every AI step below is made for this company
+        set_current_tenant(str(job.org_id))
         review = (job.result_metadata or {}).get("review") or {}
         durum = review.get("devam")
         if durum == TAMAM:

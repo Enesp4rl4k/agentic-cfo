@@ -4,6 +4,13 @@ The Model Gateway opens a session for every send (and the embedding gateway for 
 so a payload cannot reach a provider without passing here. `open_session` raises `PolicyOff` in `off`
 mode: nothing is built, nothing is sent.
 
+FAIL CLOSED in `masked` mode: the session finds the company itself (the explicit `org_id`, else the tenant
+context that `get_current_user`, the WebSocket and every worker / scheduler job set). When there is no
+company, or its names dictionary cannot be read completely, nothing is sent: `EgressRefused` (a `PolicyOff`,
+so callers take the same honest deterministic path as `off`), an audit row with the reason, a warning in the
+log and an operator alert (`refusals`). Only a task declared in `system_calls.SYSTEM_CALLS`, each with the
+reason it carries no tenant data, may go out without a company, with pattern masking only.
+
 A `CallTally` collects, per logical call (all its retries), what the audit row records: the mode, how
 many placeholders of each type were substituted, the bytes sent. Never the payload itself.
 """
@@ -20,13 +27,20 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from app.config import get_settings
-from app.platform.llm_egress import dictionary, policy
+from app.platform.llm_egress import dictionary, policy, refusals
 from app.platform.llm_egress.policy import DataMode, PolicyOff
-from app.platform.llm_egress.pseudonymizer import Pseudonymizer, StreamRestorer
+from app.platform.llm_egress.pseudonymizer import (
+    PROMPT_NOTE,
+    RESIDUE,
+    Pseudonymizer,
+    StreamRestorer,
+)
+from app.platform.llm_egress.system_calls import SYSTEM_CALLS
 
 logger = logging.getLogger(__name__)
 
-STABLE_TAG = "+pseud1"  # appended to a stored embedding's model name when it was computed on masked text
+STABLE_TAG = "+pseud2"  # with the key version: a stored embedding's model name when computed on masked text
+UNRESOLVED_KEY = "__unresolved__"  # strict JSON restore: the fields of this object that were set to None
 
 
 @dataclass
@@ -83,6 +97,18 @@ def stable_key(org_id: str | None) -> bytes:
     return hmac.new(secret.encode(), f"llm-embedding-pseudonym:{org_id or ''}".encode(), hashlib.sha256).digest()
 
 
+def key_version() -> str:
+    """A short public fingerprint of the pseudonym key, part of a stored vector's tag: rotating
+    BACKEND_SECRET_KEY changes the tag, so vectors of the old key are never compared with new ones; they are
+    counted as "awaiting re-index" and re-embedded by the re-index job instead of silently ranking wrong."""
+    secret = get_settings().backend_secret_key
+    return hmac.new(secret.encode(), b"llm-embedding-key-version", hashlib.sha256).hexdigest()[:6]
+
+
+def _looks_like_placeholder(value: str) -> bool:
+    return bool(RESIDUE.search(value))
+
+
 class EgressSession:
     def __init__(self, decision: policy.ModeDecision, org_id: str | None, pseudo: Pseudonymizer | None,
                  flags: set[str]) -> None:
@@ -91,6 +117,10 @@ class EgressSession:
         self.org_id = org_id
         self.pseudo = pseudo
         self.flags = flags
+        self.unresolved = 0  # strict restores that found an unknown / mangled placeholder (the value became None)
+
+    def __repr__(self) -> str:  # the mapping lives in `pseudo`, whose repr is counts only
+        return f"EgressSession(mode={self.mode.value}, org={'set' if self.org_id else 'none'}, pseudo={self.pseudo!r})"
 
     # ── what goes out ────────────────────────────────────────────────────────
     def outbound(self, system_prompt: str, prompt: str, history: list[dict[str, str]] | None
@@ -101,7 +131,10 @@ class EgressSession:
         masked_history = None if history is None else [
             {**turn, "content": self.pseudo.mask(str(turn.get("content", "")))} for turn in history
         ]
-        return self.pseudo.mask(system_prompt), self.pseudo.mask(prompt), masked_history
+        masked_system, masked_prompt = self.pseudo.mask(system_prompt), self.pseudo.mask(prompt)
+        if self.pseudo.issued:  # say what the placeholders are and that they are copied unchanged
+            masked_system = f"{masked_system}\n\n{PROMPT_NOTE}"
+        return masked_system, masked_prompt, masked_history
 
     def outbound_texts(self, texts: list[str]) -> list[str]:
         return texts if self.pseudo is None else [self.pseudo.mask(t) for t in texts]
@@ -137,33 +170,49 @@ class EgressSession:
         return text if self.pseudo is None else self.pseudo.restore(text)
 
     def restore_obj(self, parsed: Any) -> Any:
-        """Restore placeholders in a structured (pydantic) reply: strings only, numbers are never touched."""
+        """A structured (pydantic) narrative reply, restored AFTER parsing, string values only (numbers are
+        never touched); an unknown placeholder reads "[bilinmeyen taraf]"."""
         if self.pseudo is None or parsed is None:
             return parsed
         dump = getattr(parsed, "model_dump", None)
         if dump is None:
             return parsed
-        restored = self._restore_json(dump())
+        restored = self.restore_json(dump(), strict=False)
         try:
             return type(parsed).model_validate(restored)
         except Exception:
             return parsed.model_copy(update=restored)
 
-    def _restore_json(self, value: Any) -> Any:
-        if isinstance(value, str):
-            return self.pseudo.restore(value)  # type: ignore[union-attr]
+    def restore_json(self, value: Any, *, strict: bool) -> Any:
+        """Restore the string values of an already PARSED JSON value, never the serialised text (so a name
+        with a quote or a backslash cannot break it). strict: a string holding an unknown or mangled
+        placeholder becomes None, the field is missing (data for the books is never a placeholder);
+        otherwise it reads "[bilinmeyen taraf]"."""
         if isinstance(value, dict):
-            return {k: self._restore_json(v) for k, v in value.items()}
+            out = {k: self.restore_json(v, strict=strict) for k, v in value.items()}
+            missing = [k for k, v in value.items() if strict and isinstance(v, str) and out[k] is None]
+            if missing:  # say which fields were placeholders nobody can resolve: the consumer holds the row
+                out[UNRESOLVED_KEY] = missing
+            return out
         if isinstance(value, list):
-            return [self._restore_json(v) for v in value]
-        return value
+            return [self.restore_json(v, strict=strict) for v in value]
+        if not isinstance(value, str):
+            return value
+        if not strict:
+            return value if self.pseudo is None else self.pseudo.restore(value)
+        out = (None if _looks_like_placeholder(value) else value) if self.pseudo is None else self.pseudo.restore_strict(value)
+        self.unresolved += out is None
+        return out
 
     def stream_restorer(self) -> StreamRestorer | None:
         return None if self.pseudo is None else StreamRestorer(self.pseudo)
 
 
-async def open_session(org_id: str | None, *, stable: bool = False) -> EgressSession:
-    """Decide the mode for this call and prepare its pseudonymizer. Raises PolicyOff in `off` mode."""
+async def open_session(org_id: str | None, *, stable: bool = False, task: str | None = None) -> EgressSession:
+    """Decide the mode for this call and prepare its pseudonymizer.
+
+    Raises PolicyOff in `off` mode, and EgressRefused (a PolicyOff) in `masked` mode when the company is
+    unknown or its names cannot be loaded completely: nothing is sent, the reason is recorded."""
     org = policy.active_org(org_id)  # the named organisation, else the request's / job's tenant
     decision = await policy.effective_mode(org)
     if decision.mode == DataMode.OFF:
@@ -173,13 +222,19 @@ async def open_session(org_id: str | None, *, stable: bool = False) -> EgressSes
     flags: set[str] = set()
     names = None
     if org:
-        loaded = await dictionary.load(org)
+        try:
+            loaded = await dictionary.load(org)
+        except Exception as exc:  # the names could not be read: nothing goes out unmasked
+            loaded = None
+            logger.warning("llm egress: names dictionary failed to load (%s)", type(exc).__name__)
+        if loaded is None or not loaded.complete:
+            raise refusals.refuse("dictionary_unavailable", task=task, org_id=org)
         names = loaded.names
-        if not loaded.complete:
-            flags.add("dictionary_incomplete")
         if names.truncated:
             flags.add("dictionary_truncated")
+    elif task in SYSTEM_CALLS:
+        flags.add("system_call_patterns_only")
     else:
-        flags.add("no_organisation_context")  # patterns only: no names are known without a company
+        raise refusals.refuse("no_organisation_context", task=task, org_id=None)
     key = stable_key(org) if stable else None
     return EgressSession(decision, org, Pseudonymizer(names, stable_key=key), flags)

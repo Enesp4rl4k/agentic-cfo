@@ -4,7 +4,8 @@ One `llm_call_logs` row per logical call (the cost ledger's own table: no new ta
 purpose (`task_type`: the agent or task), mode, how many placeholders of each type were substituted,
 bytes sent. Never a prompt, a reply, a name or a number from the books.
 
-`usage_last_days` is what the owner's screen shows: calls and bytes in the last 30 days, counts only.
+`usage_last_days` is what the owner's screen shows: calls and bytes in the last 30 days, and the calls masked
+mode refused (fail closed) with their reason, counts only.
 """
 from __future__ import annotations
 
@@ -16,6 +17,8 @@ from typing import Any
 from sqlalchemy import func, select
 
 from app.platform.llm_egress.session import CallTally
+
+ERROR_PREFIX = "egress_refused:"  # == refusals.ERROR_PREFIX (refusals imports this module lazily)
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +35,7 @@ def persist_call_log(
     ok: bool,
     error: str | None,
     tally: CallTally | None = None,
+    data_mode: str | None = None,
 ) -> None:
     """Best-effort write of one LLMCallLog row. Never raises into the caller."""
     try:
@@ -61,7 +65,7 @@ def persist_call_log(
                         from_cache=res.from_cache if res else False,
                         attempts=res.attempts if res else 1,
                         error=(error or None),
-                        data_mode=tally.mode if tally else None,
+                        data_mode=(tally.mode if tally else None) or data_mode,
                         bytes_out=tally.bytes_out if tally else 0,
                         replaced=tally.as_record() if tally else None,
                     )
@@ -90,4 +94,13 @@ async def usage_last_days(db: Any, org_id: str, days: int = 30) -> dict[str, Any
             select(LLMCallLog.data_mode, func.count()).where(*where).group_by(LLMCallLog.data_mode)
         )).all()
     }
-    return {"days": days, "calls": int(calls), "bytes_out": int(sent), "calls_by_mode": by_mode}
+    refused = {
+        str(error).removeprefix(ERROR_PREFIX): int(n)
+        for error, n in (await db.execute(
+            select(LLMCallLog.error, func.count()).where(
+                LLMCallLog.org_id == org_id, LLMCallLog.created_at >= since, LLMCallLog.error.like(ERROR_PREFIX + "%")
+            ).group_by(LLMCallLog.error)
+        )).all()
+    }
+    return {"days": days, "calls": int(calls), "bytes_out": int(sent), "calls_by_mode": by_mode,
+            "refused": refused, "refused_total": sum(refused.values())}

@@ -18,6 +18,7 @@ from app.platform import embedding_gateway
 from app.platform import llm_egress as egress
 from app.platform import model_gateway as mg
 from app.platform.llm_egress import dictionary, policy
+from app.platform.llm_egress.pseudonymizer import PROMPT_NOTE
 from tests.db_helpers import gecici_veritabani
 from tests.llm_egress_harness import (
     CANARY,
@@ -48,7 +49,7 @@ async def world(monkeypatch):
 
 
 def _placeholders(texts: list[str]) -> list[str]:
-    return re.findall(r"\[[A-ZÇĞİÖŞÜ_]+_\d+\]", "\n".join(texts))
+    return re.findall(r"\[\[[A-Z]+_[A-Z0-9]{3}_\d+[a-z]?\]\]", "\n".join(texts))
 
 
 SYSTEM = f"Sen {CANARY.company} için çalışan bir danışmansın. Hesap: {CANARY.iban}."
@@ -61,7 +62,7 @@ HISTORY = [{"role": "user", "content": f"{CANARY.vendor} ne kadar aldı? kart {C
 
 async def test_masked_complete_text_sends_no_canary_and_restores_the_reply(world) -> None:
     world.enter()
-    world.rec.reply = lambda texts: "Özet: " + " ve ".join(sorted(set(_placeholders(texts)))[:3]) + " [KARŞI_TARAF_99]"
+    world.rec.reply = lambda texts: "Özet: " + " ve ".join(sorted(set(_placeholders(texts)))[:3]) + " [[CP_ZZZ_99]]"
     out = await mg.complete_text(task="deep_analysis", system_prompt=SYSTEM, prompt=PROMPT, history=HISTORY)
     sent = world.rec.text()
     assert leaked_in(sent) == [], leaked_in(sent)
@@ -69,7 +70,8 @@ async def test_masked_complete_text_sends_no_canary_and_restores_the_reply(world
     assert "1.234.567,89 TL" in sent and "15.03.2026" in sent and "KDV %20" in sent  # figures are never masked
     assert _placeholders(world.rec.sent[0].texts)
     assert leaked_in(out) != []                                  # the reply shows the real names again
-    assert "[bilinmeyen taraf]" in out and "[KARŞI_TARAF_99]" not in out   # a hallucinated placeholder is never a wrong name
+    assert "[bilinmeyen taraf]" in out and "[[CP_ZZZ_99]]" not in out   # a hallucinated placeholder is never a wrong name
+    assert "placeholder" not in out and egress_note_absent(out)
 
 
 async def test_masked_structured_output_is_restored_field_by_field_and_numbers_are_untouched(world) -> None:
@@ -83,26 +85,30 @@ async def test_masked_structured_output_is_restored_field_by_field_and_numbers_a
         def to_text(self) -> str:
             return self.note
 
-    world.rec.structured = lambda schema: schema(
-        who="[KARŞI_TARAF_1]", note="Ödeme [IBAN_1] hesabına", amount_cents=123456789, items=["[KİŞİ_1]", "[KİŞİ_9]"]
-    )
+    def reply(schema):
+        tokens = {t.split("_")[0][2:]: t for t in reversed(_placeholders(world.rec.sent[-1].texts))}
+        return schema(who=tokens["CP"], note=f"Ödeme {tokens['IBAN']} hesabına", amount_cents=123456789,
+                      items=[tokens["PER"], "[[PER_ZZZ_9]]"])
+
+    world.rec.structured = reply
     result = await mg.complete(task="deep_analysis", system_prompt=SYSTEM, prompt=PROMPT, schema=Finding)
     assert leaked_in(world.rec.text()) == []
     got = result.parsed
-    assert CANARY.counterparty in got.who or CANARY.vendor in got.who
-    assert CANARY.iban in got.note or CANARY.iban_spaced in got.note
+    assert got.who in (CANARY.counterparty, CANARY.vendor, CANARY.counterparty_short, CANARY.vendor_short)
+    assert CANARY.iban in got.note or CANARY.iban_spaced in got.note or "IBAN" not in got.note
     assert got.amount_cents == 123456789
     assert got.items[1] == "[bilinmeyen taraf]"
+    assert world.rec.method == "function_calling"  # the structured wire format stays a tool call
 
 
 async def test_masked_stream_restores_placeholders_split_across_chunks(world) -> None:
     world.enter()
-    world.rec.reply = lambda texts: f"Ödenecek: {_placeholders(texts)[0]} ve [KİŞİ_77] kısa."
+    world.rec.reply = lambda texts: f"Ödenecek: {_placeholders(texts)[0]} ve [[PER_ZZZ_77]] kısa."
     pieces = [p async for p in mg.stream(task="deep_analysis", system_prompt=SYSTEM, prompt=PROMPT, history=HISTORY)]
     text = "".join(pieces)
     assert leaked_in(world.rec.text()) == []
     assert world.rec.count("stream") == 1
-    assert "[bilinmeyen taraf]" in text and "[KİŞİ_77]" not in text and "[" not in text.replace("[bilinmeyen taraf]", "")
+    assert "[bilinmeyen taraf]" in text and "[[PER_ZZZ_77]]" not in text and "[[" not in text
 
 
 async def test_the_router_path_goes_through_the_same_choke_point(world) -> None:
@@ -113,16 +119,24 @@ async def test_the_router_path_goes_through_the_same_choke_point(world) -> None:
     assert world.rec.count("chat") == 1 and leaked_in(world.rec.text()) == []
 
 
-async def test_no_organisation_context_masks_patterns_only_and_says_so(world, monkeypatch) -> None:
-    world.enter()
+async def test_no_organisation_context_fails_closed_and_says_so(world, monkeypatch) -> None:
+    from app.platform.llm_egress import audit, refusals
+
     set_current_tenant(None)
-    seen = []
-    monkeypatch.setattr(mg, "_persist_call_log", lambda **kw: seen.append(kw["tally"]))
-    await mg.complete_text(task="short_narrative", prompt=PROMPT)
-    sent = world.rec.text()
-    assert CANARY.iban not in sent and CANARY.tckn not in sent and CANARY.email not in sent       # patterns work anywhere
-    assert CANARY.counterparty_short in sent                                                      # names need a company
-    assert "no_organisation_context" in seen[0].flags
+    refusals.reset()
+    rows = []
+    monkeypatch.setattr(audit, "persist_call_log", lambda **kw: rows.append(kw))
+    with pytest.raises(mg.LLMEgressRefused) as err:
+        await mg.complete_text(task="short_narrative", prompt=PROMPT)
+    assert isinstance(err.value, mg.LLMDisabled)          # callers take the same deterministic path as `off`
+    assert world.rec.sent == []                           # nothing left
+    assert err.value.reason == "no_organisation_context" and "gönderilmedi" in str(err.value)
+    assert refusals.counts()["no_organisation_context"] == 1
+    assert rows and rows[0]["error"] == "egress_refused:no_organisation_context" and rows[0]["ok"] is False
+    with pytest.raises(mg.LLMEgressRefused):
+        _ = [p async for p in mg.stream(task="deep_analysis", prompt=PROMPT)]
+    assert await embedding_gateway.embed_texts([DESCRIPTION], org_id=None) is None
+    assert world.rec.sent == [] and refusals.counts()["no_organisation_context"] == 3
 
 
 # ── off ──────────────────────────────────────────────────────────────────────
@@ -208,9 +222,11 @@ async def test_masked_embeddings_use_stable_pseudonyms_for_index_and_query_alike
                                                 purpose="rag_query")
     assert leaked_in(world.rec.text()) == []
     assert world.rec.count("embed") == 2
-    token = re.findall(r"\[KARŞI_TARAF_[0-9a-f]{8}\]", world.rec.sent[0].texts[0])
-    assert token and token == re.findall(r"\[KARŞI_TARAF_[0-9a-f]{8}\]", world.rec.sent[1].texts[0])  # same name, same token
-    assert indexed.tag == query.tag and indexed.tag.endswith("+pseud1")                              # never mixed with raw vectors
+    token = re.findall(r"\[\[CP_[0-9a-f]{8}\]\]", world.rec.sent[1].texts[0])
+    assert token and token[0] in world.rec.sent[0].texts[0]                                       # same name, same token
+    from app.platform.llm_egress.session import key_version
+
+    assert indexed.tag == query.tag and indexed.tag.endswith(f"+pseud2.{key_version()}")         # never mixed with raw vectors
 
 
 async def test_raw_embeddings_are_unchanged_and_off_embeds_nothing(world, monkeypatch) -> None:
@@ -247,8 +263,8 @@ async def test_the_audit_tally_has_counts_and_bytes_and_no_payload(world, monkey
     assert tally.mode == "masked" and rows[0]["task"] == "anomaly_narrative" and tally.org_id == world.org_id
     assert tally.bytes_out == sum(len(t.encode()) for t in world.rec.sent[0].texts)
     counts = record["counts"]
-    assert counts["IBAN"] >= 2 and counts["KARŞI_TARAF"] >= 2 and counts["ŞİRKET"] >= 1 and counts["TELEFON"] >= 1
-    assert counts["E_POSTA"] >= 1 and counts["KİŞİ"] >= 1 and counts["KART"] == 1
+    assert counts["IBAN"] >= 2 and counts["CP"] >= 2 and counts["CO"] >= 1 and counts["TEL"] >= 1
+    assert counts["MAIL"] >= 1 and counts["PER"] >= 1 and counts["CARD"] == 1
     assert leaked_in(json.dumps(record, ensure_ascii=False)) == []
     assert not any(v in json.dumps(record, ensure_ascii=False) for v in LEAK_VALUES)
 
@@ -296,7 +312,7 @@ async def test_the_session_api_is_what_the_gateway_uses() -> None:
 
 # ── the dictionary says when it is not whole ─────────────────────────────────
 
-async def test_a_capped_or_unreadable_dictionary_is_flagged_on_the_call_not_hidden(world, monkeypatch) -> None:
+async def test_a_capped_dictionary_is_flagged_and_an_unreadable_one_fails_closed(world, monkeypatch) -> None:
     world.enter()
     seen = []
     monkeypatch.setattr(mg, "_persist_call_log", lambda **kw: seen.append(kw["tally"]))
@@ -312,10 +328,12 @@ async def test_a_capped_or_unreadable_dictionary_is_flagged_on_the_call_not_hidd
 
     monkeypatch.setattr(dictionary, "_values", broken)
     dictionary.forget()
-    await mg.complete_text(task="short_narrative", prompt=PROMPT)
-    assert "dictionary_incomplete" in seen[-1].flags
+    sends = world.rec.count()
+    with pytest.raises(mg.LLMEgressRefused) as err:
+        await mg.complete_text(task="short_narrative", prompt=PROMPT)
+    assert err.value.reason == "dictionary_unavailable" and world.rec.count() == sends   # nothing left
     loaded = await dictionary.load(world.org_id)
-    assert loaded.complete is False and len(loaded.names) >= 1   # the company's own name is still known
+    assert loaded.complete is False and world.org_id not in dictionary._CACHE   # never cached: the next call retries
 
 
 async def test_off_says_so_in_turkish_for_the_person(world, monkeypatch) -> None:
@@ -326,3 +344,55 @@ async def test_off_says_so_in_turkish_for_the_person(world, monkeypatch) -> None
     with pytest.raises(mg.LLMDisabled) as err:
         await mg.complete_text(task="deep_analysis", prompt=PROMPT)
     assert "kapalı" in str(err.value) and "LLM_DATA_MODE=off" in str(err.value)
+
+
+def egress_note_absent(text: str) -> bool:
+    return PROMPT_NOTE not in text
+
+
+async def test_masked_json_reply_is_parsed_before_restoring_and_unknown_fields_are_missing(world) -> None:
+    """data_ingestion's path: a name with a quote and a backslash, an escaped reply, an invented placeholder."""
+    world.enter()
+    async with world.maker() as db:
+        from datetime import date
+
+        from app.models.open_item import OpenItem
+
+        db.add(OpenItem(org_id=world.org_id, direction="payable", instrument="invoice", document_id="inv:q:1",
+                        amount_cents=100, issue_date=date(2026, 3, 1), counterparty='Usta "Gıda\\Un" Ltd. Şti.'))
+        await db.commit()
+    dictionary.forget()
+
+    def reply(texts):
+        cp = [t for t in _placeholders(texts) if t.startswith("[[CP_")]
+        return json.dumps([{"vendor": cp[0], "amount": 1500.0, "description": f"öde {cp[-1]}"},
+                           {"vendor": "[[CP_ZZZ_9]]", "amount": 2.5, "description": "x"}], ensure_ascii=True)
+
+    world.rec.reply = reply
+    rows = await mg.complete_json(task="simple_extraction", prompt='Usta "Gıda\\Un" Ltd. Şti. 1.500,00 TL ve '
+                                  + CANARY.counterparty, strict=True)
+    assert rows[0]["vendor"] == 'Usta "Gıda\\Un" Ltd. Şti.' and rows[0]["amount"] == 1500.0
+    assert rows[0]["description"] == f"öde {CANARY.counterparty}"
+    assert rows[1]["vendor"] is None and rows[1]["__unresolved__"] == ["vendor"] and rows[1]["amount"] == 2.5
+    assert leaked_in(world.rec.text()) == []
+
+
+async def test_the_masked_system_prompt_explains_the_placeholders_and_raw_does_not(world, monkeypatch) -> None:
+    world.enter()
+    await mg.complete_text(task="deep_analysis", system_prompt=SYSTEM, prompt=PROMPT)
+    assert PROMPT_NOTE in world.rec.sent[0].texts[0]
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "llm_data_mode", "raw")
+    await mg.complete_text(task="deep_analysis", system_prompt=SYSTEM, prompt=PROMPT)
+    assert PROMPT_NOTE not in world.rec.sent[1].texts[0]
+
+
+async def test_a_cached_answer_is_not_served_in_off(world, monkeypatch) -> None:
+    world.enter()
+    from app.config import get_settings
+
+    await mg.complete_text(task="deep_analysis", prompt=PROMPT, use_cache=True)
+    monkeypatch.setattr(get_settings(), "llm_data_mode", "off")
+    with pytest.raises(mg.LLMDisabled):
+        await mg.complete_text(task="deep_analysis", prompt=PROMPT, use_cache=True)
