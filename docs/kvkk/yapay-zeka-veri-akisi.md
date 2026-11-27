@@ -29,6 +29,12 @@ işçi sarmalayıcıları `_records_run` / `run_ceo_analysis`, gerçek onay sonr
 * **şirket bağlamı olmadan** (unutulmuş bir giriş noktasının vereceği durum) maskeli kip reddeder: hiçbir şey gitmez, ret sayılır;
 * isim sözlüğü okunamazsa (temsilî yerlerde) yine reddeder.
 
+**LangGraph durum kayıtları (checkpoint).** Ajan düğümlerinin durumu (rakamlar, geri çevrilmiş adlarla anlatılar) bizim
+veritabanımızda saklanabilir (PR #157 ile Postgres). Bu, sağlayıcıya giden bir yol değildir: kaldığı yerden devam eden bir
+düğüm modele yine yalnızca geçitten ulaşır, geçit her giden yükü o anda yeniden maskeler (ya da şirket bilinmiyorsa reddeder);
+durum kaydını bir istemciye veren başka kod yoktur (AST testi: istemciyi yalnızca iki geçit kurar) ve izleme açık olsa bile
+düğüm girdisi/çıktısı izlere gitmez (aşağıda "İzleme").
+
 Yeni bir çağrı yeri sürücüsüz ve giriş noktası bildirilmeden eklenemez. İnceleme, onay sonrası devam yolunun (`devam_et`) şirket
 bağlamını kurmadığını buldu; düzeltildi ve matris bu hatayı artık adıyla yakalar.
 

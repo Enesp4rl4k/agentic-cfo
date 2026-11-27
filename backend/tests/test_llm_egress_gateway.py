@@ -396,3 +396,28 @@ async def test_a_cached_answer_is_not_served_in_off(world, monkeypatch) -> None:
     monkeypatch.setattr(get_settings(), "llm_data_mode", "off")
     with pytest.raises(mg.LLMDisabled):
         await mg.complete_text(task="deep_analysis", prompt=PROMPT, use_cache=True)
+
+
+def test_the_embeddings_client_uses_the_provider_neutral_request_shape(monkeypatch) -> None:
+    """Same shape as PR #157: plain strings and floats, no `dimensions`, against a non-OpenAI base URL."""
+    import langchain_openai
+
+    from app.config import get_settings
+
+    built: list[dict] = []
+
+    class _Recorder:
+        def __init__(self, **kwargs) -> None:
+            built.append(kwargs)
+
+        def embed_documents(self, texts):
+            return [[0.0] for _ in texts]
+
+    monkeypatch.setattr(langchain_openai, "OpenAIEmbeddings", _Recorder)
+    monkeypatch.setattr(get_settings(), "llm_base_url", "https://api.deepseek.com")
+    assert embedding_gateway._client_embed(["a"]) == [[0.0]]
+    assert built[-1]["check_embedding_ctx_length"] is False and "dimensions" not in built[-1]
+    assert built[-1]["model_kwargs"] == {"encoding_format": "float"}
+    monkeypatch.setattr(get_settings(), "llm_base_url", "")
+    embedding_gateway._client_embed(["a"])
+    assert built[-1]["check_embedding_ctx_length"] is True and built[-1]["model_kwargs"] == {}

@@ -94,6 +94,7 @@ API_KEY_READERS: dict[str, str] = {
 HOST_LITERALS: dict[str, str] = {
     "config.py": "the default of LLM_BASE_URL (provider choice is the owner's, unchanged here)",
     "core/preflight.py": "the OpenAI default host when LLM_BASE_URL is empty, for the warning text only",
+    "platform/embedding_gateway.py": "chooses the OpenAI-only request shape (token arrays, dimensions) for that host only",
 }
 
 

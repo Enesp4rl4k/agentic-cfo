@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
+from typing import Any
 
 from app.config import get_settings
 from app.platform.llm_egress import audit
@@ -51,14 +52,26 @@ def has_embedding_support() -> bool:
 
 
 def _client_embed(texts: list[str]) -> list[list[float]]:
+    """The one embeddings client. Same request shape as PR #157's rag_service._build_embeddings: OpenAIEmbeddings
+    tokenises client-side and sends token-id arrays plus `dimensions` (an OpenAI-only shape); against any other
+    OpenAI-compatible base URL it sends plain strings, plain floats and no `dimensions`."""
+    from urllib.parse import urlsplit
+
     from langchain_openai import OpenAIEmbeddings
 
     settings = get_settings()
+    base_url = settings.llm_base_url or None
+    on_openai = base_url is None or urlsplit(base_url).hostname == "api.openai.com"
+    extra: dict[str, Any] = (
+        {"dimensions": settings.rag_embedding_dimensions} if on_openai and settings.rag_embedding_dimensions else {}
+    )
     client = OpenAIEmbeddings(
         model=settings.rag_embedding_model,
         api_key=settings.openai_api_key,  # type: ignore[arg-type]  # langchain coerces str to SecretStr
-        base_url=settings.llm_base_url or None,
-        dimensions=settings.rag_embedding_dimensions,
+        base_url=base_url,
+        check_embedding_ctx_length=on_openai,
+        model_kwargs={} if on_openai else {"encoding_format": "float"},
+        **extra,
     )
     return client.embed_documents(texts)
 
