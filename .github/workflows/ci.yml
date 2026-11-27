@@ -209,8 +209,14 @@ jobs:
       - name: LangGraph checkpoints on Postgres (tenant isolation, CEO path and legacy rows erased, no-org runs unsaved, retention)
         working-directory: backend
         run: |
-          out="$(python -m pytest tests/test_checkpointer_postgres.py -q -p no:randomly -rs)"
+          # `|| rc=$?`: under `bash -e` a failing pytest inside $(...) ended the step before its output was printed.
+          rc=0
+          out="$(python -m pytest tests/test_checkpointer_postgres.py -q -p no:randomly -rs 2>&1)" || rc=$?
           echo "$out"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::the Postgres checkpointer test failed (exit $rc)"
+            exit "$rc"
+          fi
           if echo "$out" | grep -Eqi "skipped|no tests ran" || ! echo "$out" | grep -Eq "[0-9]+ passed"; then
             echo "::error::the Postgres checkpointer test did not run (skipped or not collected)"
             exit 1
