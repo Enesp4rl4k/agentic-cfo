@@ -164,6 +164,15 @@ async def test_retention_deletes_idle_threads_and_keeps_recent_ones(maker) -> No
 
 
 def test_two_processes_starting_together_can_both_run_setup() -> None:
+    """On a database WITHOUT the tables (a fresh stack): the first start creates them, the others wait their turn.
+    Blocking on the lock instead of polling it deadlocked against CREATE INDEX CONCURRENTLY."""
+    import sqlalchemy as sa
+
+    engine = sa.create_engine(get_settings().database_url_sync)
+    with engine.begin() as conn:
+        for name in cp.LIBRARY_TABLES:
+            conn.execute(sa.text(f"DROP TABLE IF EXISTS {name}"))
+    engine.dispose()
     errors: list[BaseException] = []
 
     def build() -> None:
@@ -176,5 +185,6 @@ def test_two_processes_starting_together_can_both_run_setup() -> None:
     for t in threads:
         t.start()
     for t in threads:
-        t.join(timeout=60)
+        t.join(timeout=120)
+    assert not any(t.is_alive() for t in threads), "setup hung"
     assert errors == []

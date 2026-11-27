@@ -295,6 +295,24 @@ def _sqlite_saver(path: str) -> Any:
     return _compatify(SqliteSaver(conn), async_via_thread=True)
 
 
+def _acquire_setup_lock(conn: Any, timeout: float = 90.0) -> None:
+    """Take the setup advisory lock by POLLING `pg_try_advisory_lock`, never by blocking on it.
+
+    The library's migrations include CREATE INDEX CONCURRENTLY, which waits for every other transaction that is
+    open. A second process blocked inside `pg_advisory_lock` IS such a transaction: the first would wait for it
+    and it for the first (both API workers hung at startup on a fresh database). A poll is over in a moment."""
+    import time
+
+    deadline = time.monotonic() + timeout
+    while True:
+        row = conn.execute("SELECT pg_try_advisory_lock(%s) AS got", (_SETUP_LOCK_KEY,)).fetchone()
+        if row and row["got"]:
+            return
+        if time.monotonic() > deadline:
+            raise TimeoutError("another process holds the checkpoint setup lock")
+        time.sleep(0.25)
+
+
 def _postgres_saver(dsn: str) -> Any:
     """A durable saver on a psycopg connection pool; creates the library's tables if they are missing.
 
@@ -325,7 +343,7 @@ def _postgres_saver(dsn: str) -> Any:
     try:
         saver = PostgresSaver(cast("Any", pool))
         with pool.connection() as lock_conn:  # session-level advisory lock, held while setup() runs on another one
-            lock_conn.execute("SELECT pg_advisory_lock(%s)", (_SETUP_LOCK_KEY,))
+            _acquire_setup_lock(lock_conn)
             try:
                 saver.setup()
             finally:
