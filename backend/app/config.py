@@ -281,6 +281,8 @@ class Settings(BaseSettings):
     retention_token_days: int = 30
     # Retention: days after which an audit-log row's IP address is truncated and its browser string removed (the row stays)
     retention_audit_ip_days: int = 365
+    # Retention: days after an agent run's last checkpoint that its LangGraph checkpoints are deleted (Postgres; 0 = keep)
+    retention_checkpoint_days: int = 3
     # Retention: days after which in-app notifications are deleted
     retention_notification_days: int = 180
     # Retention: days after which alert history rows are deleted
@@ -409,18 +411,22 @@ class Settings(BaseSettings):
     sse_max_connections: int = 50
 
     # Postgres connection pool, per process. Capacity math for operators:
-    #   (uvicorn workers + ARQ workers) × (pool_size + max_overflow)
-    #   must stay below Postgres max_connections (default 100).
-    # With the shipped defaults (2+2 processes × 30) that is 120 — raise
-    # max_connections or lower these before raising process counts.
+    #   (uvicorn workers + ARQ workers) × (pool_size + max_overflow + 5)
+    #   must stay below Postgres max_connections (default 100). The + 5 is the
+    #   LangGraph checkpoint pool (`checkpointer._postgres_saver`, max_size=5),
+    #   opened by every process that builds the saver (API, both workers).
+    # With the shipped defaults (2+2 processes × 35) that is 140 — under the
+    # production compose's max_connections=200; raise max_connections or lower
+    # these before raising process counts.
     db_pool_size: int = 20
     db_max_overflow: int = 10
 
-    # LangGraph checkpoint store. sqlite keeps resume data in a file shared
-    # across processes (dev / single-node); postgres is the prod path and
-    # needs the optional `langgraph-checkpoint-postgres` package — without it
-    # startup falls back to in-memory loudly (correctness still holds: nodes
-    # are idempotent recomputes; the checkpoint only saves recompute time).
+    # LangGraph checkpoint store (LANGGRAPH_CHECKPOINT). sqlite keeps it in this
+    # file (dev / single-node); postgres is the production path
+    # (`langgraph-checkpoint-postgres`, pinned). In production a configured
+    # store that cannot be built stops the process (CheckpointerUnavailable);
+    # only development and tests fall back to memory, with a warning. Every run
+    # has its own thread and nothing resumes one (checkpointer.py).
     checkpoint_sqlite_path: str = "./langgraph_checkpoints.sqlite"
 
     # Dev mode: use SQLite instead of PostgreSQL

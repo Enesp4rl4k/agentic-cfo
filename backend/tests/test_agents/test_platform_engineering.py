@@ -262,8 +262,9 @@ def test_canonical_fingerprint_stable() -> None:
 def test_checkpoint_config_includes_thread_id() -> None:
     from app.agents.checkpointer import checkpoint_config, get_checkpointer
 
-    cfg = checkpoint_config("job-abc", run_config={"require_review": True})
-    assert cfg["configurable"]["thread_id"] == "job-abc"
+    org = "11111111-1111-4111-8111-111111111111"
+    cfg = checkpoint_config("job-abc", org_id=org, run_id="run-1", run_config={"require_review": True})
+    assert cfg["configurable"]["thread_id"] == f"{org}:job-abc:run-1"
     assert "run_config" in cfg["configurable"]
     # Must construct without raising (MemorySaver fallback OK)
     saver = get_checkpointer()

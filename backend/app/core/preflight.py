@@ -215,6 +215,37 @@ def _env_findings(settings: Settings, env: Mapping[str, str]) -> list[Finding]:
     return []
 
 
+def _checkpointer_findings(settings: Settings, env: Mapping[str, str]) -> list[Finding]:
+    """The Postgres checkpointer needs the langgraph Postgres saver and psycopg 3; without them production would
+    run on per-process memory (no resume across processes). Whether the database accepts the connection is
+    checked at startup by `checkpointer.verify_checkpointer`, which also stops the process."""
+    explicit = env.get("LANGGRAPH_CHECKPOINT", "").strip().lower()
+    backend = explicit if explicit in {"memory", "sqlite", "postgres"} else ("sqlite" if settings.use_sqlite else "postgres")
+    if backend != "postgres":
+        return []
+    missing = _missing_modules(("langgraph.checkpoint.postgres", "psycopg", "psycopg_pool"))
+    if not missing:
+        return []
+    return [_fatal("checkpointer_unavailable", "LANGGRAPH_CHECKPOINT resolves to postgres but "
+                   + ", ".join(missing) + " cannot be imported: agent state would not survive a restart or reach "
+                   "another process. Install langgraph-checkpoint-postgres and psycopg[binary] (requirements.txt), "
+                   "or choose the checkpoint backend knowingly with LANGGRAPH_CHECKPOINT=memory.")]
+
+
+def _missing_modules(names: tuple[str, ...]) -> list[str]:
+    import importlib.util
+
+    out = []
+    for name in names:
+        try:
+            found = importlib.util.find_spec(name) is not None
+        except (ImportError, ValueError):
+            found = False
+        if not found:
+            out.append(name)
+    return out
+
+
 def _degraded_findings(settings: Settings, env: Mapping[str, str]) -> list[Finding]:
     out: list[Finding] = []
     if settings.outbox_transport == "noop":
@@ -321,6 +352,7 @@ def check_settings(settings: Settings, environ: Mapping[str, str] | None = None,
         *_secret_findings(settings, env),
         *_env_findings(settings, env),
         *_exposure_findings(settings, env),
+        *_checkpointer_findings(settings, env),
         *_mail_findings(settings, env),
         *_degraded_findings(settings, env),
         *_parser_memory_findings(settings, process),

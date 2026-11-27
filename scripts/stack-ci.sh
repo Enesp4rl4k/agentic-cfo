@@ -175,10 +175,10 @@ phase_edge() {
   [[ "$code" == 200 ]] || bad "/api/v1/ready answered $code through Caddy"
   ready="$(jq -r '.data.status' "$SCRATCH/ready.json")"
   [[ "$ready" == ready || "$ready" == degraded ]] || bad "/api/v1/ready status is $ready"
-  for check in database migrations redis; do
+  for check in database migrations redis checkpointer; do
     [[ "$(jq -r ".data.checks.${check}" "$SCRATCH/ready.json")" == ok ]] || bad "/api/v1/ready: check $check is not ok"
   done
-  ok "/api/v1/ready 200 ($ready), database, migrations and redis ok"
+  ok "/api/v1/ready 200 ($ready), database, migrations, redis and a durable checkpointer ok"
 
   curl -fsS --max-time 15 "${API_URL}/api/v1/version" -o "$SCRATCH/version.json"
   cat "$SCRATCH/version.json"; echo

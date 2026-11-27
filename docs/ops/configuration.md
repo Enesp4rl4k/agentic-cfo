@@ -170,6 +170,7 @@ starts without them, the pilot should not.
 | `RETENTION_OUTBOX_BODY_DAYS` | 90 | optional | - | Retention: days after delivery that a sent outbox message's body is removed (recipient, status and times stay) |
 | `RETENTION_TOKEN_DAYS` | 30 | optional | - | Retention: days after expiry that password-reset, verification tokens and spent or expired invitations are deleted |
 | `RETENTION_AUDIT_IP_DAYS` | 365 | optional | - | Retention: days after which an audit-log row's IP address is truncated and its browser string removed (the row stays) |
+| `RETENTION_CHECKPOINT_DAYS` | 3 | optional | - | Retention: days after an agent run's last checkpoint that its LangGraph checkpoints (agent state, may hold company data; nothing reads them back) are deleted; 0 keeps them. Threads not namespaced by an organisation are deleted at every run whatever this says. PostgreSQL only |
 | `RETENTION_NOTIFICATION_DAYS` | 180 | optional | - | Retention: days after which in-app notifications are deleted |
 | `RETENTION_ALERT_HISTORY_DAYS` | 365 | optional | - | Retention: days after which alert history rows are deleted |
 | `PRIVACY_NOTICE_VERSION` | `taslak-1` | optional | - | Version of the privacy notice a person must have accepted; change it to ask everyone again (the text is the owner's documents, linked) |
@@ -263,9 +264,9 @@ starts without them, the pilot should not.
 | `REDIS_URL` | `redis://localhost:6379/0` | also read directly by `app/services/agent_bus.py` |
 | `DISABLE_REDIS` | (unset) | `true` runs with no broker (development, tests) |
 | `AGENT_BUS_REDIS` | (unset) | agent bus backend switch (`app/services/agent_bus.py`) |
-| `LANGGRAPH_CHECKPOINT` | follows `USE_SQLITE` | `memory`, `sqlite` or `postgres` checkpoint store |
+| `LANGGRAPH_CHECKPOINT` | follows `USE_SQLITE` | `memory`, `sqlite` or `postgres` checkpoint store. In production (not SQLite, or `APP_ENV` production/staging) a `postgres`/`sqlite` store that cannot be built stops the process; there is no fallback to memory. `/api/v1/ready` reports `checkpointer` |
 | `OTEL_ENABLED`, `OTEL_ENDPOINT`, `OTEL_EXPORTER`, `JAEGER_HOST`, `JAEGER_PORT` | off | OpenTelemetry tracing (`app/services/telemetry.py`) |
-| `LANGSMITH_ENABLED`, `LANGSMITH_API_KEY`, `LANGSMITH_ENDPOINT`, `LANGSMITH_PROJECT`, `LANGCHAIN_TRACING_V2`, `LANGCHAIN_API_KEY`, `LANGCHAIN_ENDPOINT`, `LANGCHAIN_PROJECT` | off | LangSmith tracing. Sends prompts to a third party: leave off with company data |
+| `LANGSMITH_ENABLED`, `LANGSMITH_EXTERNAL_TRACING_ACK`, `LANGSMITH_TRACING`, `LANGSMITH_API_KEY`, `LANGSMITH_ENDPOINT`, `LANGSMITH_PROJECT`, `LANGCHAIN_TRACING_V2`, `LANGCHAIN_API_KEY`, `LANGCHAIN_ENDPOINT`, `LANGCHAIN_PROJECT` | off, locked | LangSmith tracing sends every prompt and response (company data, KVKK) to a third party: leave off with company data. At startup `app/services/telemetry.py` forces `LANGSMITH_TRACING`, `LANGSMITH_TRACING_V2`, `LANGCHAIN_TRACING_V2` and `LANGCHAIN_TRACING` to `false` whatever the environment says, so setting those directly does nothing. Tracing turns on only with `LANGSMITH_ENABLED=true`, `LANGSMITH_API_KEY` and `LANGSMITH_EXTERNAL_TRACING_ACK=prompts-and-company-data-leave-the-platform`; without the acknowledgement the app logs a refusal and stays off |
 | `CSUITE_URL`, `CSUITE_API_KEY` | (unset) | the MCP server's client (`app/mcp/server.py`), not the API |
 
 ## 3. Frontend and compose (not read by the backend)
