@@ -393,6 +393,19 @@ async def test_an_upload_that_fails_validation_is_not_counted(client):
 
 # ── failure modes ─────────────────────────────────────────────────────────────
 
+class _Savepoint:
+    def __init__(self, db) -> None:
+        self.db = db
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, *_a):
+        if exc_type is not None:
+            self.db.rolled_back += 1  # the savepoint is rolled back, nothing else
+        return False
+
+
 class BrokenDb:
     """A session whose every statement fails (the connection dropped, the disk is full)."""
 
@@ -405,8 +418,8 @@ class BrokenDb:
     async def commit(self) -> None:
         raise OperationalError("COMMIT", {}, Exception("connection lost"))
 
-    async def rollback(self) -> None:
-        self.rolled_back += 1
+    def begin_nested(self):
+        return _Savepoint(self)
 
 
 async def test_a_failing_database_never_crashes_recording_counting_or_pruning():
@@ -438,7 +451,7 @@ async def test_a_database_error_does_not_grant_the_upload():
         await check_upload_limit(org_id(), BrokenDb())
 
 
-async def test_a_failed_statement_rolls_the_session_back_so_it_stays_usable():
+async def test_a_failed_statement_is_rolled_back_to_its_savepoint_so_the_session_stays_usable():
     db = BrokenDb()
     await record_usage_event(org_id(), "upload", db=db)
     await get_org_plan(org_id(), db)

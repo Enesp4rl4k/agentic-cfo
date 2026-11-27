@@ -229,9 +229,12 @@ jobs:
       - name: Plan-limit counter runs on Postgres (aborted transaction, racing uploads)
         working-directory: backend
         run: |
-          out="$(python -m pytest tests/test_usage_meter_postgres.py -q -p no:randomly -rs)"
+          set +e
+          out="$(python -m pytest tests/test_usage_meter_postgres.py -q -p no:randomly -rs 2>&1)"
+          rc=$?
+          set -e
           echo "$out"
-          if echo "$out" | grep -Eqi "skipped|no tests ran" || ! echo "$out" | grep -Eq "[0-9]+ passed"; then
+          if [ "$rc" -ne 0 ] || echo "$out" | grep -Eqi "skipped|no tests ran" || ! echo "$out" | grep -Eq "[0-9]+ passed"; then
             echo "::error::the Postgres usage-meter test did not run (skipped or not collected)"
             exit 1
           fi

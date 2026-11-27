@@ -33,13 +33,13 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
-async def _rollback(db: Any) -> None:
-    """After a failed statement: on Postgres the transaction is aborted until it is rolled back, and every later
-    statement on the session (the plan lookup, the count, the caller's own queries) fails with it."""
-    try:
-        await db.rollback()
-    except Exception as exc:  # the connection itself is gone: nothing left to protect
-        logger.debug("UsageMeter: rollback failed: %s", exc)
+def _guard(db: Any) -> Any:
+    """A SAVEPOINT around one metering statement: if it fails, only the savepoint is rolled back. Postgres aborts the
+    whole transaction on a failed statement, which would make every later statement of the session fail (the plan
+    read as "free", the count as 0: an unlimited upload); a plain rollback instead would discard the caller's own
+    uncommitted work (the caller's objects expire and its next attribute read breaks)."""
+    return db.begin_nested()
+
 
 # ── Plan limit definitions ─────────────────────────────────────────────────────
 
@@ -93,25 +93,25 @@ async def record_usage_event(
         from sqlalchemy import text
 
         # Try to use usage_events table (may not exist in old migrations)
-        await db.execute(
-            text(
-                "INSERT INTO usage_events (id, org_id, resource, quantity, recorded_at) "
-                "VALUES (:id, :org_id, :resource, :quantity, :recorded_at)"
-            ),
-            {
-                "id":          __import__("uuid").uuid4().hex,
-                "org_id":      org_id,
-                "resource":    resource,
-                "quantity":    quantity,
-                "recorded_at": datetime.now(UTC),
-            },
-        )
+        async with _guard(db):
+            await db.execute(
+                text(
+                    "INSERT INTO usage_events (id, org_id, resource, quantity, recorded_at) "
+                    "VALUES (:id, :org_id, :resource, :quantity, :recorded_at)"
+                ),
+                {
+                    "id":          __import__("uuid").uuid4().hex,
+                    "org_id":      org_id,
+                    "resource":    resource,
+                    "quantity":    quantity,
+                    "recorded_at": datetime.now(UTC),
+                },
+            )
         await db.commit()
         logger.debug("UsageMeter: recorded %s x%d for org=%s", resource, quantity, org_id)
     except Exception as exc:
         # Table may not exist yet (migration pending) — non-fatal
         logger.debug("UsageMeter: record failed (non-fatal): %s", exc)
-        await _rollback(db)
 
 
 # ── Plan resolution ────────────────────────────────────────────────────────────
@@ -126,20 +126,20 @@ async def get_org_plan(org_id: str, db: Any) -> str:
     try:
         from sqlalchemy import text
         # Try billing_subscriptions table
-        result = await db.execute(
-            text(
-                "SELECT plan FROM billing_subscriptions "
-                "WHERE org_id = :org_id AND status = 'active' "
-                "ORDER BY created_at DESC LIMIT 1"
-            ),
-            {"org_id": org_id},
-        )
+        async with _guard(db):
+            result = await db.execute(
+                text(
+                    "SELECT plan FROM billing_subscriptions "
+                    "WHERE org_id = :org_id AND status = 'active' "
+                    "ORDER BY created_at DESC LIMIT 1"
+                ),
+                {"org_id": org_id},
+            )
         row = result.fetchone()
         if row and row[0] in PLAN_LIMITS:
             return row[0]
     except Exception as exc:
         logger.debug("UsageMeter: plan lookup failed: %s", exc)
-        await _rollback(db)
     return "free"
 
 
@@ -159,24 +159,24 @@ async def get_monthly_usage(
         now = datetime.now(UTC)
         month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
-        result = await db.execute(
-            text(
-                "SELECT COALESCE(SUM(quantity), 0) FROM usage_events "
-                "WHERE org_id = :org_id "
-                "AND resource = :resource "
-                "AND recorded_at >= :month_start"
-            ),
-            {
-                "org_id":      org_id,
-                "resource":    resource,
-                "month_start": month_start,
-            },
-        )
+        async with _guard(db):
+            result = await db.execute(
+                text(
+                    "SELECT COALESCE(SUM(quantity), 0) FROM usage_events "
+                    "WHERE org_id = :org_id "
+                    "AND resource = :resource "
+                    "AND recorded_at >= :month_start"
+                ),
+                {
+                    "org_id":      org_id,
+                    "resource":    resource,
+                    "month_start": month_start,
+                },
+            )
         row = result.fetchone()
         return int(row[0]) if row else 0
     except Exception as exc:
         logger.debug("UsageMeter: count failed: %s", exc)
-        await _rollback(db)
         return 0
 
 
@@ -302,10 +302,11 @@ async def prune_old_usage_events(db: Any, days: int = 90) -> int:
         from sqlalchemy import text
 
         cutoff = datetime.now(UTC) - timedelta(days=days)
-        result = await db.execute(
-            text("DELETE FROM usage_events WHERE recorded_at < :cutoff"),
-            {"cutoff": cutoff},
-        )
+        async with _guard(db):
+            result = await db.execute(
+                text("DELETE FROM usage_events WHERE recorded_at < :cutoff"),
+                {"cutoff": cutoff},
+            )
         await db.commit()
         deleted = result.rowcount or 0
         if deleted:
@@ -313,5 +314,4 @@ async def prune_old_usage_events(db: Any, days: int = 90) -> int:
         return deleted
     except Exception as exc:
         logger.debug("UsageMeter: prune failed: %s", exc)
-        await _rollback(db)
         return 0
