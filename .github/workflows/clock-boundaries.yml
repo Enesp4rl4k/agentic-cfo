@@ -1,0 +1,77 @@
+name: Clock boundaries
+
+# The date-sensitive suites, run at adversarial instants (backend/app/core/clock.py, tests/conftest.py 1b).
+#
+# Every other run pins the whole test session to one documented instant (a Wednesday 10:00 UTC), so a test
+# can no longer pass on the 25th and fail on the 27th. That also means the suite on its own never visits a
+# boundary; this job does: each suite below runs with the clock started at a second before and after the UTC
+# midnight, the Turkish midnight (21:00 UTC), on the last day of a month (a Monday, before and after the 07:00
+# UTC briefing), on 29 February and on 31 December. A failure here is a real date bug (product or test):
+# fix it, do not drop the instant.
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  boundaries:
+    name: Clock boundary ${{ matrix.instant }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        instant:
+          - "2026-11-25T23:59:30Z"   # UTC midnight, before
+          - "2026-11-26T00:00:30Z"   # UTC midnight, after
+          - "2026-11-25T20:59:30Z"   # Turkish midnight (UTC+3), before
+          - "2026-11-25T21:00:30Z"   # Turkish midnight, after: the UTC date is still the 25th
+          - "2026-11-30T06:59:00Z"   # last day of the month, a Monday, before the 07:00 UTC briefing
+          - "2026-11-30T07:01:00Z"   # ... and after it
+          - "2028-02-29T12:00:00Z"   # leap day
+          - "2026-12-31T23:59:30Z"   # year end
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/constraints.txt
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt -c constraints.txt
+          pip install -c constraints.txt pytest-asyncio
+
+      - name: Date-sensitive suites at ${{ matrix.instant }}
+        working-directory: backend
+        env:
+          TEST_CLOCK_INSTANT: ${{ matrix.instant }}
+          USE_SQLITE: "true"
+          OPENAI_API_KEY: llm-placeholder-ci
+        # runway and coverage, radar weeks, briefing and its schedule, ledger periods, retention, erasure
+        # cooling-off, export expiry, token/invite/reset expiry, freshness, materiality, and the clock itself.
+        run: |
+          python -m pytest -q -rfE \
+            tests/test_clock.py tests/test_runway_coverage.py tests/test_agents/test_forecast_runway.py \
+            tests/test_runway_*.py tests/test_pull_coverage_account_life.py tests/test_materiality.py \
+            tests/test_cash_radar.py tests/test_radar_*.py tests/test_balance_age.py \
+            tests/test_duplicate_resolution_radar.py tests/test_payment_plan_changes.py tests/test_freshness_service.py \
+            tests/test_monday_*.py tests/test_briefing_*.py tests/test_schedule_catchup.py \
+            tests/test_ledger_period.py tests/test_period_lock.py \
+            tests/test_privacy_retention.py tests/test_privacy_export.py \
+            tests/test_erasure_flow.py tests/test_erasure_two_phase.py tests/test_erasure_race.py tests/test_org_erasure.py \
+            tests/test_email_verification.py tests/test_password_reset.py tests/test_invite_accept.py tests/test_invite_security.py

@@ -1,15 +1,24 @@
 /**
  * The documents the journey uploads, written so the facts a reader can check stay fixed:
- * amounts, counterparties and invoice numbers never change; only the dates move with the day
- * the test runs, so the bank balance is "recent" and the invoices fall due in the coming weeks.
+ * amounts, counterparties and invoice numbers never change; the dates are relative to the
+ * journey's SIMULATED day, so the bank balance is "recent" and the invoices fall due in the
+ * coming weeks — and every run sees the same dates.
+ *
+ * The journey runs on one simulated instant: the APIs (`start_backend.py` → APP_CLOCK_START), the
+ * probe (`probe.py`) and the browser (`page.clock`, pilot-flow.spec.ts) all start at E2E_NOW, which
+ * `playwright.config.ts` sets once (E2E_CLOCK_INSTANT). Not simulated: the Next.js server and the
+ * backend's token stamps (app/core/clock.py `wall_now`), which only compare times, never dates.
  */
 
 export const OPENING_BALANCE_TL = "116.500,00"; // the statement's closing balance, as the screen writes it
 
+/** The journey's "now". 10:00 UTC is 13:00 in Istanbul: the same calendar day for every reader. */
+export const E2E_NOW = new Date(process.env.E2E_CLOCK_INSTANT ?? "2026-11-25T10:00:00Z");
+
 const pad = (n: number) => String(n).padStart(2, "0");
 
 export function daysFromToday(offset: number): Date {
-  const d = new Date();
+  const d = new Date(E2E_NOW.getTime());
   d.setDate(d.getDate() + offset);
   return d;
 }
@@ -21,8 +30,7 @@ export const iso = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${p
 
 /** A day of a calendar month, `monthsBack` months before this one (day 1 is the first, never past today). */
 export function dayOfMonth(monthsBack: number, day: number): Date {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth() - monthsBack, day);
+  return new Date(E2E_NOW.getFullYear(), E2E_NOW.getMonth() - monthsBack, day);
 }
 
 /**

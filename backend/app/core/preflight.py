@@ -297,6 +297,23 @@ def _parser_memory_findings(settings: Settings, process: str | None) -> list[Fin
     return []
 
 
+def _clock_findings(settings: Settings, env: Mapping[str, str]) -> list[Finding]:
+    """APP_CLOCK_START (app/core/clock.py) moves "today" for the browser journey. Where companies' data is, a
+    simulated date would date radars, briefings, retention and erasure deadlines wrongly: refused."""
+    from app.core.clock import CLOCK_ENV, CLOCK_ENVS
+
+    if not (env.get(CLOCK_ENV) or "").strip():
+        return []
+    if is_production(settings, env):
+        return [_fatal("clock_override_in_production", (
+            f"{CLOCK_ENV} is set: the API would run on a simulated date. It is a test-only setting; unset it."))]
+    if app_env(env) not in CLOCK_ENVS:
+        return [_warn("clock_override_ignored", (
+            f"{CLOCK_ENV} is set but APP_ENV={app_env(env)!r}: it is honoured only under APP_ENV "
+            f"{' or '.join(sorted(CLOCK_ENVS))}, so the real clock is used."))]
+    return []
+
+
 def check_settings(settings: Settings, environ: Mapping[str, str] | None = None, process: str | None = None) -> list[Finding]:
     """Every finding for these settings. Pure: logs nothing, raises nothing."""
     env = os.environ if environ is None else environ
@@ -307,6 +324,7 @@ def check_settings(settings: Settings, environ: Mapping[str, str] | None = None,
         *_mail_findings(settings, env),
         *_degraded_findings(settings, env),
         *_parser_memory_findings(settings, process),
+        *_clock_findings(settings, env),
     ]
     if settings.use_sqlite and app_env(env) in _PRODUCTION_ENVS:
         findings.append(_fatal("sqlite_in_production", f"APP_ENV={app_env(env)} with USE_SQLITE=true: a development database must not hold company data."))
