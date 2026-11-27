@@ -12,13 +12,20 @@ needed for existing PostgreSQL deployments.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import DateTime, Index, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
+
+
+def _utcnow() -> datetime:
+    """Stamped by the application clock on insert (app/core/clock.py), so the row's time and the
+    `datetime.now()` the code compares it with are the same clock; the server default stays as the fallback
+    for rows written outside the ORM."""
+    return datetime.now(UTC)
 
 
 class ComplianceCertification(Base):
@@ -41,7 +48,7 @@ class ComplianceCertification(Base):
     statements: Mapped[str | None] = mapped_column(Text, nullable=True)
     signature_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     certified_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
+        DateTime(timezone=True), nullable=False, default=_utcnow, server_default=func.now()
     )
 
     def to_dict(self) -> dict[str, Any]:
@@ -76,7 +83,7 @@ class BreachNotification(Base):
     notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
+        DateTime(timezone=True), nullable=False, default=_utcnow, server_default=func.now()
     )
 
     def to_dict(self) -> dict[str, Any]:

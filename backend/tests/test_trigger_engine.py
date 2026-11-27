@@ -9,6 +9,7 @@ promises.
 from __future__ import annotations
 
 import json
+from datetime import timedelta
 from typing import Any
 
 import pytest_asyncio
@@ -16,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.core import clock
 from app.models.alert_rule import AlertHistory
 from app.models.analysis_job import AnalysisJob
 from app.models.outbox_message import OutboxMessage
@@ -185,6 +187,72 @@ async def test_zero_cooldown_allows_immediate_refire(db):
     assert second[0].status == FIRED
     assert len((await db.execute(select(AlertHistory))).scalars().all()) == 2
 
+
+
+# The cooldown compares the stamp of the last firing (written by the row's insert) with "now". Both must come
+# from the application clock: with a database-stamped created_at the real time stood next to the pinned time, the
+# difference was negative, and the cooldown looked active forever (these tests used to pass vacuously).
+T0 = clock.TEST_INSTANT
+
+
+async def _fire(db, ref: str) -> str:
+    out = await handle_event(
+        db, org_id=ORG, event_kind="job.completed", event_ref=ref, values={"finance.runway_months": 2.0}
+    )
+    return out[0].status
+
+
+async def test_the_firing_is_stamped_by_the_application_clock(db):
+    await _mk_trigger(db, cooldown_minutes=60)
+    clock.pin(T0, tick=False)
+    assert await _fire(db, "job-a") == FIRED
+    run = (await db.execute(select(TriggerRunRow))).scalars().one()
+    assert run.created_at.replace(tzinfo=None) == T0.replace(tzinfo=None)
+    alert = (await db.execute(select(AlertHistory))).scalars().one()
+    assert alert.created_at.replace(tzinfo=None) == T0.replace(tzinfo=None)
+
+
+async def test_cooldown_suppresses_inside_the_window(db):
+    await _mk_trigger(db, cooldown_minutes=60)
+    clock.pin(T0, tick=False)
+    assert await _fire(db, "job-a") == FIRED
+    clock.pin(T0 + timedelta(minutes=59, seconds=59), tick=False)
+    assert await _fire(db, "job-b") == COOLDOWN
+    clock.pin(T0 + timedelta(minutes=60) - timedelta(microseconds=1), tick=False)
+    assert await _fire(db, "job-c") == COOLDOWN
+
+
+async def test_cooldown_ends_exactly_at_the_window_edge(db):
+    await _mk_trigger(db, cooldown_minutes=60)
+    clock.pin(T0, tick=False)
+    assert await _fire(db, "job-a") == FIRED
+    clock.pin(T0 + timedelta(minutes=60), tick=False)  # elapsed == window: no longer cooling down
+    assert await _fire(db, "job-b") == FIRED
+
+
+async def test_trigger_refires_after_the_window_and_the_new_firing_restarts_it(db):
+    await _mk_trigger(db, cooldown_minutes=60)
+    clock.pin(T0, tick=False)
+    assert await _fire(db, "job-a") == FIRED
+    clock.pin(T0 + timedelta(hours=2), tick=False)
+    assert await _fire(db, "job-b") == FIRED
+    clock.pin(T0 + timedelta(hours=2, minutes=30), tick=False)  # inside the window of the SECOND firing
+    assert await _fire(db, "job-c") == COOLDOWN
+    assert len((await db.execute(select(AlertHistory))).scalars().all()) == 2
+
+
+async def test_cooldown_does_not_depend_on_the_real_date(db):
+    """The suite runs at fixed instants years from the real date; the cooldown must behave the same."""
+    await _mk_trigger(db, cooldown_minutes=60)
+    for start in (clock.parse_instant("2024-02-29T23:59:30Z"), clock.parse_instant("2031-01-01T00:00:30Z")):
+        await db.execute(TriggerRunRow.__table__.delete())
+        await db.commit()
+        clock.pin(start, tick=False)
+        assert await _fire(db, f"a-{start.year}") == FIRED
+        clock.pin(start + timedelta(minutes=30), tick=False)
+        assert await _fire(db, f"b-{start.year}") == COOLDOWN
+        clock.pin(start + timedelta(minutes=61), tick=False)
+        assert await _fire(db, f"c-{start.year}") == FIRED
 
 # ── condition misses ──────────────────────────────────────────────────────────
 
