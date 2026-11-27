@@ -7,6 +7,7 @@ cover it from its first day to its last, and the three months must be consecutiv
 """
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
 from app.services.coverage import (
@@ -88,6 +89,44 @@ class TestWhichMonthsAreComplete:
         # End edge: the last transaction 5 days before the month's last day is tolerated, 6 days is not.
         assert complete_months([{"start": "2026-02-01", "end": "2026-04-25"}], months) == full
         assert complete_months([{"start": "2026-02-01", "end": "2026-04-24"}], months)["2026-04"] is False
+
+    def test_the_end_tolerance_never_completes_a_month_that_has_not_ended(self) -> None:
+        # A statement ending on the 25th, read on the 27th: the 26th-30th have not happened, they are not quiet days.
+        extent = [{"start": "2026-09-01", "end": "2026-11-25"}]
+        months = ["2026-09", "2026-10", "2026-11"]
+        assert complete_months(extent, months, date(2026, 11, 27))["2026-11"] is False
+        assert complete_months(extent, months, date(2026, 11, 30))["2026-11"] is False  # the last day is not over
+        assert complete_months(extent, months, date(2026, 12, 1)) == dict.fromkeys(months, True)
+        assert assumed_edges(extent, "2026-11", date(2026, 11, 27)) == []
+        assert assumed_edges(extent, "2026-11", date(2026, 12, 1)) == [{"edge": "end", "days": 5}]
+        # Leap February and the year end: the same rule at both boundaries.
+        feb = [{"start": "2028-02-01", "end": "2028-02-24"}]
+        assert complete_months(feb, ["2028-02"], date(2028, 2, 29)) == {"2028-02": False}
+        assert complete_months(feb, ["2028-02"], date(2028, 3, 1)) == {"2028-02": True}
+        dec = [{"start": "2026-12-01", "end": "2026-12-27"}]
+        assert complete_months(dec, ["2026-12"], date(2026, 12, 31)) == {"2026-12": False}
+        assert complete_months(dec, ["2026-12"], date(2027, 1, 1)) == {"2026-12": True}
+        # A statement that reaches the month's last day is complete on that day already: nothing was assumed.
+        assert complete_months([{"start": "2026-11-01", "end": "2026-11-30"}], ["2026-11"], date(2026, 11, 30)) == {"2026-11": True}
+
+    def test_the_journeys_burn_does_not_change_in_the_last_days_of_the_month(self) -> None:
+        # The browser journey's ordinary quarter, its last row on 25 November (CI 2026-11-27 00:10 UTC): November
+        # (five days short) counted as whole before the month was over, and the burn read -13.833,33, not -5.333,33.
+        rows = [
+            _row("2026-08-02", 1_200_000), _row("2026-08-12", 5_000_000, "income"), _row("2026-09-02", 1_200_000),
+            _row("2026-09-20", 3_000_000), _row("2026-10-02", 1_200_000), _row("2026-11-25", 1_250_000, "income"),
+        ]
+        extents = [{"start": "2026-08-02", "end": "2026-11-25"}]
+        months: dict[str, dict[str, int]] = {}
+        for r in rows:
+            b = months.setdefault(r["transaction_date"][:7], {"in": 0, "out": 0})
+            b["in" if r["type"] == "income" else "out"] += r["amount_cents"]
+        base = [{"month": k, "in": v["in"], "out": v["out"], "net": v["in"] - v["out"]} for k, v in sorted(months.items())]
+        opening = {**OPENING, "balance_cents": 11_650_000, "as_of": "2026-11-25"}
+        for today in (date(2026, 11, 26), date(2026, 11, 27), date(2026, 11, 30)):
+            block = compute_runway(opening, {"monthly_series": annotate_series(base, rows, extents, today)}, "TRY")
+            assert [m["month"] for m in block["months"]] == ["2026-08", "2026-09", "2026-10"], today
+            assert block["avg_monthly_net_cents"] == -533_333 and block["runway_months"] == 21.8, today
 
     def test_a_stated_period_needs_no_tolerance_and_a_short_one_gets_none(self) -> None:
         months = ["2026-02", "2026-03"]
