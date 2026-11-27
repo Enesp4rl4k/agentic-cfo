@@ -102,3 +102,50 @@ class TestTheOverride:
             assert product_today == expect
         else:
             assert product_today == clock.wall_now().date().isoformat()
+
+
+class TestProductionIsInert:
+    """Where the override is not honoured nothing is installed: no import hook, the stdlib `datetime`, the real now()."""
+
+    PROBE = (
+        "import builtins, json, sys\n"
+        "before = builtins.__import__\n"
+        "import app, app.services.runway as r\n"
+        "import datetime as stdlib\n"
+        "from app.core import clock\n"
+        "wall = stdlib.datetime.now(stdlib.UTC)\n"
+        "mine = r.datetime.now(stdlib.UTC)\n"
+        "print(json.dumps({\n"
+        "  'import_untouched': builtins.__import__ is before,\n"
+        "  'import_is_builtin': type(builtins.__import__).__name__ == 'builtin_function_or_method',\n"
+        "  'datetime_module_real': sys.modules['datetime'] is stdlib and not hasattr(stdlib.datetime, '_real'),\n"
+        "  'product_class_real': r.datetime is stdlib.datetime and r.datetime.__module__ == 'datetime',\n"
+        "  'pinned': clock.is_pinned(),\n"
+        "  'now_is_real': abs((mine - wall).total_seconds()) < 60,\n"
+        "  'year': mine.year,\n"
+        "}))\n"
+    )
+
+    def _run(self, **env: str) -> dict:
+        child = {k: v for k, v in os.environ.items() if k not in ("APP_CLOCK_START", "APP_ENV", "TEST_CLOCK_INSTANT")}
+        child.update(env, PYTHONPATH=str(BACKEND))
+        out = subprocess.run([sys.executable, "-c", self.PROBE], cwd=BACKEND, env=child, capture_output=True, text=True, timeout=120)
+        assert out.returncode == 0, out.stderr[-2000:]
+        return json.loads(out.stdout.strip().splitlines()[-1])
+
+    @pytest.mark.parametrize("env", [None, "production", "Production", "prod", "staging", "demo", "development", "tset", "testing", ""])
+    def test_a_clock_start_outside_a_test_environment_changes_nothing(self, env: str | None) -> None:
+        got = self._run(APP_CLOCK_START="2001-01-01T00:00:00Z", **({} if env is None else {"APP_ENV": env}))
+        assert got == {
+            "import_untouched": True, "import_is_builtin": True, "datetime_module_real": True,
+            "product_class_real": True, "pinned": False, "now_is_real": True, "year": got["year"],
+        }
+        assert got["year"] >= 2026
+
+    def test_without_a_clock_start_a_test_environment_installs_nothing_either(self) -> None:
+        got = self._run(APP_ENV="test")
+        assert got["import_untouched"] and got["product_class_real"] and not got["pinned"] and got["now_is_real"]
+
+    def test_the_control_proves_the_probe_can_see_an_installed_clock(self) -> None:
+        got = self._run(APP_ENV="test", APP_CLOCK_START="2001-01-01T00:00:00Z")
+        assert not got["import_untouched"] and not got["product_class_real"] and got["pinned"] and got["year"] == 2001
