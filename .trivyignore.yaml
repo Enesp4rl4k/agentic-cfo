@@ -4,6 +4,13 @@
 # Anything NOT listed here fails the job, fixable or not. Reachability analysis: docs/ops/dependency-pinning.md.
 # Entries added 2026-11-27; expire 2027-02-25.
 vulnerabilities:
+  - id: CVE-2026-85394
+    statement: >-
+      python-jose 3.5.0, no fixed release. Algorithm confusion via a DER-encoded public key. HS256 only: the single
+      use is jwt.decode(token, secret, algorithms=["HS256"]) with a symmetric secret (app/services/auth.py), so no
+      asymmetric key is ever given to the library and the algorithm is never chosen by the token header.
+      Replacement of python-jose is a tracked follow-up.
+    expired_at: 2027-02-25
   - id: CVE-2024-33663
     statement: >-
       python-jose 3.5.0, no fixed release. Algorithm confusion with ECDSA/PEM public keys. HS256 only: the single

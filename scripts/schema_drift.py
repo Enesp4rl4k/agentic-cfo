@@ -78,10 +78,19 @@ def main() -> int:
     engine = sa.create_engine(url)
     with engine.connect() as conn:
         ctx = MigrationContext.configure(conn, opts={"compare_type": True})
-        # The langgraph checkpoint tables are created and migrated by the library at runtime, not by Alembic:
-        # they are in a database the app has started against and in no model. Not drift.
-        diffs = [d for d in _flatten(compare_metadata(ctx, Base.metadata))
-                 if not (d[0] == "remove_table" and d[1].name in LIBRARY_TABLES)]
+        # Tables created at runtime by code that owns its own DDL (the langgraph checkpoint tables and their
+        # indexes; the agent-memory table) are in a database the app or its tests have used and in no model.
+        # Not drift: they are not Alembic's.
+        runtime_tables = {*LIBRARY_TABLES, "agent_memory_episodes"}
+
+        def runtime_owned(d) -> bool:
+            if d[0] == "remove_table":
+                return d[1].name in runtime_tables
+            if d[0] == "remove_index":
+                return d[1].table.name in runtime_tables
+            return False
+
+        diffs = [d for d in _flatten(compare_metadata(ctx, Base.metadata)) if not runtime_owned(d)]
 
     found = sorted({_describe(d) for d in diffs})
     fatal = [f for f in found if f.split(" ", 1)[0] in NEVER_BASELINED]
