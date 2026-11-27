@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import functools
 import logging
+import os
 import sys
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
@@ -32,6 +33,16 @@ from app.config import get_settings
 from app.core.preflight import enforce_or_exit
 
 logger = logging.getLogger(__name__)
+
+# The same logging as the API (app/main.py): JSON on stdout, the redaction filter, LOG_LEVEL. The arq command only
+# configures its own loggers, so without this the worker's application lines (INFO: "CFO Scheduler started", outbox and
+# job results) never reached the container log, and `dc logs worker | grep -i scheduler` (runbook) found nothing.
+from app.services.telemetry import initialize_telemetry
+
+initialize_telemetry(
+    log_level=os.environ.get("LOG_LEVEL", "INFO"),
+    json_logs=os.environ.get("LOG_FORMAT", "json").lower() == "json",
+)
 
 # The worker runs the scheduler and sends the mail: it gets the same production preflight as the API. A
 # fatal finding (placeholder secret, no APP_ENV on Postgres, mail required but no sender) stops it here.
@@ -1154,10 +1165,9 @@ class WorkerSettings:
     # read; arq's default of 3600 s would report a dead worker for an hour.
     health_check_interval = 30
 
-    @classmethod
-    def redis_settings(cls) -> RedisSettings:
-        settings = get_settings()
-        return RedisSettings.from_dsn(settings.redis_url)
+    # A plain attribute: arq reads the settings class's `__dict__`, so a classmethod here is handed over as the raw
+    # descriptor and `create_pool` fails with "'classmethod' object has no attribute 'host'" (the worker never started).
+    redis_settings = RedisSettings.from_dsn(get_settings().redis_url)
 
 
 from app.services.privacy.jobs import run_data_export  # KVKK company export
@@ -1180,7 +1190,6 @@ class MaintenanceWorkerSettings:
     job_completion_wait = 300       # docker-compose.prod.yml stop_grace_period stays above this
     health_check_interval = 30      # see WorkerSettings
 
-    @classmethod
-    def redis_settings(cls) -> RedisSettings:
-        settings = get_settings()
-        return RedisSettings.from_dsn(settings.redis_url)
+    # A plain attribute: arq reads the settings class's `__dict__`, so a classmethod here is handed over as the raw
+    # descriptor and `create_pool` fails with "'classmethod' object has no attribute 'host'" (the worker never started).
+    redis_settings = RedisSettings.from_dsn(get_settings().redis_url)

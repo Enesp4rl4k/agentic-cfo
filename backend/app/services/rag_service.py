@@ -120,12 +120,9 @@ def _vector_literal(values: list[float]) -> str:
 
 def _has_embedding_support() -> bool:
     settings = get_settings()
-    key = (settings.openai_api_key or "").strip()
-    return (
-        settings.rag_embedding_enabled
-        and bool(key)
-        and not key.startswith("llm-placeholder-")
-    )
+    from app.core.llm_key import is_placeholder_key
+
+    return settings.rag_embedding_enabled and not is_placeholder_key(settings.openai_api_key)
 
 
 def _embed_texts(texts: list[str]) -> list[list[float]] | None:

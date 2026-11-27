@@ -1,0 +1,13 @@
+# CI ONLY (.github/workflows/stack.yml). Never part of a deployment.
+#
+#   COMPOSE_FILE=docker-compose.prod.yml:docker-compose.ci.yml docker compose up -d
+#
+# Every service of docker-compose.prod.yml is used exactly as it is: the same images, limits, health checks, networks
+# and preflight. This file changes the one thing that cannot work on a CI runner: certificates. Caddy asks Let's
+# Encrypt for the two public hostnames, and a made-up hostname (`app.ci.internal`) can never get one. With
+# `local_certs` (via the CADDY_EXTRA_GLOBAL hook in deploy/Caddyfile) Caddy signs them with its own internal CA, which
+# the job then trusts. Nothing here touches the application's configuration or the preflight.
+services:
+  caddy:
+    environment:
+      CADDY_EXTRA_GLOBAL: local_certs

@@ -15,11 +15,7 @@ git fetch origin && git checkout <sha veya origin/master>
 PREV=$(grep '^IMAGE_TAG=' .env | cut -d= -f2)      # geri alma için not edin
 NEW=$(git rev-parse --short HEAD)
 ./scripts/backup.sh                                 # deploy öncesi yedek — atlamayın
-sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=$NEW/" .env
-dc build
-dc run --rm migrate alembic upgrade head            # hata verirse eski konteynerler çalışmaya devam eder
-dc run --rm migrate python -m app.core.preflight --db   # "PREFLIGHT ok (production)"
-dc up -d                                            # migrate → backend → worker'lar → frontend → caddy
+./scripts/up-prod.sh                                 # IMAGE_TAG=$(git rev-parse --short HEAD) → build → migrate (alembic + preflight --db) → up -d → waits for healthy; logs of every service on failure
 dc ps                                               # migrate "exited (0)", diğerleri healthy
 ./scripts/smoke-test.sh --api https://<API_DOMAIN> --app https://<APP_DOMAIN> --expect-commit "$NEW"
 curl -fsS https://<API_DOMAIN>/api/v1/ready         # "status": "ready" (ilk 5 dk "degraded" olabilir)
