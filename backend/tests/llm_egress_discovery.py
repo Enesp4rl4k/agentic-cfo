@@ -13,7 +13,7 @@ APP = Path(__file__).resolve().parent.parent / "app"
 
 # Names that send: the gateway's public entry points, the router, the structured-output helpers, the embedding path.
 SENDERS = frozenset({
-    "complete_text", "complete", "stream", "_gw_stream", "_raw_chat", "embed_texts", "_embed_texts",
+    "complete_text", "complete", "complete_json", "stream", "_gw_stream", "_raw_chat", "embed_texts", "_embed_texts",
     "structured_llm", "get_llm_router",
 })
 # Modules that ARE the choke point (they implement the senders): not call sites.

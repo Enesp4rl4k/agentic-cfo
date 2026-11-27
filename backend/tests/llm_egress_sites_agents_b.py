@@ -125,7 +125,7 @@ async def _velocity_narrative(env: SiteEnv) -> None:
 def _ingestion_reply(texts: list[str]) -> str:
     """A model that echoes the vendor it was shown: a placeholder in masked mode, the real name in raw."""
     joined = "\n".join(texts)
-    hit = re.search(r"\[[A-Z_]+_[0-9a-z]+\]", joined)
+    hit = re.search(r"\[\[[A-Z]+_[A-Z0-9]{3}_\d+[a-z]?\]\]", joined)
     vendor = hit.group(0) if hit else CANARY.counterparty
     return json.dumps([{"date": "15.03.2026", "amount": 1500.0, "type": "expense", "description": f"FAST {vendor}",
                         "vendor": vendor, "confidence": 0.9}], ensure_ascii=False)

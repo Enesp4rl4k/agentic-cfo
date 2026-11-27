@@ -1,5 +1,5 @@
 """Canary drivers (services, part C): scheduler brief, THP classifier, structured helpers, boardroom, retriever,
-reasoning loop, the two streaming API sites and the RAG backfill worker.
+reasoning loop and the two streaming API sites.
 
 Each driver runs the REAL product function with canary-bearing input. Where a function swallows its own errors and
 answers from a template, the input is built so the call still reaches the gateway (the matrix demands >= 1 call).
@@ -240,30 +240,6 @@ async def _ws_stream(env: SiteEnv) -> None:
         pass
 
 
-# ── worker.py ────────────────────────────────────────────────────────────────
-
-async def _rag_backfill(env: SiteEnv) -> None:
-    from sqlalchemy import null
-
-    import app.database as database
-    from app.models.rag_chunk import RagChunk
-    from app.worker import run_rag_backfill_maintenance
-
-    async with env.maker() as db:  # a text-only chunk (no vector) from the last days: phase 2 re-embeds it
-        db.add(RagChunk(org_id=env.org_id, job_id=None, source_type="upload", chunk_index=0,
-                        chunk_text=_chunk_text(env), embedding=null()))  # SQL NULL, not JSON 'null'
-        await db.commit()
-
-    saved = (database.engine, database.get_session_factory)
-    # The worker opens `get_session_factory(engine())()`: point it at the test database, nothing else changes.
-    database.engine = lambda: None  # type: ignore[assignment]
-    database.get_session_factory = lambda eng=None: env.maker  # type: ignore[assignment]
-    try:
-        await run_rag_backfill_maintenance({})
-    finally:
-        database.engine, database.get_session_factory = saved
-
-
 SITES: dict[str, Site] = {
     "scheduler.py::_generate_morning_brief_for_org": Site(
         _morning_brief, carries=False,
@@ -287,7 +263,6 @@ SITES: dict[str, Site] = {
     "api/ws_stream.py::_stream_llm_tokens": Site(
         _ws_stream, off_raises=True,
         note="the helper re-raises; the websocket handler turns it into an error frame for the client"),
-    "worker.py::run_rag_backfill_maintenance": Site(_rag_backfill),
 }
 
 ALIASED: dict[str, str] = {

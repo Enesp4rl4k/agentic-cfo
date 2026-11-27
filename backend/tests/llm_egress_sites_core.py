@@ -32,9 +32,28 @@ async def _embed_texts(env: SiteEnv) -> None:
     await embed([DESCRIPTION], org_id=env.org_id)
 
 
+async def _reindex(env: SiteEnv) -> None:
+    """The maintenance job's re-index step (worker.run_rag_backfill_maintenance calls it): a chunk embedded
+    with another model / before masking is re-embedded under the company's current mode, through the gateway."""
+    from sqlalchemy import select
+
+    from app.models.rag_chunk import RagChunk
+    from app.services.rag_reindex import reindex_batch
+
+    async with env.maker() as db:
+        db.add(RagChunk(org_id=env.org_id, job_id=None, source_type="upload", chunk_index=0,
+                        chunk_text=f"{DESCRIPTION} {CANARY.vendor} {CANARY.vkn}", embedding_model="an-older-model",
+                        embedding=[0.1, 0.2, 0.3]))
+        await db.commit()
+        done = await reindex_batch(db)
+        tags = (await db.execute(select(RagChunk.embedding_model))).scalars().all()
+        assert done in (0, 1) and tags  # 0 in `off`: nothing is re-embedded
+
+
 SITES: dict[str, Site] = {
     "services/llm_router.py::LLMTaskRouter._call_llm": Site(_router),
     "services/rag_service.py::index_job_text": Site(_index_job_text),
     "services/rag_service.py::_embed_texts": Site(_embed_texts),
+    "services/rag_reindex.py::reindex_batch": Site(_reindex),
 }
 ALIASED: dict[str, str] = {}

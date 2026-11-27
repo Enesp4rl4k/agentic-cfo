@@ -50,15 +50,28 @@ CANARY = SimpleNamespace(
     person="Selin Aksoy",
     accountant="Murat Demirtaş",
 )
+CANARY.email_idn = "muhasebe@ışıkgıda.com.tr"
+CANARY.surname, CANARY.first_name = "Aksoy", "Selin"
 # What must never appear in a masked payload (compared case- and diacritic-insensitively, spaces collapsed).
 LEAK_VALUES = (
-    CANARY.iban, CANARY.iban_spaced, CANARY.tckn, CANARY.vkn, CANARY.pan, CANARY.phone, CANARY.email,
-    CANARY.company_short, CANARY.counterparty_short, CANARY.vendor_short, CANARY.person, CANARY.accountant,
+    CANARY.iban, CANARY.iban_spaced, CANARY.iban[2:], CANARY.tckn, CANARY.vkn, CANARY.pan, CANARY.phone, CANARY.email,
+    CANARY.email_idn, CANARY.company_short, CANARY.counterparty_short, CANARY.vendor_short, CANARY.person,
+    CANARY.accountant, CANARY.surname, CANARY.first_name,
+)
+# Every spelling the review found leaking: a suffix with no apostrophe, a line break or extra spaces inside a
+# name, upper case, a surname or first name alone, an IBAN with dashes / a line break / lower case / no "TR"
+# (labelled), an e-mail with a non-ASCII domain.
+VARIANTS = (
+    f"{CANARY.counterparty_short}ye fatura; KANARYA\n YAPI   MALZEMELERİ ödemesi; {CANARY.vendor_short}ın faturası, "
+    f"MENEKŞE   TEKSTİLİN payı; {CANARY.surname}'un ve {CANARY.surname}un onayı, dün {CANARY.first_name} aradı; "
+    f"Murat\nDemirtaş notu; IBAN: {' '.join(CANARY.iban[2:][i:i + 4] for i in range(0, 24, 4))}; "
+    f"iban {CANARY.iban.lower()}; IBAN {'-'.join(CANARY.iban[i:i + 4] for i in range(0, 26, 4))}; "
+    f"{CANARY.iban[:12]}\n{CANARY.iban[12:]}; {CANARY.email_idn}; Tel: 0532-987-65-43"
 )
 # A free-text description that carries identifiers and names: what a bank statement line really looks like.
 DESCRIPTION = (
     f"FAST {CANARY.counterparty} IBAN {CANARY.iban_spaced} fatura ödemesi; ilgili {CANARY.person}, "
-    f"tel {CANARY.phone}, {CANARY.email}"
+    f"tel {CANARY.phone}, {CANARY.email}. {VARIANTS}"
 )
 
 
@@ -97,6 +110,7 @@ class Recorder:
     sent: list[Sent] = field(default_factory=list)
     reply: str | Callable[[list[str]], str] = "Kısa bir özet: veriler tutarlı görünüyor."
     structured: Callable[[type], Any] | None = None
+    method: str | None = None  # how the gateway asked for structured output
 
     def text(self) -> str:
         return "\n".join(t for s in self.sent for t in s.texts)
@@ -135,7 +149,8 @@ class FakeChat:
         for i in range(0, len(answer), 7):  # small chunks: a placeholder is often split across two
             yield _Msg(answer[i:i + 7])
 
-    def with_structured_output(self, schema: type) -> FakeChat:
+    def with_structured_output(self, schema: type, **kwargs: Any) -> FakeChat:
+        self.rec.method = kwargs.get("method")  # the gateway asks for "function_calling" (the wire format)
         self._schema = schema
         return self
 
@@ -177,7 +192,7 @@ async def seed_company(maker) -> str:
         db.add(org)
         await db.flush()
         owner = User(email="sahip@menekse.example", hashed_password="x", full_name=CANARY.person, org_id=org.id,
-                     role="owner")
+                     role="owner", email_verified_at=datetime.now(UTC))
         smmm = User(email="mm@menekse.example", hashed_password="x", full_name=CANARY.accountant, role="smmm")
         db.add_all([owner, smmm])
         await db.flush()
@@ -237,14 +252,15 @@ def dumps(value: Any) -> str:
 
 @asynccontextmanager
 async def open_world(monkeypatch, rec: Recorder | None = None, *, mode: str = "masked",
-                     document_text: str = "allow") -> AsyncIterator[SiteEnv]:
-    """A seeded company on a throwaway database, the recorder behind the gateways, the tenant context set.
+                     document_text: str = "allow", tenant: bool = False) -> AsyncIterator[SiteEnv]:
+    """A seeded company on a throwaway database, the recorder behind the gateways.
 
-    Use it INSIDE the test body (`async with open_world(monkeypatch) as env:`): the tenant context is a contextvar
-    and only reaches the code of the task that sets it."""
+    The tenant context is NOT set (tenant=False, the default): the code under test must get it the way the
+    app does (`tests/llm_egress_entries.py` runs each site through its real entry point). tenant=True is for
+    unit tests of the gateway itself. Use it INSIDE the test body: the context is a contextvar."""
     from app import database
     from app.core.tenancy import set_current_tenant
-    from app.platform.llm_egress import dictionary, policy
+    from app.platform.llm_egress import dictionary, policy, refusals
     from tests.db_helpers import gecici_veritabani
 
     rec = rec or Recorder()
@@ -252,12 +268,16 @@ async def open_world(monkeypatch, rec: Recorder | None = None, *, mode: str = "m
         monkeypatch.setattr(database, "session_factory", lambda: maker)
         policy._CHOICES.clear()
         dictionary.forget()
+        refusals.reset()
+        set_current_tenant(None)
         org_id = await seed_company(maker)
         install(monkeypatch, rec, mode=mode, document_text=document_text)
-        set_current_tenant(org_id)
+        if tenant:
+            set_current_tenant(org_id)
         try:
             yield SiteEnv(org_id=org_id, rec=rec, maker=maker)
         finally:
             set_current_tenant(None)
             policy._CHOICES.clear()
             dictionary.forget()
+            refusals.reset()
