@@ -17,7 +17,7 @@ A month inside the coverage with no rows is a real zero month; one outside it is
 from __future__ import annotations
 
 import calendar
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Any
 
 from app.services.bank_balance import assess, statement_extent
@@ -58,7 +58,16 @@ EDGE_TOLERANCE_DAYS = 5
 
 An ASSUMPTION, always disclosed: an export that starts on the 3rd or ends on the 29th usually just
 has no transaction on the weekend or holiday days around the edge. Used only where the file states
-no period; a stated period or a chain of statements is proof and needs no tolerance."""
+no period; a stated period or a chain of statements is proof and needs no tolerance.
+
+Quiet days must be days that have HAPPENED: a month that has not ended yet (its last day is today
+or later, on the UTC calendar the runway and radar date their "today" by) is never completed by the
+end tolerance. Before this, a statement ending on the 25th uploaded on the 27th counted the current
+month whole and its burn read five days of income-or-nothing as a full month."""
+
+
+def _today(today: date | None) -> date:
+    return today or datetime.now(UTC).date()
 
 
 def apply_period(
@@ -151,7 +160,7 @@ def _groups(extents: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
-def _judge(group: dict[str, Any], month: str) -> tuple[bool, list[dict[str, Any]]]:
+def _judge(group: dict[str, Any], month: str, today: date) -> tuple[bool, list[dict[str, Any]]]:
     """(is the month complete for this account, the edges that rely on the tolerance)."""
     first, last = month_bounds(month)
     start, end = group["start"], group["end"]
@@ -165,40 +174,44 @@ def _judge(group: dict[str, Any], month: str) -> tuple[bool, list[dict[str, Any]
         assumed.append({"edge": "start", "days": missing})
     if end < last:
         missing = (last - end).days
-        if group["end_proven"] or missing > EDGE_TOLERANCE_DAYS:
+        # The missing days are quiet days only once they are past: an unfinished month is not complete.
+        if group["end_proven"] or missing > EDGE_TOLERANCE_DAYS or last >= today:
             return False, []
         assumed.append({"edge": "end", "days": missing})
     return True, assumed
 
 
-def complete_months(extents: list[dict[str, Any]], months: list[str]) -> dict[str, bool] | None:
+def complete_months(
+    extents: list[dict[str, Any]], months: list[str], today: date | None = None
+) -> dict[str, bool] | None:
     """{month: covered by every account}; None with no extent at all.
 
     Covered means from the first day to the last, or, at an edge the file does not prove, within
-    `EDGE_TOLERANCE_DAYS` of it (`assumed_edges` says where that was assumed).
+    `EDGE_TOLERANCE_DAYS` of it (`assumed_edges` says where that was assumed) once that month has
+    ended (`today`: the analysis date, by default today's UTC date).
     """
     if not extents:
         return None
-    groups = _groups(extents)
-    return {m: all(_judge(g, m)[0] for g in groups) for m in months}
+    groups, day = _groups(extents), _today(today)
+    return {m: all(_judge(g, m, day)[0] for g in groups) for m in months}
 
 
-def assumed_edges(extents: list[dict[str, Any]], month: str) -> list[dict[str, Any]]:
+def assumed_edges(extents: list[dict[str, Any]], month: str, today: date | None = None) -> list[dict[str, Any]]:
     """The edges of a complete month that rest on the tolerance, not on proof."""
     out: list[dict[str, Any]] = []
     for g in _groups(extents):
-        out.extend(_judge(g, month)[1])
+        out.extend(_judge(g, month, _today(today))[1])
     return out
 
 
-def short_accounts(extents: list[dict[str, Any]], month: str) -> list[dict[str, Any]]:
+def short_accounts(extents: list[dict[str, Any]], month: str, today: date | None = None) -> list[dict[str, Any]]:
     """The accounts (statements) that do not cover `month`, when there is more than one account."""
     groups = _groups(extents)
     if len(groups) < 2:
         return []
     return [
         {"name": g["name"], "start": g["start"].isoformat(), "end": g["end"].isoformat()}
-        for g in groups if not _judge(g, month)[0]
+        for g in groups if not _judge(g, month, _today(today))[0]
     ]
 
 
@@ -270,7 +283,8 @@ def truncation_note(extents: list[dict[str, Any]], month: str) -> str | None:
 
 
 def annotate_series(
-    series: list[dict[str, Any]], rows: list[dict[str, Any]], extents: list[dict[str, Any]]
+    series: list[dict[str, Any]], rows: list[dict[str, Any]], extents: list[dict[str, Any]],
+    today: date | None = None,
 ) -> list[dict[str, Any]]:
     """The monthly series with what it covers, per month.
 
@@ -302,7 +316,8 @@ def annotate_series(
     have = {m["month"]: m for m in series}
     mismatches = [x for e in extents for x in e.get("mismatch") or []]
     span = month_range(series[0]["month"], series[-1]["month"])
-    flags = complete_months(extents, span)
+    today = _today(today)  # one instant for the whole series
+    flags = complete_months(extents, span, today)
     out: list[dict[str, Any]] = []
     for month in span:
         if month in have:
@@ -316,10 +331,10 @@ def annotate_series(
             entry["covered"] = covered_days(month, extents)
             if note := truncation_note(extents, month):
                 entry["pull_truncated"] = note
-            if short_accounts(extents, month):
-                entry["short"] = short_accounts(extents, month)
-        elif entry["complete"] and assumed_edges(extents, month):
-            entry["assumed"] = assumed_edges(extents, month)
+            if short_accounts(extents, month, today):
+                entry["short"] = short_accounts(extents, month, today)
+        elif entry["complete"] and assumed_edges(extents, month, today):
+            entry["assumed"] = assumed_edges(extents, month, today)
         found = [x for x in mismatches if str(x["actual"])[:7] == month]
         if found:
             entry["header_mismatch"] = found
