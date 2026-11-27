@@ -16,7 +16,7 @@ function isProtected(pathname: string): boolean {
 }
 
 describe("auth middleware: public routes", () => {
-  it.each(["/", "/pricing", "/auth/login", "/auth/register", "/api/auth/session"])("leaves %s public", (path) => {
+  it.each(["/", "/pricing", "/auth/login", "/auth/register", "/api/auth/session", "/api/health"])("leaves %s public", (path) => {
     expect(isProtected(path)).toBe(false);
   });
 

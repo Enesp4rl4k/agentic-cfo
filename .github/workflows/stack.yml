@@ -1,0 +1,128 @@
+name: Production stack
+
+# Brings up the REAL production compose stack (docker-compose.prod.yml) on a clean GitHub-hosted runner with the
+# documented configuration and does the essential things an operator does. Until this job existed nothing had ever
+# started that file end to end.
+#
+# No registry login, no image push, no deploy, no secret: every value is generated inside the job. The steps are
+# scripts/up-prod.sh (what docs/ops/staging.md tells the operator to run) and scripts/stack-ci.sh (one phase per step).
+
+on:
+  pull_request:
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - "docker-compose*.yml"
+      - "**/Dockerfile"
+      - "deploy/**"
+      - "scripts/**"
+      - ".env.example"
+      - "docs/ops/first-deploy-checklist.md"
+      - "docs/ops/configuration.md"
+      - ".github/workflows/stack.yml"
+  push:
+    branches: [master]
+
+concurrency:
+  group: stack-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  stack:
+    name: Production stack (compose) — up, preflight, smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      BUILDKIT_PROGRESS: plain
+      COMPOSE_PROGRESS: plain
+      # The production file plus the one CI-only override (Caddy's internal CA instead of Let's Encrypt).
+      COMPOSE_FILE: docker-compose.prod.yml:docker-compose.ci.yml
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Tools the operator also needs (age, rclone)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq age rclone jq
+          docker compose version
+          age --version
+          rclone --version | head -n1
+
+      - name: "Operator step: .env from .env.example (production mode, throw-away values)"
+        run: ./scripts/stack-ci.sh env
+
+      - name: "Operator step: scripts/up-prod.sh (build, migrate, up, wait for health)"
+        id: up
+        run: |
+          started=$(date +%s)
+          ./scripts/up-prod.sh
+          echo "up-prod took $(( $(date +%s) - started )) s" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: TLS through Caddy (its internal CA, trusted on the runner)
+        if: ${{ !cancelled() && steps.up.outcome == 'success' }}
+        run: ./scripts/stack-ci.sh tls
+
+      - name: Production Caddyfile validates (CADDY_EXTRA_GLOBAL unset)
+        run: ./scripts/stack-ci.sh caddyfile
+
+      - name: migrate exited 0, Alembic at head
+        if: ${{ !cancelled() && steps.up.outcome == 'success' }}
+        run: ./scripts/stack-ci.sh migrations
+
+      - name: Production preflight passes; fails when a required setting is removed
+        if: ${{ !cancelled() && steps.up.outcome == 'success' }}
+        run: ./scripts/stack-ci.sh preflight
+
+      - name: /ready, /version and the frontend through Caddy
+        if: ${{ !cancelled() && steps.up.outcome == 'success' }}
+        run: ./scripts/stack-ci.sh edge
+
+      - name: Memory limits applied
+        if: ${{ !cancelled() && steps.up.outcome == 'success' }}
+        run: ./scripts/stack-ci.sh memory
+
+      - name: Parser child under the container limit (text PDF and OCR, Turkish model)
+        if: ${{ !cancelled() && steps.up.outcome == 'success' }}
+        run: ./scripts/stack-ci.sh parser
+
+      - name: Workers and scheduler are running and connected
+        if: ${{ !cancelled() && steps.up.outcome == 'success' }}
+        run: ./scripts/stack-ci.sh workers
+
+      - name: scripts/smoke-test.sh against the stack
+        if: ${{ !cancelled() && steps.up.outcome == 'success' }}
+        run: ./scripts/stack-ci.sh smoke
+
+      - name: "Pilot onboarding: invite, register, no-SMTP behaviour"
+        if: ${{ !cancelled() && steps.up.outcome == 'success' }}
+        run: ./scripts/stack-ci.sh onboarding
+
+      - name: scripts/backup.sh (age-encrypted, local rclone target)
+        if: ${{ !cancelled() && steps.up.outcome == 'success' }}
+        run: ./scripts/stack-ci.sh backup
+
+      - name: scripts/restore-drill.sh restores that archive; the pilot company is in it
+        if: ${{ !cancelled() && steps.up.outcome == 'success' }}
+        run: ./scripts/stack-ci.sh restore
+
+      - name: The scheduler writes its heartbeat again
+        if: ${{ !cancelled() && steps.up.outcome == 'success' }}
+        run: ./scripts/stack-ci.sh scheduler
+
+      - name: Logs of every service (on failure)
+        if: ${{ failure() }}
+        run: |
+          docker compose ps -a || true
+          for svc in $(docker compose config --services); do
+            echo "::group::logs $svc"
+            docker compose logs --no-color --tail=300 "$svc" || true
+            echo "::endgroup::"
+          done
+
+      - name: docker compose down -v
+        if: ${{ always() }}
+        run: docker compose down -v --remove-orphans || true

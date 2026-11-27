@@ -6,6 +6,9 @@
 # both names points at this server and ports 80/443 are reachable.
 {
 	email {$ACME_EMAIL}
+	# Empty in production. docker-compose.ci.yml sets it to `local_certs` so CI (which cannot reach Let's Encrypt for
+	# a made-up hostname) gets certificates from Caddy's own internal CA.
+	{$CADDY_EXTRA_GLOBAL}
 	servers {
 		timeouts {
 			# Slow-client limits at the edge. read_body bounds one upload (12 MB
