@@ -454,10 +454,12 @@ def build_cfo_graph() -> StateGraph:
 # Compiled graph — reused across requests (thread-safe)
 # Checkpointer enables resume of interrupted runs via thread_id=job_id.
 def _compile_cfo_graph():
-    from app.agents.checkpointer import get_checkpointer
+    from app.agents.checkpointer import CheckpointerUnavailable, get_checkpointer
 
     try:
         return build_cfo_graph().compile(checkpointer=get_checkpointer())
+    except CheckpointerUnavailable:
+        raise  # production: no silent per-process fallback (checkpointer.py)
     except Exception as exc:
         logger.warning("CFO graph checkpointer disabled (%s) — compiling without", exc)
         return build_cfo_graph().compile()
@@ -541,7 +543,7 @@ async def run_cfo_pipeline(
 
     result: CFOState = await cfo_graph.ainvoke(
         initial_state,
-        config=checkpoint_config(job_id, run_config=cfg),
+        config=checkpoint_config(job_id, org_id=org_id, run_config=cfg),
     )
 
     logger.info(

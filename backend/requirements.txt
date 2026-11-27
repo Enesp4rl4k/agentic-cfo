@@ -21,6 +21,11 @@ stripe==10.5.0
 # SqliteSaver moved out of langgraph into its own package (checkpointer.py uses it).
 langgraph==1.2.24
 langgraph-checkpoint-sqlite==3.1.3
+# The Postgres checkpointer (production resolves to it). psycopg 3 + its pool are what it needs; the app's own
+# database drivers stay asyncpg / psycopg2.
+langgraph-checkpoint-postgres==3.2.1
+psycopg[binary]==3.3.9
+psycopg-pool==3.3.3
 langchain-openai==1.1.9
 langchain-core==1.4.9
 langsmith==0.9.8

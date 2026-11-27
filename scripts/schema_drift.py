@@ -70,6 +70,7 @@ def main() -> int:
     from alembic.migration import MigrationContext
 
     import app.models  # noqa: F401 — register every model
+    from app.agents.checkpointer import LIBRARY_TABLES
     from app.config import get_settings
     from app.database import Base
 
@@ -77,7 +78,10 @@ def main() -> int:
     engine = sa.create_engine(url)
     with engine.connect() as conn:
         ctx = MigrationContext.configure(conn, opts={"compare_type": True})
-        diffs = list(_flatten(compare_metadata(ctx, Base.metadata)))
+        # The langgraph checkpoint tables are created and migrated by the library at runtime, not by Alembic:
+        # they are in a database the app has started against and in no model. Not drift.
+        diffs = [d for d in _flatten(compare_metadata(ctx, Base.metadata))
+                 if not (d[0] == "remove_table" and d[1].name in LIBRARY_TABLES)]
 
     found = sorted({_describe(d) for d in diffs})
     fatal = [f for f in found if f.split(" ", 1)[0] in NEVER_BASELINED]

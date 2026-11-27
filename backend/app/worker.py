@@ -1131,10 +1131,20 @@ async def get_ceo_job_status(job_id: str) -> dict[str, Any]:
 
 # ── ARQ Worker settings ────────────────────────────────────────────────────────
 
+async def _verify_checkpointer(ctx: dict[str, Any]) -> None:
+    """Production: a durable checkpointer that cannot be built stops this worker (no per-process fallback)."""
+    import asyncio
+
+    from app.agents.checkpointer import verify_checkpointer
+
+    await asyncio.to_thread(verify_checkpointer)
+
+
 async def _start_crons(ctx: dict[str, Any]) -> None:
     """Run APScheduler here when SCHEDULER_PROCESS=worker (staging/prod)."""
     from app.scheduler import start_scheduler
 
+    await _verify_checkpointer(ctx)
     start_scheduler("worker")
 
 
@@ -1189,6 +1199,7 @@ class MaintenanceWorkerSettings:
     max_tries = 2
     job_completion_wait = 300       # docker-compose.prod.yml stop_grace_period stays above this
     health_check_interval = 30      # see WorkerSettings
+    on_startup = _verify_checkpointer
 
     # A plain attribute: arq reads the settings class's `__dict__`, so a classmethod here is handed over as the raw
     # descriptor and `create_pool` fails with "'classmethod' object has no attribute 'host'" (the worker never started).

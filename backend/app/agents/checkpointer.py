@@ -16,7 +16,18 @@ Before this file was fixed, all three branches of `get_checkpointer` called
 the "durable" claim in the run ledger was false. The failure mode was silent,
 which is worse than slow.
 
-Thread id convention: AnalysisJob.id (passed as configurable.thread_id).
+Thread id convention: `<org_id>:<AnalysisJob.id>` (`thread_key`), passed as configurable.thread_id. The
+organisation prefix is what keeps one tenant from ever loading another's checkpoint (job ids are UUIDs, but
+isolation does not rest on that) and what organisation erasure and retention select on.
+
+Production never falls back: LANGGRAPH_CHECKPOINT=postgres (or sqlite) that cannot be built raises
+`CheckpointerUnavailable` there, and startup stops (`verify_checkpointer`, called by the API lifespan and the
+workers). Development and tests fall back to memory with a DURABILITY LOST warning.
+
+Tables (Postgres): `checkpoints`, `checkpoint_blobs`, `checkpoint_writes` and `checkpoint_migrations` belong to the
+langgraph library, not to Alembic. `_postgres_saver` creates them (idempotent `setup()` under an advisory lock, so
+two processes starting together do not race). They hold agent state, which can contain company data: see
+`erase_org_checkpoints` and `purge_old_checkpoints`.
 """
 from __future__ import annotations
 
@@ -31,6 +42,31 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _CHECKPOINTER: Any | None = None
+_STATUS: dict[str, Any] = {"backend": None, "durable": None, "error": None}
+
+# Created and migrated by the langgraph library, not by Alembic: the schema-drift check ignores them.
+CHECKPOINT_DATA_TABLES = ("checkpoints", "checkpoint_blobs", "checkpoint_writes")
+LIBRARY_TABLES = (*CHECKPOINT_DATA_TABLES, "checkpoint_migrations")
+_SETUP_LOCK_KEY = 7_302_411_901  # pg_advisory_lock key: one process runs the library's setup() at a time
+
+
+class CheckpointerUnavailable(RuntimeError):
+    """The configured durable checkpointer cannot be built, and this process is a production one."""
+
+
+def thread_key(org_id: str | None, job_id: str) -> str:
+    """The checkpoint thread of one run: namespaced by organisation (`-` when a run has none, tests only)."""
+    return f"{org_id or '-'}:{job_id}"
+
+
+def _production() -> bool:
+    try:
+        from app.config import get_settings
+        from app.core.preflight import is_production
+
+        return is_production(get_settings())
+    except Exception:
+        return False
 
 
 def _takes(method: Any, name: str) -> bool:
@@ -260,21 +296,44 @@ def _sqlite_saver(path: str) -> Any:
 
 
 def _postgres_saver(dsn: str) -> Any:
+    """A durable saver on a psycopg connection pool; creates the library's tables if they are missing.
+
+    Sync `PostgresSaver` over a thread-safe `ConnectionPool` (autocommit, as the library requires: its index
+    migrations run CONCURRENTLY). The graphs run async, so the async methods hop to a worker thread
+    (`_compatify(..., async_via_thread=True)`), exactly as the SQLite saver does: checkpoints are written once per
+    super-step, and a thread hop is cheaper than binding a pool to one event loop (the API and the ARQ workers each
+    have their own). Raises to the caller on purpose: `get_checkpointer` decides what a failure means.
+    """
     clean = (
         dsn.replace("postgresql+asyncpg://", "postgresql://")
         .replace("postgresql+psycopg2://", "postgresql://")
         .replace("postgres+asyncpg://", "postgresql://")
     )
-    from langgraph.checkpoint.postgres import PostgresSaver  # type: ignore[import-not-found]
+    from langgraph.checkpoint.postgres import PostgresSaver
+    from psycopg.rows import dict_row
+    from psycopg_pool import ConnectionPool
 
-    saver = PostgresSaver.from_conn_string(clean)
-    # Some versions return a context manager / need setup().
-    if hasattr(saver, "setup"):
-        try:
-            saver.setup()
-        except Exception:
-            pass
-    return _compatify(saver)
+    pool = ConnectionPool(
+        clean,
+        min_size=1,
+        max_size=5,
+        kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row},
+        open=False,
+        name="langgraph-checkpoints",
+    )
+    pool.open(wait=True, timeout=15)
+    try:
+        saver = PostgresSaver(cast("Any", pool))
+        with pool.connection() as lock_conn:  # session-level advisory lock, held while setup() runs on another one
+            lock_conn.execute("SELECT pg_advisory_lock(%s)", (_SETUP_LOCK_KEY,))
+            try:
+                saver.setup()
+            finally:
+                lock_conn.execute("SELECT pg_advisory_unlock(%s)", (_SETUP_LOCK_KEY,))
+    except Exception:
+        pool.close()
+        raise
+    return _compatify(saver, async_via_thread=True)
 
 
 def resolve_checkpoint_backend() -> str:
@@ -320,6 +379,7 @@ def get_checkpointer() -> Any:
         else:
             saver = _postgres_saver(settings.database_url_sync)
     except Exception as exc:
+        failure = exc
         logger.warning(
             "LangGraph checkpointer backend=%s unavailable (%s) — DURABILITY LOST: "
             "falling back to in-memory, checkpoints die with this process. "
@@ -330,9 +390,20 @@ def get_checkpointer() -> Any:
             exc_info=True,
         )
         saver = None
+        failure = exc
     if saver is None:
+        if backend != "memory" and _production():
+            _STATUS.update(backend=backend, durable=False, error=type(failure).__name__)
+            raise CheckpointerUnavailable(
+                f"LANGGRAPH_CHECKPOINT={backend} cannot be built ({type(failure).__name__}: {failure}); "
+                "production does not fall back to per-process memory, which would lose every run on restart "
+                "and make resume in another process impossible"
+            ) from failure
+        _STATUS.update(backend="memory(fallback)", durable=False, error=type(failure).__name__)
         backend = "memory(fallback)"
         saver = _memory_saver()
+    else:
+        _STATUS.update(backend=backend, durable=backend != "memory", error=None)
 
     _CHECKPOINTER = saver
     logger.info(
@@ -347,11 +418,103 @@ def reset_checkpointer() -> None:
     """Drop the singleton — tests reconfigure the backend between cases."""
     global _CHECKPOINTER
     _CHECKPOINTER = None
+    _STATUS.update(backend=None, durable=None, error=None)
 
 
-def checkpoint_config(thread_id: str, *, run_config: Any = None) -> dict[str, Any]:
-    """Build ainvoke config dict with thread_id for resume."""
-    configurable: dict[str, Any] = {"thread_id": str(thread_id), "checkpoint_ns": ""}
+def checkpoint_config(
+    thread_id: str, *, org_id: str | None = None, run_config: Any = None
+) -> dict[str, Any]:
+    """Build ainvoke config dict with the thread id for resume; with `org_id` the thread is namespaced by it."""
+    key = thread_key(org_id, str(thread_id)) if org_id is not None else str(thread_id)
+    configurable: dict[str, Any] = {"thread_id": key, "checkpoint_ns": ""}
     if run_config is not None:
         configurable["run_config"] = run_config
     return {"configurable": configurable}
+
+
+def checkpointer_status() -> dict[str, Any]:
+    """What `/ready` reports: builds the saver if this process has not yet, then says whether it is durable.
+
+    `durable` is True for postgres/sqlite, False for the memory fallback, None for memory chosen on purpose.
+    """
+    try:
+        get_checkpointer()
+    except CheckpointerUnavailable:
+        pass
+    backend = _STATUS["backend"]
+    durable: bool | None = _STATUS["durable"]
+    if backend == "memory":
+        durable = None  # chosen explicitly (tests, throw-away runs): not a failure
+    return {"backend": backend, "durable": durable, "error": _STATUS["error"]}
+
+
+def verify_checkpointer() -> None:
+    """Build the checkpointer now. Production: raises `CheckpointerUnavailable` (the process must not start).
+    Elsewhere a failure is only the logged fallback. Called by the API lifespan and by the workers."""
+    get_checkpointer()
+
+
+# ── Personal data: erasure and retention (Postgres) ──────────────────────────
+
+
+def thread_like(org_id: str) -> str:
+    """LIKE pattern selecting every thread of one organisation (`org_id` must be a UUID: no wildcards inside)."""
+    return f"{org_id}:%"
+
+
+async def erase_org_checkpoints(db: Any, org_id: str) -> int:
+    """Delete one organisation's checkpoints inside the caller's transaction (the erase transaction).
+
+    Core statements on the library's tables, filtered by the organisation prefix of the thread id. A missing table
+    (the saver never ran on this database) is nothing to erase, not a failure. Returns rows deleted from
+    `checkpoints`."""
+    from sqlalchemy import column, delete, inspect, table
+
+    from app.services.privacy.erasure_cleanup import require_ids
+
+    require_ids(org_id)
+    present = await db.run_sync(
+        lambda sync: {t for t in CHECKPOINT_DATA_TABLES if inspect(sync.connection()).has_table(t)}
+    )
+    deleted = 0
+    for name in CHECKPOINT_DATA_TABLES:
+        if name not in present:
+            continue
+        t = table(name, column("thread_id"))
+        result: Any = await db.execute(delete(t).where(t.c.thread_id.like(thread_like(org_id))))
+        if name == "checkpoints":
+            deleted = int(result.rowcount)
+    return deleted
+
+
+async def purge_old_checkpoints(db: Any, *, days: int, dry_run: bool, now: Any) -> int:
+    """Retention: delete the threads whose newest checkpoint is older than `days`. Postgres only; returns threads.
+
+    A checkpoint only serves to resume an interrupted run; a thread idle for `days` will not be resumed. The age is
+    the checkpoint's own `ts` (the library keeps no column for it)."""
+    from datetime import timedelta
+
+    from sqlalchemy import inspect, text
+
+    if days <= 0 or db.bind is None or db.bind.dialect.name != "postgresql":
+        return 0
+    present = await db.run_sync(lambda sync: inspect(sync.connection()).has_table("checkpoints"))
+    if not present:
+        return 0
+    cutoff = now - timedelta(days=days)
+    ids = [
+        r[0]
+        for r in (
+            await db.execute(
+                text(
+                    "SELECT thread_id FROM checkpoints GROUP BY thread_id "
+                    "HAVING max((checkpoint->>'ts')::timestamptz) < :cutoff"
+                ),
+                {"cutoff": cutoff},
+            )
+        ).all()
+    ]
+    if ids and not dry_run:
+        for name in CHECKPOINT_DATA_TABLES:
+            await db.execute(text(f"DELETE FROM {name} WHERE thread_id = ANY(:ids)"), {"ids": ids})
+    return len(ids)
