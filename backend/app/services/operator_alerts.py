@@ -53,6 +53,13 @@ ALERTS: dict[str, tuple[str, str]] = {
         "Yedekleme başarısız",
         "Yedekleme betiği başarısız olduğunu bildirdi. docs/ops/runbooks/db-restore.md.\nThe backup reported failure.",
     ),
+    "llm_egress_refused": (
+        "Yapay zekâ çağrıları maskeli modda reddedildi",
+        "Maskeli modda şirket bağlamı ya da isim sözlüğü olmadığı için yapay zekâ çağrıları gönderilmedi (fail "
+        "closed); kullanıcılar deterministik sonucu gördü. Sebepler ve sayılar aşağıda; llm_call_logs.error "
+        "'egress_refused:' satırlarına bakın (docs/kvkk/yapay-zeka-veri-akisi.md).\nAI calls were refused in "
+        "masked mode (no company context or names dictionary); nothing was sent.",
+    ),
     "backup_stale": (
         "Yedek raporu eski veya yok",
         "Son başarılı yedek raporu izin verilen süreden eski ya da hiç gelmedi. Cron çalışıyor mu?\n"

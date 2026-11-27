@@ -190,6 +190,19 @@ async def _caller_is_operator(request: Request, credentials: HTTPAuthorizationCr
     return is_platform_operator(user.email, get_settings().platform_operator_emails)
 
 
+async def _llm_egress_state(db: AsyncSession) -> dict[str, Any]:
+    """For operators: AI calls refused in masked mode since this process started (fail closed), and how many
+    stored embeddings await re-indexing under their company's current data mode / pseudonym key."""
+    from app.platform.llm_egress import refusals
+    from app.services.rag_reindex import pending_total
+
+    try:
+        pending = await pending_total(db)
+    except Exception:
+        pending = None
+    return {"refused_since_start": refusals.counts(), "embeddings_awaiting_reindex": pending}
+
+
 @router.get("/ready")
 async def ready(
     request: Request,
@@ -221,6 +234,7 @@ async def ready(
                 data["backup"] = await backup_state(db)
             except Exception:
                 data["backup"] = {"error": "unreadable"}
+            data["llm_egress"] = await _llm_egress_state(db)
     else:
         data = {"status": status, "checks": {name: _verdict(c) for name, c in checks.items()}}
     return JSONResponse(status_code=http, content={"data": data, "error": None})
