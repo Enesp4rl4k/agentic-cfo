@@ -12,8 +12,9 @@ There is no table of bank-account labels in this product: an account is identifi
 
 Each source is capped (`_CAP` distinct values). When a cap is hit the dictionary says so (`truncated`),
 the audit row says so, and the owner's screen shows it: a name beyond the cap is NOT masked.
-A source that fails to read is skipped and logged, never fatal: the call then goes out with fewer names
-known, and `complete` is False.
+A source that fails to read makes the dictionary incomplete (`complete` False): in `masked` mode the call is
+then REFUSED (fail closed, `session.open_session`), never sent with fewer names known. An incomplete load is
+not cached, so the next call tries again.
 """
 from __future__ import annotations
 
@@ -37,6 +38,9 @@ _CACHE: dict[str, tuple[float, LoadedDictionary]] = {}
 class LoadedDictionary:
     names: NameDictionary
     complete: bool = True  # False when a source could not be read
+
+    def __repr__(self) -> str:
+        return f"LoadedDictionary({self.names!r}, complete={self.complete})"
 
 
 def forget(org_id: str | None = None) -> None:
@@ -116,7 +120,7 @@ async def _load(org_id: str) -> LoadedDictionary:
             select(User.id, User.full_name).where((User.org_id == org_id) | User.id.in_(member_ids)).limit(_CAP)
         )).all()
         for _uid, full_name in users:
-            names.add(PERSON, full_name)
+            names.add(PERSON, full_name, person=True)
         accountants = (await db.execute(
             select(SMMMMuhasebeci.unvan, SMMMMuhasebeci.firma_adi, SMMMMuhasebeci.vergi_no).where(
                 SMMMMuhasebeci.user_id.in_([u[0] for u in users])
@@ -125,7 +129,7 @@ async def _load(org_id: str) -> LoadedDictionary:
             ).limit(_CAP)
         )).all()
         for unvan, firma, vergi in accountants:
-            names.add(PERSON, unvan)
+            names.add(PERSON, unvan, person=True)
             names.add(COUNTERPARTY, firma)
             names.add_identifier(vergi)
 
@@ -141,5 +145,6 @@ async def load(org_id: str) -> LoadedDictionary:
     if hit and hit[0] > time.monotonic():
         return hit[1]
     loaded = await _load(org_id)
-    _CACHE[org_id] = (time.monotonic() + _TTL_SECONDS, loaded)
+    if loaded.complete:
+        _CACHE[org_id] = (time.monotonic() + _TTL_SECONDS, loaded)
     return loaded
