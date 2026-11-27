@@ -1,6 +1,8 @@
 """Follow-ups to the outbound guard: Shopify/Trendyol hosts, ports, one public reason, delivery status."""
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import httpx
 import pytest
 import pytest_asyncio
@@ -188,7 +190,7 @@ async def test_one_notification_when_a_destination_starts_failing_and_again_only
         await outbox.enqueue_webhook(db, key="ok", org_id=org_id, url="https://127.0.0.1/hook", event_type="e",
                                      data={}, source="t", source_ref="ok")
         row = (await db.execute(select(outbox.OutboxMessage).where(outbox.OutboxMessage.key == "ok"))).scalar_one()
-        row.status, row.sent_at, row.recipient = "sent", __import__("datetime").datetime.now(__import__("datetime").UTC), "127.0.0.1"
+        row.status, row.sent_at, row.recipient = "sent", datetime.now(UTC), "127.0.0.1"
         await db.commit()
     await _failing_row(client, org_id, "c")
     assert len(await notes()) == 2

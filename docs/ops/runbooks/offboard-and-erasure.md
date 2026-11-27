@@ -54,7 +54,7 @@ the cooling-off; it then becomes a tombstone under a stable pseudonym and the co
    record and stores a durable cleanup plan on the request (`cleanup_plan`); only AFTER that commit are the files
    unlinked, the in-process caches dropped and Redis swept, from that plan. If the transaction fails (e.g. the
    agent-memory delete), nothing is committed and no file is touched: the request shows `status = failed` with a fixed
-   `failure_code` (`agent_memory_delete_failed`, `erase_failed`, `interrupted`), the hourly executor retries it, and the
+   `failure_code` (`agent_memory_delete_failed`, `checkpoint_delete_failed`, `erase_failed`, `interrupted`), the hourly executor retries it, and the
    owner may still cancel it (the company is whole). After 24 attempts it becomes `blocked: retries_exhausted` and the
    operators get an alert. If the cleanup fails, the request stays `cleanup_pending` (rows already gone, NOT cancellable),
    an operator alert is raised and the same plan is retried hourly until it completes. A running erasure renews its claim

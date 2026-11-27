@@ -6,7 +6,7 @@ name: Clock boundaries
 # can no longer pass on the 25th and fail on the 27th. That also means the suite on its own never visits a
 # boundary; this job does: each suite below runs with the clock started at a second before and after the UTC
 # midnight, the Turkish midnight (21:00 UTC), on the last day of a month (a Monday, before and after the 07:00
-# UTC briefing), on 29 February and on 31 December. A failure here is a real date bug (product or test):
+# UTC briefing), on 29 February, on 31 December and just after midnight on the 1st of a month (UTC and Turkish). A failure here is a real date bug (product or test):
 # fix it, do not drop the instant.
 
 on:
@@ -36,6 +36,8 @@ jobs:
           - "2026-11-30T07:01:00Z"   # ... and after it
           - "2028-02-29T12:00:00Z"   # leap day
           - "2026-12-31T23:59:30Z"   # year end
+          - "2026-12-01T00:00:30Z"   # the 1st of a month, just after UTC midnight (a Tuesday; last month's period just closed)
+          - "2026-11-30T21:00:30Z"   # just after Turkish midnight on the 1st: Istanbul says 1 Dec, UTC still says 30 Nov
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -65,7 +67,8 @@ jobs:
         # cooling-off, export expiry, token/invite/reset expiry, freshness, materiality, and the clock itself.
         run: |
           python -m pytest -q -rfE \
-            tests/test_clock.py tests/test_runway_coverage.py tests/test_agents/test_forecast_runway.py \
+            tests/test_clock.py tests/test_clock_guard.py tests/test_clock_db_stamps.py tests/test_trigger_engine.py \
+            tests/test_runway_coverage.py tests/test_agents/test_forecast_runway.py \
             tests/test_runway_*.py tests/test_pull_coverage_account_life.py tests/test_materiality.py \
             tests/test_cash_radar.py tests/test_radar_*.py tests/test_balance_age.py \
             tests/test_duplicate_resolution_radar.py tests/test_payment_plan_changes.py tests/test_freshness_service.py \

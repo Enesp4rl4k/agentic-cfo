@@ -25,9 +25,11 @@ Fatal nodes: data_ingestion, pnl — without these, nothing else can run.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+import uuid
+from collections.abc import Callable, Mapping
 from typing import Any
 
+from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, StateGraph
 
 from app.agents.state import (
@@ -84,7 +86,7 @@ def _append_log(state: CFOState, log: StepLog) -> dict[str, Any]:
     return {"logs": existing, "min_confidence": min_conf}
 
 
-def _run_config(config: dict) -> AgentRunConfig:
+def _run_config(config: Mapping[str, Any]) -> AgentRunConfig:
     return config.get("configurable", {}).get("run_config", DEFAULT_RUN_CONFIG)
 
 
@@ -121,7 +123,7 @@ def _update_reflection(state: CFOState, agent: str, narrative: str, context: dic
 # ── Node builders ─────────────────────────────────────────────────────────────
 # Fatal nodes (halt on failure)
 
-async def node_data_ingestion(state: CFOState, config: dict) -> CFOState:
+async def node_data_ingestion(state: CFOState, config: RunnableConfig) -> CFOState:
     result = await run_data_ingestion(state, _run_config(config))
     patch = _append_log(state, StepLog(
         step="data_ingestion", ok=result.ok, detail=result.detail, confidence=result.confidence
@@ -171,7 +173,7 @@ async def node_data_ingestion(state: CFOState, config: dict) -> CFOState:
     return {**state, **patch}  # type: ignore[return-value]
 
 
-async def node_pnl(state: CFOState, config: dict) -> CFOState:
+async def node_pnl(state: CFOState, config: RunnableConfig) -> CFOState:
     result = await run_pnl(state, _run_config(config))
     patch = _append_log(state, StepLog(
         step="pnl", ok=result.ok, detail=result.detail, confidence=result.confidence
@@ -190,7 +192,7 @@ async def node_pnl(state: CFOState, config: dict) -> CFOState:
     return {**state, **patch}  # type: ignore[return-value]
 
 
-async def node_cashflow(state: CFOState, config: dict) -> CFOState:
+async def node_cashflow(state: CFOState, config: RunnableConfig) -> CFOState:
     result = await run_cashflow(state, _run_config(config))
     patch = _append_log(state, StepLog(
         step="cashflow", ok=result.ok, detail=result.detail, confidence=result.confidence
@@ -208,7 +210,7 @@ async def node_cashflow(state: CFOState, config: dict) -> CFOState:
     return {**state, **patch}  # type: ignore[return-value]
 
 
-async def node_forecast(state: CFOState, config: dict) -> CFOState:
+async def node_forecast(state: CFOState, config: RunnableConfig) -> CFOState:
     result = await run_forecast(state, _run_config(config))
     patch = _append_log(state, StepLog(
         step="forecast", ok=result.ok, detail=result.detail, confidence=result.confidence
@@ -229,7 +231,7 @@ async def node_forecast(state: CFOState, config: dict) -> CFOState:
 # Non-fatal nodes (failure → log + continue)
 # Each checks routing plan before running — if skipped, returns state unchanged.
 
-async def node_anomaly(state: CFOState, config: dict) -> CFOState:
+async def node_anomaly(state: CFOState, config: RunnableConfig) -> CFOState:
     if _is_skipped(state, "anomaly_agent"):
         logger.debug("Skipping anomaly_agent (routing plan)")
         return state
@@ -243,7 +245,7 @@ async def node_anomaly(state: CFOState, config: dict) -> CFOState:
     return {**state, **patch}  # type: ignore[return-value]
 
 
-async def node_multi_period(state: CFOState, config: dict) -> CFOState:
+async def node_multi_period(state: CFOState, config: RunnableConfig) -> CFOState:
     if _is_skipped(state, "multi_period_agent"):
         logger.debug("Skipping multi_period_agent (routing plan)")
         return state
@@ -257,7 +259,7 @@ async def node_multi_period(state: CFOState, config: dict) -> CFOState:
     return {**state, **patch}  # type: ignore[return-value]
 
 
-async def node_tax(state: CFOState, config: dict) -> CFOState:
+async def node_tax(state: CFOState, config: RunnableConfig) -> CFOState:
     if _is_skipped(state, "tax_agent"):
         logger.debug("Skipping tax_agent (routing plan)")
         return state
@@ -271,7 +273,7 @@ async def node_tax(state: CFOState, config: dict) -> CFOState:
     return {**state, **patch}  # type: ignore[return-value]
 
 
-async def node_budget(state: CFOState, config: dict) -> CFOState:
+async def node_budget(state: CFOState, config: RunnableConfig) -> CFOState:
     if _is_skipped(state, "budget_agent"):
         logger.debug("Skipping budget_agent (routing plan)")
         return state
@@ -285,7 +287,7 @@ async def node_budget(state: CFOState, config: dict) -> CFOState:
     return {**state, **patch}  # type: ignore[return-value]
 
 
-async def node_alert(state: CFOState, config: dict) -> CFOState:
+async def node_alert(state: CFOState, config: RunnableConfig) -> CFOState:
     result = await run_alerts(state, _run_config(config))
     patch = _append_log(state, StepLog(
         step="alert", ok=result.ok, detail=result.detail, confidence=result.confidence
@@ -296,7 +298,7 @@ async def node_alert(state: CFOState, config: dict) -> CFOState:
     return {**state, **patch}  # type: ignore[return-value]
 
 
-async def node_report(state: CFOState, config: dict) -> CFOState:
+async def node_report(state: CFOState, config: RunnableConfig) -> CFOState:
     result = await run_report(state, _run_config(config))
     patch = _append_log(state, StepLog(
         step="report", ok=result.ok, detail=result.detail, confidence=result.confidence
@@ -307,7 +309,7 @@ async def node_report(state: CFOState, config: dict) -> CFOState:
     return {**state, **patch}  # type: ignore[return-value]
 
 
-async def node_hold_for_review(state: CFOState, config: dict) -> CFOState:
+async def node_hold_for_review(state: CFOState, config: RunnableConfig) -> CFOState:
     patch = _append_log(state, StepLog(
         step="review_gate",
         ok=True,
@@ -450,19 +452,23 @@ def build_cfo_graph() -> StateGraph:
 
 
 
-# Compiled graph — reused across requests (thread-safe)
-# Checkpointer enables resume of interrupted runs via thread_id=job_id.
+# Compiled graphs — reused across requests (thread-safe). `cfo_graph` checkpoints every super-step under the run's
+# own thread (`checkpointer.checkpoint_config`); `cfo_graph_ephemeral` has no checkpointer and serves runs without an
+# organisation, whose rows no erasure could find (checkpointer.py).
 def _compile_cfo_graph():
-    from app.agents.checkpointer import get_checkpointer
+    from app.agents.checkpointer import CheckpointerUnavailable, get_checkpointer
 
     try:
         return build_cfo_graph().compile(checkpointer=get_checkpointer())
+    except CheckpointerUnavailable:
+        raise  # production: no silent per-process fallback (checkpointer.py)
     except Exception as exc:
         logger.warning("CFO graph checkpointer disabled (%s) — compiling without", exc)
         return build_cfo_graph().compile()
 
 
 cfo_graph = _compile_cfo_graph()
+cfo_graph_ephemeral = build_cfo_graph().compile()
 
 
 # ── Public entry point ────────────────────────────────────────────────────────
@@ -507,7 +513,7 @@ async def run_cfo_pipeline(
         3. AgentMemoryStore — episode saved after pipeline completes;
            memory_episode_ids stored in state.
     """
-    from app.agents.checkpointer import checkpoint_config
+    from app.agents.checkpointer import checkpoint_config, ephemeral_config, persists
 
     cfg = run_config or DEFAULT_RUN_CONFIG
     initial_state: CFOState = {
@@ -538,10 +544,14 @@ async def run_cfo_pipeline(
     if budget_input:
         initial_state["budget_input"] = budget_input  # type: ignore[assignment]
 
-    result: CFOState = await cfo_graph.ainvoke(
-        initial_state,
-        config=checkpoint_config(job_id, run_config=cfg),
-    )
+    # A fresh thread per run: nothing resumes a checkpoint, so no run may inherit an earlier run's channel values
+    # (`budget_input`, a skipped node's output) or share a thread with a concurrent run on the same job.
+    if persists(org_id):
+        graph, config = cfo_graph, checkpoint_config(job_id, org_id=org_id, run_id=uuid.uuid4().hex, run_config=cfg)
+    else:
+        logger.warning("CFO pipeline run has no organisation: running without a checkpointer")
+        graph, config = cfo_graph_ephemeral, ephemeral_config(cfg)
+    result: CFOState = await graph.ainvoke(initial_state, config=config)
 
     logger.info(
         "CFO pipeline finished: job=%s halted=%s awaiting_review=%s "

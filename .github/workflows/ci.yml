@@ -204,6 +204,28 @@ jobs:
         working-directory: backend
         run: python -m pytest tests/test_erasure_postgres.py -q -p no:randomly
 
+      # The langgraph checkpoint tables are created by the library when the saver first connects (not by Alembic).
+      # A skipped safety test is a defect: the summary line is checked, as for the atomicity test below.
+      - name: LangGraph checkpoints on Postgres (tenant isolation, CEO path and legacy rows erased, no-org runs unsaved, retention)
+        working-directory: backend
+        run: |
+          # `|| rc=$?`: under `bash -e` a failing pytest inside $(...) ended the step before its output was printed.
+          rc=0
+          out="$(python -m pytest tests/test_checkpointer_postgres.py -q -p no:randomly -rs 2>&1)" || rc=$?
+          echo "$out"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::the Postgres checkpointer test failed (exit $rc)"
+            exit "$rc"
+          fi
+          if echo "$out" | grep -Eqi "skipped|no tests ran" || ! echo "$out" | grep -Eq "[0-9]+ passed"; then
+            echo "::error::the Postgres checkpointer test did not run (skipped or not collected)"
+            exit 1
+          fi
+
+      - name: Schema drift still clean with the library-managed checkpoint tables present
+        working-directory: backend
+        run: python ../scripts/schema_drift.py
+
       - name: Every migration can be rolled back
         working-directory: backend
         run: alembic downgrade base
@@ -713,23 +735,20 @@ jobs:
           docker run --rm --network none --entrypoint node agentic-cfo-frontend:ci \
             -e 'require("fs").accessSync("server.js"); require("fs").accessSync(".next/static"); console.log("server.js and .next/static present")'
 
-  # ── Security scan: REPORT ONLY (INTENTIONALLY NON-BLOCKING) ───────────────
-  # A HIGH/CRITICAL finding does NOT fail this job: both scans use exit-code 0.
-  # It used to scan ./backend only, where Trivy reads requirements.txt (the direct
-  # pins) and ignores constraints.txt, so no transitive package was ever looked at.
-  # The full pinned set (constraints.txt) is now copied to a scratch requirements.txt
-  # and scanned too; the totals are written to the job summary (last step).
-  # State on 2026-11-24, fixable findings only: 5 in the direct pins and 8 in the full
-  # set (4 HIGH + 1 CRITICAL, and 7 HIGH + 1 CRITICAL), all in the langchain family:
-  # langchain 0.2.17, langchain-core 0.2.43 (CRITICAL CVE-2025-68664) and, transitive,
-  # langchain-text-splitters 0.2.4 and langsmith 0.1.147. Before this can be made
-  # blocking (`exit-code: 1` on both scans) those four must be upgraded in
-  # backend/requirements.txt and constraints.txt (langchain 0.3.30+, langchain-core
-  # 0.3.81+, langchain-text-splitters 0.3.9+, langsmith 0.8.0+; check each fix against
-  # the app, the 0.2 to 0.3 step is a migration), or the remaining ones accepted by
-  # name in a .trivyignore with a reason.
+  # ── Security scan: BLOCKING ────────────────────────────────────────────────
+  # A fixable HIGH or CRITICAL finding fails this job: both scans use exit-code 1.
+  # Trivy reads requirements.txt (the direct pins) when pointed at ./backend and
+  # ignores constraints.txt, so the full pinned set (constraints.txt, direct and
+  # transitive) is copied to a scratch requirements.txt and scanned too; the totals
+  # are written to the job summary (last step).
+  # History: report-only until 2026-11-26, when the langchain family was upgraded
+  # (docs/ops/dependency-pinning.md) and both scans reached 0. Findings with no fixed
+  # release are NOT skipped wholesale (no `ignore-unfixed`): the accepted ones are named, with a reason
+  # and an expiry date, in .trivyignore.yaml (TRIVY_IGNOREFILE), so a new unfixed advisory in any other
+  # package fails the job. Each entry's reachability is in docs/ops/dependency-pinning.md. Do not turn the
+  # exit code back to 0.
   security:
-    name: Security Scan (REPORT ONLY, findings do not fail; .env check does)
+    name: Security Scan (BLOCKING, fixable HIGH or CRITICAL findings fail)
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
 
@@ -742,42 +761,44 @@ jobs:
           mkdir -p .trivy-scan
           cp backend/constraints.txt .trivy-scan/requirements.txt
 
-      - name: Trivy report - direct pins in backend/ (REPORT ONLY)
+      - name: Trivy - direct pins in backend/ (BLOCKING)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type:   fs
           scan-ref:    ./backend
           scanners:    vuln
           format:      table
-          exit-code:   0    # REPORT ONLY - see the comment above the job
-          ignore-unfixed: true
+          exit-code:   1    # BLOCKING - see the comment above the job
           severity:    CRITICAL,HIGH
+        env:
+          TRIVY_IGNOREFILE: .trivyignore.yaml
 
-      - name: Trivy report - full pinned set incl. transitive (REPORT ONLY)
+      - name: Trivy - full pinned set incl. transitive (BLOCKING)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type:   fs
           scan-ref:    ./.trivy-scan
           scanners:    vuln
           format:      table
-          exit-code:   0    # REPORT ONLY - see the comment above the job
-          ignore-unfixed: true
+          exit-code:   1    # BLOCKING - see the comment above the job
           severity:    CRITICAL,HIGH
+        env:
+          TRIVY_IGNOREFILE: .trivyignore.yaml
 
       # Totals in the run's summary page, so the count is visible without opening the log.
-      # Report only: this step never fails the job.
-      - name: Trivy totals in the job summary (REPORT ONLY)
+      # This step only reports; the two scans above are the gate.
+      - name: Trivy totals in the job summary
         if: always()
         run: |
           {
-            echo "### Trivy: fixable HIGH/CRITICAL findings (report only, they do not fail this job)"
+            echo "### Trivy: HIGH/CRITICAL findings not named in .trivyignore.yaml (the scans above fail the job on any)"
             echo
             echo "| Scan | CRITICAL | HIGH | Total |"
             echo "|---|---|---|---|"
           } >> "$GITHUB_STEP_SUMMARY"
           for scan in "direct pins (backend/)|./backend" "full pinned set (constraints.txt)|./.trivy-scan"; do
             label="${scan%%|*}"; ref="${scan##*|}"
-            if trivy fs --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed --format json --output /tmp/trivy.json "$ref" >/dev/null 2>&1; then
+            if trivy fs --scanners vuln --severity CRITICAL,HIGH --ignorefile .trivyignore.yaml --format json --output /tmp/trivy.json "$ref" >/dev/null 2>&1; then
               python3 - "$label" >> "$GITHUB_STEP_SUMMARY" <<'PY'
           import json, sys
           c = {"CRITICAL": 0, "HIGH": 0}

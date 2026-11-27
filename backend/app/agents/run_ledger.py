@@ -7,9 +7,9 @@ progress, and on exit stamps status / latency / cost (summed from
 
 `resume_run(...)` re-drives a failed/interrupted run through the same entry
 point. The resume contract is: **pipeline nodes are idempotent recomputes of
-their inputs**, so re-invoking with the same `thread_id` either resumes from the
-LangGraph checkpoint (durable backend) or re-runs cleanly (memory backend) — both
-converge to the same result.
+their inputs**, so re-invoking re-runs cleanly and converges to the same result.
+It does not resume from a LangGraph checkpoint: every `run_cfo_pipeline` call
+has its own checkpoint thread (`agents/checkpointer.py`).
 """
 from __future__ import annotations
 

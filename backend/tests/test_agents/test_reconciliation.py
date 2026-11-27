@@ -90,7 +90,7 @@ async def test_node_patches_halt_and_log():
     pnl = _consistent_pnl()
     pnl["gross_profit"] = 1  # break revenue - cogs identity
     state = {"pnl": pnl, "transactions": _txns(), "logs": []}
-    out = await node_reconcile(state, {})  # type: ignore[arg-type]
+    out = await node_reconcile(state)  # type: ignore[arg-type]
     assert out["halted"] is True
     assert out["reconciliation"]["action"] == "halt"
     assert out["logs"][-1].step == "reconciliation"

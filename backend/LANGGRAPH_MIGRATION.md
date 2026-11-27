@@ -1,3 +1,6 @@
+> Historical (langgraph 0.1.19 era). The backend now runs langgraph 1.2.x with langchain-core 1.x;
+> see docs/ops/dependency-pinning.md for the current pins.
+
 # LangGraph Migration Guide — 0.1.19 → 0.2.x
 
 ## Durum: FROZEN (0.1.19)

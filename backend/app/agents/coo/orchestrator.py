@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph
 
 from app.agents.coo.process_agent import run_process_agent
@@ -35,7 +36,7 @@ def _append_log(state: COOState, log: COOStepLog) -> dict[str, Any]:
 
 # -- LangGraph Nodes ----------------------------------------------------------
 
-async def node_process(state: COOState, config: dict) -> COOState:
+async def node_process(state: COOState, config: RunnableConfig) -> COOState:
     result = await run_process_agent(state, config)
     proc   = result.get("processes")
     patch  = _append_log(state, COOStepLog(
@@ -46,7 +47,7 @@ async def node_process(state: COOState, config: dict) -> COOState:
     return {**state, **patch, **result}  # type: ignore[return-value]
 
 
-async def node_resource(state: COOState, config: dict) -> COOState:
+async def node_resource(state: COOState, config: RunnableConfig) -> COOState:
     result = await run_resource_agent(state, config)
     res    = result.get("resources")
     patch  = _append_log(state, COOStepLog(
@@ -57,7 +58,7 @@ async def node_resource(state: COOState, config: dict) -> COOState:
     return {**state, **patch, **result}  # type: ignore[return-value]
 
 
-async def node_sla(state: COOState, config: dict) -> COOState:
+async def node_sla(state: COOState, config: RunnableConfig) -> COOState:
     result = await run_sla_agent(state, config)
     sla    = result.get("sla")
     patch  = _append_log(state, COOStepLog(
@@ -68,7 +69,7 @@ async def node_sla(state: COOState, config: dict) -> COOState:
     return {**state, **patch, **result}  # type: ignore[return-value]
 
 
-async def node_coo_summary(state: COOState, config: dict) -> COOState:
+async def node_coo_summary(state: COOState, config: RunnableConfig) -> COOState:
     """
     COO Summary node -- synthesizes all available agent outputs into a
     holistic operational health score and top-risk list.

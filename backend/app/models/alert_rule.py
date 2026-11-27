@@ -11,13 +11,20 @@ Columns mirror migration 018 exactly; no schema change.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import Boolean, DateTime, Float, Index, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
+
+
+def _utcnow() -> datetime:
+    """Stamped by the application clock on insert (app/core/clock.py), so the row's time and the
+    `datetime.now()` the code compares it with are the same clock; the server default stays as the fallback
+    for rows written outside the ORM."""
+    return datetime.now(UTC)
 
 
 class AlertRule(Base):
@@ -40,7 +47,7 @@ class AlertRule(Base):
     severity: Mapped[str] = mapped_column(String(20), nullable=False, default="warning")
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
+        DateTime(timezone=True), nullable=False, default=_utcnow, server_default=func.now()
     )
 
     def to_dict(self) -> dict[str, Any]:
@@ -85,7 +92,7 @@ class AlertHistory(Base):
         DateTime(timezone=True), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
+        DateTime(timezone=True), nullable=False, default=_utcnow, server_default=func.now()
     )
 
     def to_dict(self) -> dict[str, Any]:

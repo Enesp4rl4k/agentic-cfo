@@ -18,6 +18,7 @@ Configuration (via .env):
   OTEL_EXPORTER=console           # "console" | "otlp" | "jaeger"
   OTEL_ENDPOINT=http://localhost:4317  # OTLP gRPC endpoint
   LANGSMITH_ENABLED=true          # Enable LangSmith LLM tracing (default: false)
+  LANGSMITH_EXTERNAL_TRACING_ACK=...  # also required: the acknowledgement in docs/ops/configuration.md
   LANGSMITH_API_KEY=ls-...        # LangSmith API key
   LANGSMITH_PROJECT=aicfo-prod    # LangSmith project name
 
@@ -303,18 +304,55 @@ def trace_agent(agent_name: str) -> Callable:
 
 # ── LangSmith Integration ─────────────────────────────────────────────────────
 
+# Every switch langsmith / langchain-core read to decide whether a run is exported.
+_TRACING_SWITCHES = (
+    "LANGSMITH_TRACING",
+    "LANGSMITH_TRACING_V2",
+    "LANGCHAIN_TRACING_V2",
+    "LANGCHAIN_TRACING",
+)
+# Exporting traces ships every prompt and response (company financial data, under
+# KVKK) to a third party. It needs BOTH LANGSMITH_ENABLED=true and this exact
+# acknowledgement; docs/ops/configuration.md section 2 explains what leaves.
+LANGSMITH_EXPORT_ACK = "prompts-and-company-data-leave-the-platform"
+
+
+def lock_langsmith_tracing() -> None:
+    """Switch every LangSmith / LangChain tracing flag off in this process.
+
+    langchain-core depends on langsmith, so a stray LANGSMITH_TRACING=true or
+    LANGCHAIN_TRACING_V2=true in the environment (a compose file, a shell, a
+    copied .env) would export every prompt without this app ever deciding to.
+    Runs when this module is imported, before any model call; only
+    `setup_langsmith` (explicit setting plus acknowledgement) turns it back on.
+    """
+    for name in _TRACING_SWITCHES:
+        os.environ[name] = "false"
+
+
+lock_langsmith_tracing()
+
+
 def setup_langsmith() -> bool:
     """
-    Configure LangSmith tracing if LANGSMITH_ENABLED=true.
-    Returns True if successfully configured, False otherwise.
+    Enable LangSmith tracing only on an explicit, acknowledged setting:
+    LANGSMITH_ENABLED=true, LANGSMITH_API_KEY set, and
+    LANGSMITH_EXTERNAL_TRACING_ACK equal to LANGSMITH_EXPORT_ACK.
+    Returns True if tracing was enabled, False otherwise (the default).
 
-    LangSmith traces every LLM call with:
-    - Input/output messages
-    - Token counts and costs
-    - Latency per call
-    - Error rates
+    LangSmith would receive, for every LLM call: the input/output messages
+    (company data), token counts, latency and errors.
     """
+    lock_langsmith_tracing()
     if os.getenv("LANGSMITH_ENABLED", "false").lower() != "true":
+        return False
+
+    if os.getenv("LANGSMITH_EXTERNAL_TRACING_ACK", "") != LANGSMITH_EXPORT_ACK:
+        logging.getLogger(__name__).warning(
+            "LANGSMITH_ENABLED=true ignored: LANGSMITH_EXTERNAL_TRACING_ACK is not set "
+            "to the acknowledgement in docs/ops/configuration.md; tracing stays off",
+            extra={"event": "langsmith.refused"},
+        )
         return False
 
     api_key = os.getenv("LANGSMITH_API_KEY", "")
@@ -328,14 +366,15 @@ def setup_langsmith() -> bool:
 
     try:
         os.environ["LANGCHAIN_TRACING_V2"] = "true"
+        os.environ["LANGSMITH_TRACING"] = "true"
         os.environ["LANGCHAIN_API_KEY"] = api_key
         os.environ["LANGCHAIN_PROJECT"] = project
         os.environ["LANGCHAIN_ENDPOINT"] = os.getenv(
             "LANGSMITH_ENDPOINT", "https://api.smith.langchain.com"
         )
 
-        logging.getLogger(__name__).info(
-            "LangSmith tracing enabled",
+        logging.getLogger(__name__).warning(
+            "LangSmith tracing ENABLED: prompts and company data are sent to a third party",
             extra={"project": project, "event": "langsmith.configured"}
         )
         return True
