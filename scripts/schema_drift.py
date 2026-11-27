@@ -70,7 +70,7 @@ def main() -> int:
     from alembic.migration import MigrationContext
 
     import app.models  # noqa: F401 — register every model
-    from app.agents.checkpointer import LIBRARY_TABLES
+    from app.services.checkpoint_data import LIBRARY_TABLES
     from app.config import get_settings
     from app.database import Base
 

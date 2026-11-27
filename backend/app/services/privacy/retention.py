@@ -214,7 +214,7 @@ async def purge_platform(db: AsyncSession, policy: dict[str, int], *, dry_run: b
         out["audit_ip"] = await _audit_ip(db, now - timedelta(days=days), dry_run)
     days = policy.get("checkpoint_days", 0)
     if days > 0 and db.bind is not None and db.bind.dialect.name == "postgresql":
-        from app.agents.checkpointer import purge_old_checkpoints
+        from app.services.checkpoint_data import purge_old_checkpoints
 
         out["checkpoints"] = await purge_old_checkpoints(db, days=days, dry_run=dry_run, now=now)
     return out

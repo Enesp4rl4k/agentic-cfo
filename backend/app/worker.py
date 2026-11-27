@@ -1199,7 +1199,6 @@ class MaintenanceWorkerSettings:
     max_tries = 2
     job_completion_wait = 300       # docker-compose.prod.yml stop_grace_period stays above this
     health_check_interval = 30      # see WorkerSettings
-    on_startup = _verify_checkpointer
 
     # A plain attribute: arq reads the settings class's `__dict__`, so a classmethod here is handed over as the raw
     # descriptor and `create_pool` fails with "'classmethod' object has no attribute 'host'" (the worker never started).

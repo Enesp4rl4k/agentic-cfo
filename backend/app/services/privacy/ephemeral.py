@@ -162,7 +162,7 @@ class CheckpointDeleteError(RuntimeError):
 async def _checkpoints_delete(db: AsyncSession, org_id: str) -> int:
     """The organisation's checkpoint threads (`<org_id>:<job_id>`) in the library's Postgres tables, inside the
     erase transaction. Other backends hold checkpoints in memory or a local SQLite file, not in this database."""
-    from app.agents.checkpointer import erase_org_checkpoints
+    from app.services.checkpoint_data import erase_org_checkpoints
 
     if db.bind is None or db.bind.dialect.name != "postgresql":
         return 0
