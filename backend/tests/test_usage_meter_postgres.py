@@ -38,6 +38,10 @@ async def org():
     async with database.get_session_factory(database.engine())() as s:
         await s.execute(text("DELETE FROM usage_events WHERE org_id = :o"), {"o": org_id})
         await s.commit()
+    # pytest-asyncio gives each test its own event loop: a pooled connection of the previous loop is dead in the
+    # next one, and record_usage_event swallows that error (the race test then 'passed' on a silently lost record).
+    await database.engine().dispose()
+    database._engine = None
 
 
 def session():
