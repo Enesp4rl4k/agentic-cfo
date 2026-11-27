@@ -17,7 +17,7 @@ to, matched against the counterparty on each transaction.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import Boolean, DateTime, Index, String, Text, func
@@ -36,6 +36,13 @@ RELATIONSHIP_TYPES: tuple[str, ...] = (
     "kilit_personel",   # key management personnel
     "diger",
 )
+
+
+def _utcnow() -> datetime:
+    """Stamped by the application clock on insert (app/core/clock.py), so the row's time and the
+    `datetime.now()` the code compares it with are the same clock; the server default stays as the fallback
+    for rows written outside the ORM."""
+    return datetime.now(UTC)
 
 
 class RelatedParty(Base):
@@ -71,10 +78,10 @@ class RelatedParty(Base):
 
     created_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
+        DateTime(timezone=True), nullable=False, default=_utcnow, server_default=func.now()
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
+        DateTime(timezone=True), nullable=False, default=_utcnow, server_default=func.now()
     )
 
     def to_dict(self) -> dict[str, Any]:
