@@ -93,7 +93,8 @@ async def company_runway(
     view = await ledger_view(db, org_id)
     rows = list(view.cash) if view is not None else []
     opening = opening_of(found["opening"], today, found["excluded"])
-    series = annotate_series(monthly_series(rows, currency), rows, list(found["opening"]["extents"]) if found["opening"] else [])
+    series = annotate_series(
+        monthly_series(rows, currency), rows, list(found["opening"]["extents"]) if found["opening"] else [], today)
     cashflow: dict[str, Any] = {"monthly_series": mark_missing_statements(series, (found["opening"] or {}).get("gaps") or {})}
     if any(r.get("ledger_basis") == BOOK for r in rows):
         cashflow["esas"] = "tahakkuk"

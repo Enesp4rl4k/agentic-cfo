@@ -33,6 +33,7 @@ from app.services.runway import compute_runway, opening_cash_for
 from tests.test_agents.test_reconciliation import _consistent_pnl, _txns
 
 CFG = AgentRunConfig(require_review=True, auto_proceed_min_confidence=0.80)
+_AYLAR = ("Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık")
 
 
 def _days_ago(n: int) -> str:
@@ -217,13 +218,16 @@ class TestDefaultsNeverAlert:
 @pytest.mark.usefixtures("_no_model")
 class TestBadNewsIsSurfacedNotHeld:
     async def test_a_genuinely_low_runway_is_critical_with_its_inputs(self) -> None:
-        result, fc = await _forecast(_state([-5_000_000] * 3, 11_650_000, as_of="2026-11-19"))
+        # "Critical" needs a CURRENT balance: a fixed date here turned stale (8 days) on 2026-11-27 and read "warning".
+        as_of = date.fromisoformat(_days_ago(2))
+        result, fc = await _forecast(_state([-5_000_000] * 3, 11_650_000, as_of=as_of.isoformat()))
         runway = fc["runway"]
         assert runway["level"] == "critical"
         assert runway["runway_months"] == pytest.approx(2.3, abs=0.05)
         critical = [a for a in fc["alerts"] if a["level"] == "critical"]
         assert len(critical) == 1 and critical[0]["basis"] == "runway"
-        for fact in ("19 Kasım 2026", "₺116.500,00", "Ocak -₺50.000,00", "ortalama aylık net nakit çıkışı ₺50.000,00", "yaklaşık 2,3 ay"):
+        stated = f"{as_of.day} {_AYLAR[as_of.month - 1]} {as_of.year}"
+        for fact in (stated, "₺116.500,00", "Ocak -₺50.000,00", "ortalama aylık net nakit çıkışı ₺50.000,00", "yaklaşık 2,3 ay"):
             assert fact in critical[0]["message"]
         # ... and the books are not withheld because of it.
         assert result.needs_review is False
