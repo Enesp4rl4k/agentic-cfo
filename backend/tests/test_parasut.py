@@ -11,6 +11,7 @@ import base64
 import json
 import time
 import urllib.parse
+from datetime import UTC, datetime
 
 import httpx
 import pytest
@@ -42,7 +43,7 @@ class Parasut:
                 {"id": c["id"], "type": "companies", "attributes": {"name": c["name"]}} for c in self.companies]})
         if self.fail_invoices:
             return httpx.Response(403, json={"errors": [{"title": "Forbidden"}]})
-        today = time.strftime("%Y-%m-%d")
+        today = datetime.now(UTC).date().isoformat()  # the pinned test day (UTC)
         if url.path == "/v4/123456/sales_invoices":
             return httpx.Response(200, json={"data": [
                 {"id": "s1", "type": "sales_invoices",

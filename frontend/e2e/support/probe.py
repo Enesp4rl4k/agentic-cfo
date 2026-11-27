@@ -24,7 +24,9 @@ BACKEND = HERE.parents[2] / "backend"
 sys.path.insert(0, str(BACKEND))
 os.chdir(RUN)
 os.environ.update({"USE_SQLITE": "true", "LOG_FORMAT": "plain", "LANGGRAPH_CHECKPOINT": "memory",
-                   "OPENAI_API_KEY": "llm-placeholder-e2e", "SMTP_HOST": "", "SMTP_USER": "", "EMAIL_VERIFICATION_REQUIRED": "false"})
+                   "OPENAI_API_KEY": "llm-placeholder-e2e", "SMTP_HOST": "", "SMTP_USER": "", "EMAIL_VERIFICATION_REQUIRED": "false",
+                   # The same simulated day as the APIs (start_backend.py): the Monday tick dates its briefing by it.
+                   "APP_ENV": "test", "APP_CLOCK_START": os.environ.get("E2E_CLOCK_INSTANT", "2026-11-25T10:00:00Z")})
 
 
 def sync_session():

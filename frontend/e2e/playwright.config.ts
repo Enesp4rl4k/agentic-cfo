@@ -10,6 +10,11 @@ import { defineConfig, devices } from "@playwright/test";
  * CI builds the frontend first (`npm run build`) and runs `next start`; locally `next dev` is used
  * unless E2E_FRONTEND_MODE=start. E2E_REUSE=1 attaches to servers that are already up.
  */
+// The journey's simulated instant, one value for the APIs (start_backend.py), the probe, the fixtures and the
+// browser clock (support/fixtures.ts E2E_NOW). A Wednesday 10:00 UTC: away from the Monday scheduler window,
+// the month end and the UTC/Istanbul midnight. Override it to replay a run on another day.
+process.env.E2E_CLOCK_INSTANT ??= "2026-11-25T10:00:00Z";
+
 const WEB = "http://localhost:3000";
 const API = "http://localhost:8000";
 const reuse = process.env.E2E_REUSE === "1";

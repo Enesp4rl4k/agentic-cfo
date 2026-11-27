@@ -27,7 +27,14 @@ PROCESS_ENV = {
     "LANGSMITH_API_KEY", "LANGSMITH_ENDPOINT",
     "LANGSMITH_PROJECT", "LANGCHAIN_TRACING_V2", "LANGCHAIN_API_KEY", "LANGCHAIN_ENDPOINT",
     "LANGCHAIN_PROJECT", "CSUITE_URL", "CSUITE_API_KEY",
+    "APP_CLOCK_START",  # app/core/clock.py reads it through the CLOCK_ENV constant (test-only; refused in production)
 }
+
+
+def test_the_test_clock_override_is_the_variable_the_clock_reads() -> None:
+    from app.core.clock import CLOCK_ENV
+
+    assert CLOCK_ENV == "APP_CLOCK_START" and CLOCK_ENV in PROCESS_ENV
 # Not read by the backend: the frontend, docker compose, the staging stack (section 3).
 OUTSIDE_THE_BACKEND = {
     "NEXTAUTH_URL", "NEXT_PUBLIC_API_URL", "NEXT_PUBLIC_DEMO_MODE", "NEXT_PUBLIC_LEGACY_DASHBOARDS",

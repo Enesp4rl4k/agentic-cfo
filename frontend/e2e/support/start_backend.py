@@ -16,6 +16,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 RUN = HERE.parent / ".run"
 BACKEND = HERE.parents[2] / "backend"
+# The journey's simulated instant (playwright.config.ts sets E2E_CLOCK_INSTANT; this default is the same).
+E2E_INSTANT = os.environ.get("E2E_CLOCK_INSTANT", "2026-11-25T10:00:00Z")
 
 
 def wait_for_first_api() -> None:
@@ -62,6 +64,11 @@ def main() -> None:
             # a briefing that the test means to be held. `support/probe.py monday-tick` runs the same job, once, at
             # the step that wants it (the held-or-sent rule itself: tests/test_monday_hold_clock.py).
             "SCHEDULER_ENABLED": "false",
+            # ... and the journey's date: the API runs on the simulated instant the fixtures and the browser use
+            # (fixtures.ts E2E_NOW), so "two days ago" is the same date on every run. Honoured only because
+            # APP_ENV is `test`; preflight refuses APP_CLOCK_START in production (backend/app/core/clock.py).
+            "APP_ENV": "test",
+            "APP_CLOCK_START": E2E_INSTANT,
             # No model: the product answers from its templates, as it does without a key.
             "OPENAI_API_KEY": "llm-placeholder-e2e",
             "BACKEND_SECRET_KEY": env.get("BACKEND_SECRET_KEY", "e2e-throwaway-signing-key-0123456789abcdef"),
