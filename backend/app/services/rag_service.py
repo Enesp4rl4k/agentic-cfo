@@ -14,14 +14,14 @@ import re
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import get_settings
 from app.database import session_factory
 from app.models.rag_chunk import RagChunk
+from app.platform import embedding_gateway
+from app.platform.embedding_gateway import Embedded
 
 logger = logging.getLogger(__name__)
 _EVIDENCE_CACHE: dict[str, tuple[float, str]] = {}
@@ -120,44 +120,12 @@ def _vector_literal(values: list[float]) -> str:
 
 
 def _has_embedding_support() -> bool:
-    settings = get_settings()
-    from app.core.llm_key import is_placeholder_key
-
-    return settings.rag_embedding_enabled and not is_placeholder_key(settings.openai_api_key)
+    return embedding_gateway.has_embedding_support()
 
 
-def _build_embeddings(settings: Any) -> Any:
-    """The embeddings client. OpenAIEmbeddings tokenises client-side and sends token-id ARRAYS plus `dimensions`:
-    an OpenAI-only request shape. Against any other OpenAI-compatible base URL it sends plain strings (the chunks
-    are already cut by characters here) and no `dimensions` (the column is `rag_embedding_dimensions` wide: the
-    provider's native width must match it)."""
-    from urllib.parse import urlsplit
-
-    from langchain_openai import OpenAIEmbeddings
-
-    base_url = settings.llm_base_url or None
-    on_openai = base_url is None or urlsplit(base_url).hostname == "api.openai.com"
-    extra: dict[str, Any] = {"dimensions": settings.rag_embedding_dimensions} if on_openai and settings.rag_embedding_dimensions else {}
-    return OpenAIEmbeddings(
-        model=settings.rag_embedding_model,
-        api_key=settings.openai_api_key,
-        base_url=base_url,
-        check_embedding_ctx_length=on_openai,
-        # The SDK asks for base64 floats by default; plain floats are what OpenAI-compatible servers all answer.
-        model_kwargs={} if on_openai else {"encoding_format": "float"},
-        **extra,
-    )
-
-
-def _embed_texts(texts: list[str]) -> list[list[float]] | None:
-    if not texts or not _has_embedding_support():
-        return None
-    try:
-        client = _build_embeddings(get_settings())
-        return client.embed_documents(texts)
-    except Exception as exc:
-        logger.warning("RAG embedding generation failed, using TF-IDF only: %s", exc)
-        return None
+async def _embed_texts(texts: list[str], *, org_id: str | None, purpose: str = "rag_index") -> Embedded | None:
+    """Embeddings through the one embedding gateway (data mode applied there); None = TF-IDF only."""
+    return await embedding_gateway.embed_texts(texts, org_id=org_id, purpose=purpose)
 
 
 async def index_job_text(
@@ -185,8 +153,8 @@ async def index_job_text(
     # embedding round-trip. On SQLite that lock is process-wide — every
     # other writer waited behind an API call. Embed first; delete + insert
     # then commit together in milliseconds.
-    settings = get_settings()
-    embeddings = _embed_texts(chunks)
+    embedded = await _embed_texts(chunks, org_id=org_id)
+    embeddings = embedded.vectors if embedded else None
 
     # Idempotency: delete previous index for this job — same transaction as
     # the inserts below, so old-gone and new-in are published together.
@@ -207,7 +175,7 @@ async def index_job_text(
                 source_type=source_type,
                 chunk_index=i,
                 chunk_text=ch,
-                embedding_model=settings.rag_embedding_model if embeddings else None,
+                embedding_model=embedded.tag if embedded else None,
                 embedding=embeddings[i] if embeddings and i < len(embeddings) else None,
                 created_at=now,
             )

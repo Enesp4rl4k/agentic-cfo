@@ -35,6 +35,7 @@ from datetime import datetime
 from typing import Any
 
 from app.agents.coo.state import COOState
+from app.agents.narrative_guard import labels_skipped_ai_step
 
 logger = logging.getLogger(__name__)
 
@@ -500,6 +501,7 @@ def _build_sla_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
 # LLM Narrative (Turkish)
 # ---------------------------------------------------------------------------
 
+@labels_skipped_ai_step
 async def _generate_sla_narrative(metrics: dict[str, Any], settings) -> str:
     """Türkçe COO narrative — SLA ihlal tahmini bağlamıyla."""
     try:

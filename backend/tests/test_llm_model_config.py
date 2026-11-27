@@ -45,6 +45,9 @@ def cfg(monkeypatch):
     monkeypatch.setattr(s, "llm_model_cheap", None)
     monkeypatch.setattr(s, "llm_model_strong", None)
     monkeypatch.setattr(s, "llm_model_prices", {})
+    # model selection, not data minimisation: `raw` needs no company context (masked fails closed without one;
+    # that is tests/test_llm_egress_fail_closed.py)
+    monkeypatch.setattr(s, "llm_data_mode", "raw")
     mc._warned_unpriced.clear()
     _Recorder.instances = []
     import langchain_openai

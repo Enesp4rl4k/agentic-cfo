@@ -55,6 +55,7 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
+from app.agents.narrative_guard import labels_skipped_ai_step
 from app.services.runway_display import view_from_fin
 
 logger = logging.getLogger(__name__)
@@ -404,6 +405,7 @@ def _infer_okrs(
 # OKR Narrative (with momentum & weighted scores)
 # ─────────────────────────────────────────────────────────────────────────────
 
+@labels_skipped_ai_step
 async def _generate_okr_narrative(
     objectives: list[dict[str, Any]],
     period: str | None,

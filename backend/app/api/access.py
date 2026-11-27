@@ -402,6 +402,7 @@ INLINE_GUARDED: dict[tuple[str, str], str] = {
     ("POST", "/api/v1/privacy/org/members/{user_id}/erasure"): "owner or admin by membership role (an admin only below admin); the member must belong to no other company",
     ("POST", "/api/v1/privacy/exports"): "owner by membership role (the export holds the whole company's data)",
     ("PUT", "/api/v1/privacy/retention"): "owner by membership role (the company's own retention choices)",
+    ("PUT", "/api/v1/privacy/ai-data-mode"): "owner by membership role (what may leave for a language model: off, masked or raw)",
     ("POST", "/api/v1/org/invite"): "_require_admin: owner or admin",
     ("DELETE", "/api/v1/org/invites/{invite_id}"): "_require_admin: owner or admin",
     ("PATCH", "/api/v1/org/me"): "_require_admin: owner or admin",

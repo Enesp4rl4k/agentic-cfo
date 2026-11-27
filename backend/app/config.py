@@ -314,6 +314,17 @@ class Settings(BaseSettings):
     # DeepSeek: https://api.deepseek.com
     # OpenAI:   https://api.openai.com/v1  (or leave empty)
     llm_base_url: str = "https://api.deepseek.com"
+    # What may leave for the provider (app.platform.llm_egress; docs/kvkk/yapay-zeka-veri-akisi.md):
+    #   off     no LLM and no embedding call at all (deterministic paths only)
+    #   masked  identifiers and the names the books hold are replaced by placeholders first (default)
+    #   raw     the text goes as it is: today's behaviour before masking existed. Always an explicit choice.
+    llm_data_mode: Literal["off", "masked", "raw"] = "masked"
+    # allow: uploaded-document text goes through the mode above. never: no raw document text is sent in any
+    # mode; extraction falls back to the deterministic parsers and says the AI step was skipped.
+    llm_document_text: Literal["allow", "never"] = "allow"
+    # May an organisation's owner choose a MORE permissive mode than LLM_DATA_MODE? false: LLM_DATA_MODE is the
+    # operator's ceiling and an owner can only tighten it (masked -> off); true: the owner's choice stands.
+    llm_org_may_relax: bool = False
 
     # Platform operators: comma-separated user e-mails allowed to mint pilot
     # invites and read every company's pilot feedback (platform-wide data, not

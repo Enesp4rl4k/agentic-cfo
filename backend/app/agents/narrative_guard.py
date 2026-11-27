@@ -39,3 +39,35 @@ def narrative_guard(fn: Callable[P, Awaitable[str]]) -> Callable[P, Awaitable[st
             return ACIKLAMA_YOK
 
     return wrapper
+
+
+# ── "the AI step did not run": said on the template text itself ──────────────
+# When the data mode is `off`, or masked mode refused the call (fail closed), the narrative functions answer
+# from their template. The template then says so in the product's own words for that case (tr / en), so a
+# person never mistakes it for an AI-written text. `model_gateway._open_egress` records the skip.
+AI_STEP_SKIPPED = {
+    "off": "Yapay zekâ adımı atlandı (LLM_DATA_MODE=off): şablon metin. / AI step skipped (data mode off): template text.",
+    "refused": "Yapay zekâ adımı atlandı (maskeli modda veri gönderilmedi): şablon metin. / "
+               "AI step skipped (nothing sent in masked mode): template text.",
+}
+
+
+def labels_skipped_ai_step(fn: Callable[P, Awaitable[str]]) -> Callable[P, Awaitable[str]]:
+    """Prefix the template with the skipped-AI-step note when the gateway refused or `off` applied."""
+
+    @functools.wraps(fn)
+    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> str:
+        from app.platform.llm_egress.session import skipped_steps
+
+        token = skipped_steps.set([])
+        try:
+            text = await fn(*args, **kwargs)
+            skipped = skipped_steps.get() or []
+        finally:
+            skipped_steps.reset(token)
+        if skipped and isinstance(text, str):
+            note = AI_STEP_SKIPPED["refused" if "refused" in skipped else "off"]
+            return text if text.startswith(note) else f"{note}\n{text}"
+        return text
+
+    return wrapper

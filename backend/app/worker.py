@@ -31,6 +31,7 @@ from redis import exceptions as redis_exc
 
 from app.config import get_settings
 from app.core.preflight import enforce_or_exit
+from app.core.tenancy import set_current_tenant
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +133,8 @@ async def run_ceo_analysis(
     Results stored in Redis with key ceo:{job_id} for 24h.
     """
     logger.info("ARQ worker: starting CEO analysis for job=%s", job_id)
+    owner = await get_ceo_job_owner(job_id)
+    set_current_tenant((owner or {}).get("org_id"))
 
     try:
         from app.agents.ceo.orchestrator import run_ceo_pipeline
@@ -249,6 +252,7 @@ def _records_run(fn: Callable[..., Awaitable[dict[str, Any]]]) -> Callable[..., 
             if job is None:
                 return await fn(ctx, job_id, *args, **kwargs)
             org_id = str(job.org_id) if job.org_id else None
+            set_current_tenant(org_id)  # every LLM call of this job is made under this company's data mode
             await db.commit()
             async with agent_run(db, pipeline="cfo", org_id=org_id, job_id=job_id) as run:
                 out = await fn(ctx, job_id, *args, **kwargs)
@@ -832,28 +836,11 @@ async def run_rag_backfill_maintenance(ctx: dict) -> dict[str, Any]:
             if added > 0:
                 indexed += 1
 
-        # Phase 2: backfill embeddings for text-only chunks (pgvector path)
-        from app.services.rag_service import _embed_texts, _has_embedding_support
+        # Phase 2: embed chunks that have no vector, or one that does not match the company's current data
+        # mode / pseudonym key (bounded, idempotent, resumable: app/services/rag_reindex.py)
+        from app.services.rag_reindex import reindex_batch
 
-        if _has_embedding_support():
-            emb_rows = await db.execute(
-                select(RagChunk)
-                .where(
-                    RagChunk.embedding.is_(None),
-                    RagChunk.created_at >= cutoff,
-                )
-                .order_by(RagChunk.created_at.desc())
-                .limit(200)
-            )
-            stale_chunks = emb_rows.scalars().all()
-            if stale_chunks:
-                texts = [(c.chunk_text or "")[:8000] for c in stale_chunks]
-                vectors = _embed_texts(texts)
-                if vectors:
-                    for chunk, vec in zip(stale_chunks, vectors, strict=False):
-                        chunk.embedding = vec
-                        chunk.embedding_model = settings.rag_embedding_model
-                    embeddings_backfilled = len(stale_chunks)
+        embeddings_backfilled = await reindex_batch(db)
 
         if indexed > 0 or embeddings_backfilled > 0:
             await db.commit()
@@ -889,6 +876,7 @@ async def run_semantic_rebuild(ctx: dict, org_id: str) -> dict[str, Any]:
     from app.database import engine, get_session_factory
     from app.services.semantic.rebuild import rebuild_semantic_snapshot
 
+    set_current_tenant(str(org_id))
     async with get_session_factory(engine())() as db:
         snap = await rebuild_semantic_snapshot(str(org_id), db, include_brief=True)
     ok = snap is not None

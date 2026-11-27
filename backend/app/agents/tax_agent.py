@@ -20,6 +20,7 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
+from app.agents.narrative_guard import labels_skipped_ai_step
 from app.agents.state import AgentRunConfig, CFOState, SkillResult
 
 logger = logging.getLogger(__name__)
@@ -297,6 +298,7 @@ def _tax_narrative_template(tax: dict[str, Any]) -> str:
     )
 
 
+@labels_skipped_ai_step
 async def _generate_tax_narrative(
     tax: dict[str, Any], settings
 ) -> str:

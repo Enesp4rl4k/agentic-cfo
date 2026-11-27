@@ -17,8 +17,8 @@ import pytest
 from pydantic import BaseModel
 
 from app.config import get_settings
+from app.platform import embedding_gateway
 from app.platform import model_gateway as mg
-from app.services import rag_service
 
 BASE = "https://api.deepseek.com"
 MAX_TOKENS = 777
@@ -52,6 +52,9 @@ def wire(monkeypatch: pytest.MonkeyPatch) -> Any:
     monkeypatch.setattr(s, "llm_model_strong", None)
     monkeypatch.setattr(s, "llm_model_prices", {})
     monkeypatch.setattr(s, "llm_max_tokens", MAX_TOKENS)
+    # the wire shape, not data minimisation: `raw` needs no company context (masked mode fails closed without one;
+    # the masked payloads are proven by tests/test_llm_egress_matrix.py)
+    monkeypatch.setattr(s, "llm_data_mode", "raw")
     monkeypatch.setattr(mg, "_persist_call_log", lambda **_: None)
 
     async def _spend(_org: Any) -> float:
@@ -148,7 +151,7 @@ def test_embeddings_send_strings_without_dimensions_to_a_compatible_endpoint(
         return httpx.Response(200, json={"object": "list", "data": data, "model": "embed-model",
                                          "usage": {"prompt_tokens": 1, "total_tokens": 1}})
 
-    client = rag_service._build_embeddings(s)
+    client = embedding_gateway._build_embeddings(s)
     http = httpx.Client(transport=httpx.MockTransport(handler))
     client.client = openai.OpenAI(api_key="sk-test-not-real", base_url=BASE, http_client=http).embeddings
     assert client.embed_documents(["alacak raporu", "borc raporu"]) == [[0.1, 0.2], [0.1, 0.2]]
@@ -156,6 +159,17 @@ def test_embeddings_send_strings_without_dimensions_to_a_compatible_endpoint(
     body = _body(seen[-1])
     assert str(seen[-1].url) == f"{BASE}/embeddings"
     assert body["input"] == ["alacak raporu", "borc raporu"]  # strings, not token-id arrays
+
+    # ... and the same request through the gateway's own entry point (raw mode: no company context needed here)
+    import asyncio
+
+    monkeypatch.setattr(s, "llm_data_mode", "raw")
+    monkeypatch.setattr(s, "rag_embedding_enabled", True)
+    monkeypatch.setattr(embedding_gateway.audit, "persist_call_log", lambda **_: None)
+    monkeypatch.setattr(embedding_gateway, "_build_embeddings", lambda _s: client)
+    out = asyncio.run(embedding_gateway.embed_texts(["kira gideri"], org_id=None))
+    assert out is not None and out.vectors == [[0.1, 0.2]] and _body(seen[-1])["input"] == ["kira gideri"]
+    body = _body(seen[-2])
     assert body["model"] == "embed-model"
     assert "dimensions" not in body
     assert body["encoding_format"] == "float"
@@ -168,7 +182,7 @@ def test_embeddings_to_openai_itself_keep_dimensions_and_client_side_tokenising(
     monkeypatch.setattr(s, "openai_api_key", "sk-test-not-real")
     monkeypatch.setattr(s, "llm_base_url", "")
     monkeypatch.setattr(s, "rag_embedding_dimensions", 1536)
-    client = rag_service._build_embeddings(s)
+    client = embedding_gateway._build_embeddings(s)
     assert isinstance(client, langchain_openai.OpenAIEmbeddings)
     assert client.check_embedding_ctx_length is True
     assert client.dimensions == 1536

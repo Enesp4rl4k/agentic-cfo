@@ -312,6 +312,7 @@ async def explain_anomaly(
 
     async def _generate():
         try:
+            from app.platform.model_gateway import LLMDisabled, LLMEgressRefused
             from app.platform.model_gateway import stream as _gw_stream
 
             prompt = (
@@ -336,6 +337,10 @@ async def explain_anomaly(
                 if token:
                     yield f"data: {token}\n\n"
 
+        except LLMEgressRefused as refused:  # masked mode failed closed: nothing was sent
+            yield f"data: {refused} Bu açıklama üretilmedi.\n\n"
+        except LLMDisabled:
+            yield "data: Yapay zekâ adımı kapalı (LLM_DATA_MODE=off): bu açıklama üretilmedi.\n\n"
         except Exception as exc:
             yield f"data: Analiz başlatılamadı: {exc}\n\n"
         finally:

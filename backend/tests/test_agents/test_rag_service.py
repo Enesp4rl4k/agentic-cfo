@@ -39,7 +39,7 @@ async def test_embedding_runs_before_the_transaction_opens(monkeypatch) -> None:
     """
     order: list[str] = []
 
-    def _embed_spy(texts: list[str]) -> list[list[float]] | None:
+    async def _embed_spy(texts: list[str], **_kw) -> None:
         order.append("embed")
         return None  # tests have no API key → TF-IDF path
 

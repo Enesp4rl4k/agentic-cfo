@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import Any
 
 from app.agents.chro.state import CHROState, CHROStepLog
+from app.agents.narrative_guard import labels_skipped_ai_step
 from app.core.financial import format_currency_try
 
 logger = logging.getLogger(__name__)
@@ -213,6 +214,7 @@ def _build_attrition_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
     return alerts
 
 
+@labels_skipped_ai_step
 async def _generate_attrition_narrative(
     metrics: dict[str, Any],
     settings,

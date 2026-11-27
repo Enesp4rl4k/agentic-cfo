@@ -241,7 +241,7 @@ async def generate_nl_insight(
     Use LLM to generate a Turkish explanation for the query result.
     Also suggests 2-3 follow-up questions.
     """
-    from app.platform.model_gateway import complete_text
+    from app.platform.model_gateway import complete
 
     # Build compact context
     pnl = dashboard.get("pnl") or {}
@@ -276,17 +276,15 @@ async def generate_nl_insight(
     _user = f"Kullanıcı sorusu: {query}\n\nFinansal bağlam: {compact_context}"
 
     try:
-        import json
-        content = (await complete_text(
-            task="quick_analysis", system_prompt=_system, prompt=_user, max_tokens=600,
-        )).strip()
-
-        # Try to parse JSON response
-        json_match = re.search(r"\{.*\}", content, re.DOTALL)
-        if json_match:
-            parsed = json.loads(json_match.group(0))
-            answer = parsed.get("answer", content)
-            follow_ups = parsed.get("follow_ups", [])
+        # The reply is parsed BEFORE placeholders are restored (a restored name with a quote cannot break
+        # it); a reply that is not JSON is shown as text.
+        result = await complete(
+            task="quick_analysis", system_prompt=_system, prompt=_user, max_tokens=600, json_reply="narrative",
+        )
+        content = result.text.strip()
+        if isinstance(result.parsed, dict):
+            answer = str(result.parsed.get("answer") or content)
+            follow_ups = [str(q) for q in (result.parsed.get("follow_ups") or []) if isinstance(q, str)]
         else:
             answer = content
             follow_ups = []

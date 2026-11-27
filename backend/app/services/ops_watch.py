@@ -13,6 +13,9 @@ is a few mails, not hundreds.
   report alerts at once; no successful report for `BACKUP_MAX_AGE_HOURS` alerts too. Only when
   `OPS_REPORT_TOKEN` is set (the endpoint is then in use); without it nothing is checked and nothing is claimed.
 
+* refused AI calls: masked mode failed closed (no company context, names dictionary unreadable) in the last
+  24 hours, by reason (`app/platform/llm_egress/refusals.py`).
+
 Not covered here: "readiness degraded for longer than M minutes". `/ready` is polled from outside by the
 uptime monitor of the owner's choice (decision D4); the application cannot report that it is down.
 """
@@ -148,6 +151,23 @@ async def _preflight_warnings(db: AsyncSession, now: datetime) -> int:
     )
 
 
+async def _llm_egress_refusals(db: AsyncSession, now: datetime) -> int:
+    """Masked mode refused AI calls (fail closed) in the last 24 hours: tell the operators, by reason."""
+    from app.models.llm_call_log import LLMCallLog
+    from app.platform.llm_egress.refusals import ERROR_PREFIX
+    from app.services.operator_alerts import raise_alert
+
+    rows = (await db.execute(
+        select(LLMCallLog.error, func.count()).where(
+            LLMCallLog.error.like(ERROR_PREFIX + "%"), LLMCallLog.created_at > now - timedelta(hours=24)
+        ).group_by(LLMCallLog.error)
+    )).all()
+    if not rows:
+        return 0
+    detail = " ".join(f"{str(e).removeprefix(ERROR_PREFIX)}={n}" for e, n in sorted(rows))
+    return await raise_alert(db, "llm_egress_refused", dedupe=now.strftime("%Y-%m-%d"), detail=detail, now=now)
+
+
 async def watch(now: datetime | None = None) -> int:
     """Run every check once; returns how many alert mails were addressed (0 when nothing is wrong)."""
     from app.database import engine, get_session_factory
@@ -156,7 +176,7 @@ async def watch(now: datetime | None = None) -> int:
     moment = now or datetime.now(UTC)
     async with get_session_factory(engine())() as db:
         total = 0
-        for check in (_preflight_warnings, _failing_destinations, _backup_check):
+        for check in (_preflight_warnings, _failing_destinations, _backup_check, _llm_egress_refusals):
             try:
                 total += await check(db, moment)
                 await db.commit()

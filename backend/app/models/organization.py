@@ -113,6 +113,10 @@ class Organization(Base):
         Boolean, default=False, server_default=false(), nullable=False
     )
 
+    # What may leave for a language model, as the owner chose it: "off" | "masked" | "raw". Null = the platform's
+    # LLM_DATA_MODE. Written only with a decision record (PUT /privacy/ai-data-mode).
+    llm_data_mode: Mapped[str | None] = mapped_column(String(8), nullable=True)
+
     # Data retention the owner chose for this company: {"upload_days", "outbox_body_days", "notification_days",
     # "alert_history_days"}, whole days; a missing key means the platform default (`app.services.privacy.retention`).
     retention_policy: Mapped[dict[str, int] | None] = mapped_column(JSON, nullable=True)
