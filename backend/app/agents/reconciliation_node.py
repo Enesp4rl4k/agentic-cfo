@@ -22,8 +22,6 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from langchain_core.runnables import RunnableConfig
-
 from app.agents.state import CFOState, StepLog
 from app.core.tdhp import BILANCO_KATEGORILERI
 from app.services.rag.grounding_validator import (
@@ -213,7 +211,7 @@ def reconcile_cfo_state(state: CFOState) -> ReconVerdict:
     return ReconVerdict(action="proceed", notes=notes)
 
 
-async def node_reconcile(state: CFOState, config: RunnableConfig) -> CFOState:
+async def node_reconcile(state: CFOState) -> CFOState:
     """LangGraph node — runs the reconciliation check and patches state."""
     verdict = reconcile_cfo_state(state)
 
