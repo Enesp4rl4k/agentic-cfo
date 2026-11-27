@@ -51,10 +51,8 @@ jobs:
 
       - name: Install backend dependencies
         working-directory: backend
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements.txt -c constraints.txt
-          pip install -c constraints.txt pytest-asyncio
+        # Exact pins (requirements + constraints), wheels only: no package's setup script runs here.
+        run: pip install --only-binary :all: -r requirements.txt -c constraints.txt
 
       - name: Date-sensitive suites at ${{ matrix.instant }}
         working-directory: backend
