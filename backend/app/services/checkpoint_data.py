@@ -116,7 +116,8 @@ async def purge_old_checkpoints(db: Any, *, days: int, dry_run: bool, now: Any) 
     No production code reads a checkpoint back: every run has its own thread (`thread_key`) and nothing resumes one,
     so the rows have no consumer; they are kept only `RETENTION_CHECKPOINT_DAYS` (default 3) as a short window in
     which an operator could look at a crashed run by hand (no tool does today). The age is the checkpoint's own `ts`
-    (the library keeps no column for it)."""
+    (the library keeps no column for it), which the library stamps with the WALL clock: `now` must be a wall-clock
+    reading too (`clock.wall_now()`, as retention passes), never the pinned app clock."""
     from datetime import timedelta
 
     from sqlalchemy import inspect, text

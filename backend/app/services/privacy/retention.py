@@ -218,7 +218,11 @@ async def purge_platform(db: AsyncSession, policy: dict[str, int], *, dry_run: b
         from app.services.checkpoint_data import purge_old_checkpoints, purge_unscoped_checkpoints
 
         if days > 0:
-            out["checkpoints"] = await purge_old_checkpoints(db, days=days, dry_run=dry_run, now=now)
+            # The langgraph library stamps a checkpoint's `ts` with the wall clock (third-party code is not on the
+            # app clock, app/core/clock.py): its age is measured against the wall clock, never a pinned instant.
+            from app.core.clock import wall_now
+
+            out["checkpoints"] = await purge_old_checkpoints(db, days=days, dry_run=dry_run, now=wall_now())
         # Whatever the age and even with checkpoint_days = 0: a thread without its organisation is an orphan.
         out["checkpoints_unscoped"] = await purge_unscoped_checkpoints(db, dry_run=dry_run)
     return out

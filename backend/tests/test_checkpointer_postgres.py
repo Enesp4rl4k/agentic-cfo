@@ -321,6 +321,7 @@ async def test_reading_a_checkpoint_rebuilds_only_the_allowed_types() -> None:
     assert not isinstance(values["gadget"], Gadget), "an unlisted type was constructed from a checkpoint row"
 
 
+@pytest.mark.real_clock(reason="langgraph stamps checkpoint ts with the wall clock; retention measures it the same way")
 async def test_retention_deletes_idle_threads_and_keeps_recent_ones(maker) -> None:
     org, job_old = str(uuid.uuid4()), str(uuid.uuid4())
     FAIL_SECOND["on"] = False
