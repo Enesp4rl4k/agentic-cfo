@@ -11,6 +11,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from langchain_core.runnables import RunnableConfig
+
 from app.agents.state import AgentRunConfig, CFOState, StepLog
 from app.platform.contracts import VerifierVerdict
 from app.platform.policies import (
@@ -112,7 +114,7 @@ def evaluate_cfo_state(
     return VerifierVerdict(action="proceed", confidence=min_conf)
 
 
-async def node_verifier(state: CFOState, config: dict) -> CFOState:
+async def node_verifier(state: CFOState, config: RunnableConfig) -> CFOState:
     """LangGraph node wrapper — patches state based on verifier verdict."""
     from app.agents.orchestrator import (
         _run_config,  # lazy import avoids cycle at module load

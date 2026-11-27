@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, StateGraph
 
 from app.agents.risk.kri_agent import run_kri_agent
@@ -29,25 +30,25 @@ def _append_log(state: RiskState, log: RiskStepLog) -> dict[str, Any]:
 
 # ── Nodes ──────────────────────────────────────────────────────────────────────
 
-async def node_register(state: RiskState, config: dict) -> RiskState:
+async def node_register(state: RiskState, config: RunnableConfig) -> RiskState:
     result = await run_register_agent(state, config)
     return {**state, "register": result["register"],
             "logs": result["logs"], "error": result.get("error")}
 
 
-async def node_loss(state: RiskState, config: dict) -> RiskState:
+async def node_loss(state: RiskState, config: RunnableConfig) -> RiskState:
     result = await run_loss_agent(state, config)
     return {**state, "losses": result["losses"],
             "logs": result["logs"], "error": result.get("error")}
 
 
-async def node_kri(state: RiskState, config: dict) -> RiskState:
+async def node_kri(state: RiskState, config: RunnableConfig) -> RiskState:
     result = await run_kri_agent(state, config)
     return {**state, "kris": result["kris"],
             "logs": result["logs"], "error": result.get("error")}
 
 
-async def node_risk_summary(state: RiskState, config: dict) -> RiskState:
+async def node_risk_summary(state: RiskState, config: RunnableConfig) -> RiskState:
     """
     Synthesise register + loss + kri into enterprise risk posture.
     Enterprise Risk Score (0-10, higher = worse).

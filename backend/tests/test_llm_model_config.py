@@ -81,10 +81,10 @@ async def test_settings_temperature_and_max_tokens_are_defaults(cfg, monkeypatch
     monkeypatch.setattr(cfg, "llm_max_tokens", 1234)
     await mg.complete(task="deep_analysis", prompt="hi")
     last = _Recorder.instances[-1]
-    assert (last["temperature"], last["max_tokens"]) == (0.25, 1234)
+    assert (last["temperature"], last["extra_body"]["max_tokens"]) == (0.25, 1234)
     await mg.complete(task="deep_analysis", prompt="hi", temperature=0.9, max_tokens=50)
     last = _Recorder.instances[-1]
-    assert (last["temperature"], last["max_tokens"]) == (0.9, 50)
+    assert (last["temperature"], last["extra_body"]["max_tokens"]) == (0.9, 50)
 
 
 # (b) tier overrides

@@ -9,6 +9,7 @@ Uses pure computation (no LLM required for synthesis).
 
 from typing import Any
 
+from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, StateGraph
 
 from app.agents.chro.attrition_agent import run_attrition_agent
@@ -24,7 +25,7 @@ def _append_log(state: CHROState, log: CHROStepLog) -> dict[str, Any]:
     return {"logs": logs}
 
 
-async def node_headcount(state: CHROState, config: dict) -> CHROState:
+async def node_headcount(state: CHROState, config: RunnableConfig) -> CHROState:
     """Headcount analysis node."""
     result = await run_headcount_agent(state, config)
     return {
@@ -35,7 +36,7 @@ async def node_headcount(state: CHROState, config: dict) -> CHROState:
     }
 
 
-async def node_attrition(state: CHROState, config: dict) -> CHROState:
+async def node_attrition(state: CHROState, config: RunnableConfig) -> CHROState:
     """Attrition analysis node."""
     result = await run_attrition_agent(state, config)
     return {
@@ -46,7 +47,7 @@ async def node_attrition(state: CHROState, config: dict) -> CHROState:
     }
 
 
-async def node_compensation(state: CHROState, config: dict) -> CHROState:
+async def node_compensation(state: CHROState, config: RunnableConfig) -> CHROState:
     """Compensation analysis node."""
     result = await run_compensation_agent(state, config)
     return {
@@ -57,7 +58,7 @@ async def node_compensation(state: CHROState, config: dict) -> CHROState:
     }
 
 
-async def node_chro_summary(state: CHROState, config: dict) -> CHROState:
+async def node_chro_summary(state: CHROState, config: RunnableConfig) -> CHROState:
     """
     Synthesize headcount + attrition + compensation into CHRO summary.
     Pure computation — no LLM.

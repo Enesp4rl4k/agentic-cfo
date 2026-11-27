@@ -23,8 +23,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Mapping
 from typing import Any
 
+from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, StateGraph
 
 from app.agents.ceo.board_deck_agent import run_board_deck_agent
@@ -61,13 +63,13 @@ def _append_log(state: CEOState, log: CEOStepLog) -> dict[str, Any]:
     return {"logs": existing, "min_confidence": min_conf}
 
 
-def _run_config(config: dict) -> CEORunConfig:
+def _run_config(config: Mapping[str, Any]) -> CEORunConfig:
     return config.get("configurable", {}).get("ceo_run_config", DEFAULT_CEO_RUN_CONFIG)
 
 
 # ── Nodes ──────────────────────────────────────────────────────────────────────
 
-async def node_run_pipelines(state: CEOState, config: dict) -> CEOState:
+async def node_run_pipelines(state: CEOState, config: RunnableConfig) -> CEOState:
     """
     Fan-out node: run CFO, CTO, CMO, COO, and CHRO pipelines in parallel.
     All are optional — missing inputs are handled by their respective pipelines.
@@ -110,6 +112,9 @@ async def node_run_pipelines(state: CEOState, config: dict) -> CEOState:
                     file_path=cfo_input.get("file_path", ""),
                     file_type=cfo_input.get("file_type", ""),
                     budget_input=cfo_input.get("budget"),
+                    # The organisation whose statement this is: its checkpoints are namespaced by it, so its
+                    # erasure finds them. Without one the CFO run is not checkpointed at all.
+                    org_id=cfo_input.get("org_id"),
                 )
                 cfo_result = dict(result)
             logger.info("CEO: CFO pipeline finished for job=%s", job_id)
@@ -207,7 +212,7 @@ async def node_run_pipelines(state: CEOState, config: dict) -> CEOState:
     return {**state, **patch}  # type: ignore[typeddict-item]
 
 
-async def node_condense_summaries(state: CEOState, config: dict) -> CEOState:
+async def node_condense_summaries(state: CEOState, config: RunnableConfig) -> CEOState:
     """Extract CEO-relevant KPIs from raw CFO/CTO/CMO/COO/CHRO pipeline outputs."""
     cfo_result = state.get("_cfo_result") or {}
     cto_result = state.get("_cto_result") or {}
@@ -240,7 +245,7 @@ async def node_condense_summaries(state: CEOState, config: dict) -> CEOState:
     return {**state, **patch}  # type: ignore[typeddict-item]
 
 
-async def node_synthesis(state: CEOState, config: dict) -> CEOState:
+async def node_synthesis(state: CEOState, config: RunnableConfig) -> CEOState:
     result = await run_synthesis_agent(state, _run_config(config))
     patch = _append_log(state, CEOStepLog(
         step="synthesis", ok=result.ok, detail=result.detail, confidence=result.confidence
@@ -251,7 +256,7 @@ async def node_synthesis(state: CEOState, config: dict) -> CEOState:
     return {**state, **patch}  # type: ignore[typeddict-item]
 
 
-async def node_strategic_priorities(state: CEOState, config: dict) -> CEOState:
+async def node_strategic_priorities(state: CEOState, config: RunnableConfig) -> CEOState:
     result = await run_strategic_priorities_agent(state, _run_config(config))
     patch = _append_log(state, CEOStepLog(
         step="strategic_priorities", ok=result.ok, detail=result.detail, confidence=result.confidence
@@ -260,7 +265,7 @@ async def node_strategic_priorities(state: CEOState, config: dict) -> CEOState:
     return {**state, **patch}  # type: ignore[typeddict-item]
 
 
-async def node_board_deck(state: CEOState, config: dict) -> CEOState:
+async def node_board_deck(state: CEOState, config: RunnableConfig) -> CEOState:
     result = await run_board_deck_agent(state, _run_config(config))
     patch = _append_log(state, CEOStepLog(
         step="board_deck", ok=result.ok, detail=result.detail, confidence=result.confidence
@@ -269,7 +274,7 @@ async def node_board_deck(state: CEOState, config: dict) -> CEOState:
     return {**state, **patch}  # type: ignore[typeddict-item]
 
 
-async def node_swot(state: CEOState, config: dict) -> CEOState:
+async def node_swot(state: CEOState, config: RunnableConfig) -> CEOState:
     """SWOT analizi — tüm C-Suite özetlerinden otomatik SWOT matrisi üretir."""
     result = await run_swot_agent(state, _run_config(config))
     patch = _append_log(state, CEOStepLog(
@@ -279,12 +284,12 @@ async def node_swot(state: CEOState, config: dict) -> CEOState:
     return {**state, **patch}  # type: ignore[typeddict-item]
 
 
-async def node_okr(state: CEOState, config: dict) -> CEOState:
+async def node_okr(state: CEOState, config: RunnableConfig) -> CEOState:
     from app.agents.ceo.okr_agent import run_okr_agent
     return await run_okr_agent(state, config)  # type: ignore[arg-type, return-value]
 
 
-async def node_hold_for_review(state: CEOState, config: dict) -> CEOState:
+async def node_hold_for_review(state: CEOState, config: RunnableConfig) -> CEOState:
     patch = _append_log(state, CEOStepLog(
         step="review_gate",
         ok=True,
@@ -444,6 +449,7 @@ async def run_ceo_pipeline(
     company_name: str | None = None,
     period: str | None = None,
     run_config: CEORunConfig | None = None,
+    org_id: str | None = None,
 ) -> CEOState:
     """
     Run the full CEO analysis pipeline.
@@ -453,6 +459,9 @@ async def run_ceo_pipeline(
     CFO input modes (mutually exclusive, file-based takes priority):
       a) file-based: cfo_file_path + cfo_file_type
       b) direct JSON: cfo_transactions list
+
+    `org_id`: the organisation the CFO file belongs to (the job's). The file-based CFO run is checkpointed under it;
+    without one it is not checkpointed.
 
     Returns final CEOState with:
       - financial_summary, tech_summary
@@ -464,7 +473,7 @@ async def run_ceo_pipeline(
 
     cfo_input: dict[str, Any] = {}
     if cfo_file_path and cfo_file_type:
-        cfo_input = {"file_path": cfo_file_path, "file_type": cfo_file_type, "budget": cfo_budget}
+        cfo_input = {"file_path": cfo_file_path, "file_type": cfo_file_type, "budget": cfo_budget, "org_id": org_id}
     elif cfo_transactions:
         cfo_input = {"transactions": cfo_transactions, "budget": cfo_budget}
 

@@ -105,9 +105,11 @@ async def test_analysis_worker_starts_and_stops_scheduler(fake) -> None:
 def test_maintenance_worker_never_runs_crons() -> None:
     # One worker type owns the crons; a second scheduler would only be
     # stopped by the Redis lock.
-    from app.worker import MaintenanceWorkerSettings
+    # Its startup only verifies the checkpointer (it reaches run_cfo_pipeline); it never starts the scheduler.
+    from app.worker import MaintenanceWorkerSettings, _verify_checkpointer
 
-    assert getattr(MaintenanceWorkerSettings, "on_startup", None) is None
+    assert getattr(MaintenanceWorkerSettings, "on_startup", None) is _verify_checkpointer
+    assert getattr(MaintenanceWorkerSettings, "on_shutdown", None) is None
 
 
 def test_main_lifespan_starts_scheduler_as_api() -> None:
