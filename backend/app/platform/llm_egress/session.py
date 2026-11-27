@@ -200,9 +200,9 @@ class EgressSession:
             return value
         if not strict:
             return value if self.pseudo is None else self.pseudo.restore(value)
-        out = (None if _looks_like_placeholder(value) else value) if self.pseudo is None else self.pseudo.restore_strict(value)
-        self.unresolved += out is None
-        return out
+        restored = (None if _looks_like_placeholder(value) else value) if self.pseudo is None else self.pseudo.restore_strict(value)
+        self.unresolved += restored is None
+        return restored
 
     def stream_restorer(self) -> StreamRestorer | None:
         return None if self.pseudo is None else StreamRestorer(self.pseudo)

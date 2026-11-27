@@ -68,7 +68,7 @@ async def test_the_api_says_why_nothing_was_sent() -> None:
 
 async def test_operators_are_alerted_about_refusals(monkeypatch) -> None:
     from app.models.llm_call_log import LLMCallLog
-    from app.services import ops_watch, operator_alerts
+    from app.services import operator_alerts, ops_watch
 
     raised: list[tuple] = []
 
