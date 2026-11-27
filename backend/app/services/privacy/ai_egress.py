@@ -1,8 +1,9 @@
 """The owner's view of what leaves for a language model, and the owner's choice (Veri ve gizlilik).
 
-Counts and settings only: the provider's host and model from the configuration, the mode in force and why,
-which categories of data go in that mode, how many calls and bytes left in the last 30 days, and how many
-names the books gave the masking dictionary. No payload is stored anywhere, so none can be shown.
+Counts and settings only: the provider's host and the models the tiers call, the mode in force and why,
+which categories of data go in that mode, how many calls and bytes left in the last 30 days, how many calls
+masked mode refused (fail closed) and why, how many names the books gave the masking dictionary, and how many
+stored embeddings await re-indexing. No payload is stored anywhere, so none can be shown.
 
 The owner's choice is `organizations.llm_data_mode` and every change writes a decision record (who, when,
 from what to what). It may tighten the platform's `LLM_DATA_MODE`; loosening it needs LLM_ORG_MAY_RELAX.
@@ -18,6 +19,7 @@ from app.models.decision import DecidedVia, DecisionKind
 from app.models.organization import Organization
 from app.platform.llm_egress import audit, dictionary, policy
 from app.platform.llm_egress.policy import DataMode
+from app.services import rag_reindex
 from app.services.decisions import record_decision
 
 _STRICTNESS = {DataMode.OFF: 0, DataMode.MASKED: 1, DataMode.RAW: 2}
@@ -62,6 +64,7 @@ async def view(db: AsyncSession, org: Organization) -> dict[str, Any]:
     settings = get_settings()
     known = await dictionary.load(str(org.id)) if decision.mode == DataMode.MASKED else None
     host = policy.provider_host()
+    reindex = await rag_reindex.pending(db, str(org.id))
     return {
         "mode": decision.mode.value,
         "source": decision.source,
@@ -72,13 +75,30 @@ async def view(db: AsyncSession, org: Organization) -> dict[str, Any]:
         "provider_host": host,
         "provider_is_local": policy.is_local_provider(host),
         "model": settings.llm_model,
+        "models": _models_in_use(),
         "document_text": settings.llm_document_text,
         "categories": categories(decision.mode),
         "usage": await audit.usage_last_days(db, str(org.id), 30),
         "dictionary": None if known is None else {
             "known_names": len(known.names), "truncated": known.names.truncated, "complete": known.complete,
         },
+        "embeddings": {"pending_reindex": reindex["pending"]},
     }
+
+
+def _models_in_use() -> list[str]:
+    """The model ids the tiers really call (a tier override wins over LLM_MODEL), not only LLM_MODEL."""
+    from app.platform.model_catalog import Tier, config_for_tier
+
+    out: list[str] = []
+    for tier in (Tier.CHEAP, Tier.STRONG):
+        try:
+            model = config_for_tier(tier).model_id
+        except Exception:
+            continue
+        if model and model not in out:
+            out.append(model)
+    return out or [get_settings().llm_model]
 
 
 async def set_mode(db: AsyncSession, org: Organization, user_id: str, mode: str | None) -> None:

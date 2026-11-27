@@ -45,12 +45,16 @@ async def test_the_owner_sees_mode_provider_categories_and_counters_and_nobody_e
                           replaced={"counts": {"IBAN": 2}, "flags": [], "sends": 1}))
         db.add(LLMCallLog(org_id=org, task_type="embedding", model="m", data_mode="masked", bytes_out=300))
         db.add(LLMCallLog(org_id=org, task_type="cached", model="m", data_mode=None, bytes_out=0, from_cache=True))
+        db.add(LLMCallLog(org_id=org, task_type="chat", model="-", data_mode="masked", bytes_out=0, ok=False,
+                          error="egress_refused:dictionary_unavailable"))
         await db.commit()
     view = (await client.get("/api/v1/privacy/overview", headers=owner)).json()["data"]["ai_egress"]
     assert view["mode"] == "masked" and view["source"] == "platform" and view["platform_mode"] == "masked"
     assert view["provider_host"] == "api.deepseek.com" and view["model"] == get_settings().llm_model
     assert view["provider_is_local"] is False and view["allowed_modes"] == ["off", "masked"]
-    assert view["usage"] == {"days": 30, "calls": 2, "bytes_out": 1500, "calls_by_mode": {"masked": 2}}
+    assert view["usage"] == {"days": 30, "calls": 2, "bytes_out": 1500, "calls_by_mode": {"masked": 2},
+                             "refused": {"dictionary_unavailable": 1}, "refused_total": 1}
+    assert view["models"] and view["embeddings"] == {"pending_reindex": 0}
     states = {c["key"]: c["state"] for c in view["categories"]}
     assert states["figures"] == "sent" and states["identifiers"] == "replaced" and states["counterparties"] == "replaced"
     assert states["descriptions"] == "partly" and states["document_text"] == "partly"

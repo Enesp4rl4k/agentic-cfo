@@ -823,30 +823,11 @@ async def run_rag_backfill_maintenance(ctx: dict) -> dict[str, Any]:
             if added > 0:
                 indexed += 1
 
-        # Phase 2: backfill embeddings for text-only chunks (pgvector path)
-        from app.services.rag_service import _embed_texts, _has_embedding_support
+        # Phase 2: embed chunks that have no vector, or one that does not match the company's current data
+        # mode / pseudonym key (bounded, idempotent, resumable: app/services/rag_reindex.py)
+        from app.services.rag_reindex import reindex_batch
 
-        if _has_embedding_support():
-            emb_rows = await db.execute(
-                select(RagChunk)
-                .where(
-                    RagChunk.embedding.is_(None),
-                    RagChunk.created_at >= cutoff,
-                )
-                .order_by(RagChunk.created_at.desc())
-                .limit(200)
-            )
-            stale_chunks = emb_rows.scalars().all()
-            by_org: dict[str, list[RagChunk]] = {}
-            for chunk in stale_chunks:
-                by_org.setdefault(str(chunk.org_id), []).append(chunk)
-            for chunk_org, group in by_org.items():  # each organisation under its own data mode
-                embedded = await _embed_texts([(c.chunk_text or "")[:8000] for c in group], org_id=chunk_org)
-                if embedded:
-                    for chunk, vec in zip(group, embedded.vectors, strict=False):
-                        chunk.embedding = vec
-                        chunk.embedding_model = embedded.tag
-                    embeddings_backfilled += len(group)
+        embeddings_backfilled = await reindex_batch(db)
 
         if indexed > 0 or embeddings_backfilled > 0:
             await db.commit()
