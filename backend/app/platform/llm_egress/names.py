@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from app.platform.llm_egress.common_words import COMMON_WORDS
 from app.platform.llm_egress.suffixes import MAX_SUFFIX, SUFFIXES
@@ -153,14 +153,18 @@ class NameHit:
     canonical: str
 
 
-@dataclass(repr=False)
 class NameDictionary:
-    """label -> names; built once per organisation, matched per outbound text. Its repr shows sizes only."""
+    """label -> names; built once per organisation, matched per outbound text. Its repr shows sizes only. A plain
+    class on purpose: a serializer that walks dataclass fields (LangGraph checkpoints) cannot copy the names."""
 
-    entries: dict[tuple[str, ...], tuple[str, str]] = field(default_factory=dict)  # words -> (label, canonical)
-    identifiers: dict[str, str] = field(default_factory=dict)  # a tax number the books hold -> its label
-    truncated: bool = False
-    _by_first: dict[str, list[tuple[str, ...]]] = field(default_factory=dict)
+    def __init__(self) -> None:
+        self.entries: dict[tuple[str, ...], tuple[str, str]] = {}  # words -> (label, canonical)
+        self.identifiers: dict[str, str] = {}                      # a tax number the books hold -> its label
+        self.truncated = False
+        self._by_first: dict[str, list[tuple[str, ...]]] = {}
+
+    def __reduce__(self):  # pickling (a checkpoint, a cache, a task queue) would carry the names: refuse
+        raise TypeError("NameDictionary holds an organisation's names and is never serialised")
 
     def __repr__(self) -> str:
         return f"NameDictionary(names={len(self)}, truncated={self.truncated})"

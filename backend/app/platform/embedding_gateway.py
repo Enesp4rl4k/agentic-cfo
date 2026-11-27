@@ -51,29 +51,35 @@ def has_embedding_support() -> bool:
     return _has_embedding_support()
 
 
-def _client_embed(texts: list[str]) -> list[list[float]]:
-    """The one embeddings client. Same request shape as PR #157's rag_service._build_embeddings: OpenAIEmbeddings
-    tokenises client-side and sends token-id arrays plus `dimensions` (an OpenAI-only shape); against any other
-    OpenAI-compatible base URL it sends plain strings, plain floats and no `dimensions`."""
+def _build_embeddings(settings: Any) -> Any:
+    """The one embeddings client (ported here from PR #157's rag_service._build_embeddings: no embeddings client may
+    exist outside this gateway). OpenAIEmbeddings tokenises client-side and sends token-id arrays plus `dimensions`,
+    an OpenAI-only shape; against any other OpenAI-compatible base URL it sends plain strings, plain floats
+    (`encoding_format=float`) and no `dimensions` (the column is `rag_embedding_dimensions` wide: the provider's
+    native width must match it). `dimensions` is sent only when configured."""
     from urllib.parse import urlsplit
 
     from langchain_openai import OpenAIEmbeddings
 
-    settings = get_settings()
     base_url = settings.llm_base_url or None
     on_openai = base_url is None or urlsplit(base_url).hostname == "api.openai.com"
     extra: dict[str, Any] = (
         {"dimensions": settings.rag_embedding_dimensions} if on_openai and settings.rag_embedding_dimensions else {}
     )
-    client = OpenAIEmbeddings(
+    return OpenAIEmbeddings(
         model=settings.rag_embedding_model,
-        api_key=settings.openai_api_key,  # type: ignore[arg-type]  # langchain coerces str to SecretStr
+        api_key=settings.openai_api_key,
         base_url=base_url,
         check_embedding_ctx_length=on_openai,
         model_kwargs={} if on_openai else {"encoding_format": "float"},
         **extra,
     )
-    return client.embed_documents(texts)
+
+
+def _client_embed(texts: list[str]) -> list[list[float]]:
+    """Send already-masked texts (only `embed_texts` calls this, after the egress session)."""
+    vectors: list[list[float]] = _build_embeddings(get_settings()).embed_documents(texts)
+    return vectors
 
 
 async def embed_texts(texts: list[str], *, org_id: str | None, purpose: str = "rag_index") -> Embedded | None:

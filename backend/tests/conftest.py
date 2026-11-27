@@ -32,6 +32,10 @@ import tempfile
 
 import pytest
 
+from app.core import clock as _clock
+
+_clock.install()  # first: before langchain/pydantic and every app module bind `datetime` (section 1b)
+
 # ── 0. Never the developer's database ────────────────────────────────────────
 # Set before anything imports app.config, whose Settings is cached on first use.
 if not os.environ.get("DATABASE_URL_OVERRIDE"):
@@ -69,6 +73,32 @@ for _name in _REAL_MODULE_NAMES:
         _REAL_MODULES[_name] = __import__(_name, fromlist=["_"])
     except ImportError:  # pragma: no cover - lean env without the real package
         pass
+
+
+# ── 1b. One clock, pinned (app/core/clock.py) ───────────────────────────────────
+# Every test starts at the same documented instant (`clock.TEST_INSTANT`, a Wednesday 10:00 UTC) and the clock
+# ticks from there, so "today minus 3 days" is the same date on every run. `TEST_CLOCK_INSTANT` moves the whole
+# session (the boundary-matrix job: 23:59:30, 21:00 UTC, month end, 29 Feb, ...). Installed before any app module
+# is imported, so `datetime.now()` / `date.today()` in the product and in the tests read it. A test that truly
+# needs the wall clock says so: `@pytest.mark.real_clock(reason="...")`. Guarded by tests/test_clock_guard.py.
+SESSION_INSTANT = (
+    _clock.parse_instant(os.environ["TEST_CLOCK_INSTANT"]) if os.environ.get("TEST_CLOCK_INSTANT") else _clock.TEST_INSTANT
+)
+# Collection (module-level "TODAY = date.today()") sees the instant itself, not a few seconds past it.
+_clock.pin(SESSION_INSTANT, tick=False)
+
+
+@pytest.fixture(autouse=True)
+def _pinned_clock(request):
+    marker = request.node.get_closest_marker("real_clock")
+    if marker is not None:
+        if not marker.kwargs.get("reason"):
+            pytest.fail("@pytest.mark.real_clock needs reason=\"why this test must read the wall clock\"")
+        _clock.unpin()
+    else:
+        _clock.pin(SESSION_INSTANT)
+    yield
+    _clock.pin(SESSION_INSTANT, tick=False)
 
 
 @pytest.fixture(autouse=True)

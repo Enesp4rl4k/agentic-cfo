@@ -482,7 +482,7 @@ class _Paged:
         self.served = 0
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
-        import time
+        from datetime import UTC, datetime
 
         if request.url.path == "/oauth/token":
             return httpx.Response(200, json={"access_token": "ACCESS", "refresh_token": "R", "expires_in": 7200})
@@ -495,7 +495,7 @@ class _Paged:
             return httpx.Response(500)
         if page > self.pages and not self.endless:
             return httpx.Response(200, json={"data": []})
-        today = time.strftime("%Y-%m-%d")
+        today = datetime.now(UTC).date().isoformat()  # the pinned test day (UTC)
         data = []
         for i in range(25):
             self.served += 1

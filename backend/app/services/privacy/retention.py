@@ -12,6 +12,9 @@ decisions are kept (Turkish commercial and tax law has long statutory periods: l
   platform-wide (settings only)
     tokens             password-reset / e-mail-verification tokens, spent or expired invitations    30 days after expiry
     audit_ip           audit-log IP address truncated (/24, /48), browser string removed; row stays 365 days
+    checkpoints        LangGraph agent-run checkpoints (PostgreSQL), 3 days after the run's last step (nothing reads
+                       them back); threads not namespaced by an organisation at once, whatever their age; org
+                       erasure deletes the org's at once (privacy.ephemeral)
   not here: expired export bundles (the 24-hour download lifetime, its own hourly job `export_expiry`, never gated
   by the dry-run flag), demo guest workspaces (their own hourly job, `DEMO_GUEST_TTL_HOURS`), chat history (Redis, 7 days),
   LLM prompts and responses (never stored by this product; the provider's own retention is Q1), soft-deleted rows
@@ -51,7 +54,7 @@ logger = logging.getLogger(__name__)
 
 FLOOR_DAYS = 30
 ORG_KEYS = ("upload_days", "outbox_body_days", "notification_days", "alert_history_days")
-PLATFORM_KEYS = ("token_days", "audit_ip_days")
+PLATFORM_KEYS = ("token_days", "audit_ip_days", "checkpoint_days")
 AUDIT_PAGE = 1000
 
 
@@ -61,7 +64,8 @@ def platform_policy() -> dict[str, int]:
     s = get_settings()
     return {"upload_days": s.retention_upload_days, "outbox_body_days": s.retention_outbox_body_days,
             "notification_days": s.retention_notification_days, "alert_history_days": s.retention_alert_history_days,
-            "token_days": s.retention_token_days, "audit_ip_days": s.retention_audit_ip_days}
+            "token_days": s.retention_token_days, "audit_ip_days": s.retention_audit_ip_days,
+            "checkpoint_days": s.retention_checkpoint_days}
 
 
 def effective_policy(org: Organization | None) -> dict[str, int]:
@@ -209,6 +213,18 @@ async def purge_platform(db: AsyncSession, policy: dict[str, int], *, dry_run: b
     days = policy["audit_ip_days"]
     if days > 0:
         out["audit_ip"] = await _audit_ip(db, now - timedelta(days=days), dry_run)
+    days = policy.get("checkpoint_days", 0)
+    if db.bind is not None and db.bind.dialect.name == "postgresql":
+        from app.services.checkpoint_data import purge_old_checkpoints, purge_unscoped_checkpoints
+
+        if days > 0:
+            # The langgraph library stamps a checkpoint's `ts` with the wall clock (third-party code is not on the
+            # app clock, app/core/clock.py): its age is measured against the wall clock, never a pinned instant.
+            from app.core.clock import wall_now
+
+            out["checkpoints"] = await purge_old_checkpoints(db, days=days, dry_run=dry_run, now=wall_now())
+        # Whatever the age and even with checkpoint_days = 0: a thread without its organisation is an orphan.
+        out["checkpoints_unscoped"] = await purge_unscoped_checkpoints(db, dry_run=dry_run)
     return out
 
 

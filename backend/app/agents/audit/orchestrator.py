@@ -17,6 +17,7 @@ import logging
 from collections import Counter
 from typing import Any
 
+from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, StateGraph
 
 from app.agents.audit.controls_agent import run_controls_agent
@@ -140,19 +141,19 @@ def _detect_repeat_findings(findings: dict[str, Any]) -> dict[str, Any]:
 # Node helpers
 # ---------------------------------------------------------------------------
 
-async def node_findings(state: AuditState, config: dict) -> AuditState:
+async def node_findings(state: AuditState, config: RunnableConfig) -> AuditState:
     result = await run_findings_agent(state, config)
     return {**state, "findings": result["findings"],
             "logs": result["logs"], "error": result.get("error")}
 
 
-async def node_controls(state: AuditState, config: dict) -> AuditState:
+async def node_controls(state: AuditState, config: RunnableConfig) -> AuditState:
     result = await run_controls_agent(state, config)
     return {**state, "controls": result["controls"],
             "logs": result["logs"], "error": result.get("error")}
 
 
-async def node_coverage(state: AuditState, config: dict) -> AuditState:
+async def node_coverage(state: AuditState, config: RunnableConfig) -> AuditState:
     result = await run_coverage_agent(state, config)
     return {**state, "coverage": result["coverage"],
             "logs": result["logs"], "error": result.get("error")}
@@ -162,7 +163,7 @@ async def node_coverage(state: AuditState, config: dict) -> AuditState:
 # Main summary node
 # ---------------------------------------------------------------------------
 
-async def node_audit_summary(state: AuditState, config: dict) -> AuditState:
+async def node_audit_summary(state: AuditState, config: RunnableConfig) -> AuditState:
     """
     Synthesise findings + controls + coverage into Internal Audit Score.
     Score 0-100 (higher = healthier audit posture).

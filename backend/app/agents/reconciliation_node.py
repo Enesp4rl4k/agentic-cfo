@@ -211,7 +211,7 @@ def reconcile_cfo_state(state: CFOState) -> ReconVerdict:
     return ReconVerdict(action="proceed", notes=notes)
 
 
-async def node_reconcile(state: CFOState, config: dict) -> CFOState:
+async def node_reconcile(state: CFOState) -> CFOState:
     """LangGraph node — runs the reconciliation check and patches state."""
     verdict = reconcile_cfo_state(state)
 

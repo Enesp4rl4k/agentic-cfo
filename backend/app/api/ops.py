@@ -140,6 +140,18 @@ async def _broker_checks(production: bool) -> dict[str, dict[str, Any]]:
         await client.aclose()
 
 
+async def _checkpointer(production: bool) -> dict[str, Any]:
+    """Whether agent runs can be resumed in another process: the saver is durable (Postgres or SQLite), not the
+    per-process memory fallback. Memory chosen on purpose (LANGGRAPH_CHECKPOINT=memory) is skipped, not failed."""
+    from app.agents.checkpointer import checkpointer_status
+
+    status = await asyncio.to_thread(checkpointer_status)
+    if status["durable"] is None:
+        return _check(None, required=False, code="memory_by_choice", backend=status["backend"])
+    ok = bool(status["durable"])
+    return _check(ok, required=production, code="durable" if ok else "memory_fallback", backend=status["backend"])
+
+
 async def _outbox(db: AsyncSession) -> dict[str, Any]:
     now = datetime.now(UTC)
     stuck = (
@@ -222,6 +234,7 @@ async def ready(
     else:
         checks["migrations"] = _check(None, required=True, code="database_down")
         checks["outbox"] = _check(None, required=False, code="database_down")
+    checks["checkpointer"] = await _bounded(_checkpointer(production), required=production, name="checkpointer")
     try:
         checks.update(await asyncio.wait_for(_broker_checks(production), CHECK_TIMEOUT_SECONDS + 1))
     except Exception:

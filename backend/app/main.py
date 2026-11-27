@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -115,6 +116,11 @@ async def lifespan(app: FastAPI):
         logger.info("SQLite: tables ensured via create_all.")
     else:
         logger.info("PostgreSQL mode: skipping create_all — expecting Alembic migrations.")
+
+    # Production: a configured durable checkpointer that cannot be built stops startup (no per-process fallback).
+    from app.agents.checkpointer import verify_checkpointer
+
+    await asyncio.to_thread(verify_checkpointer)
 
     start_scheduler("api")
     yield

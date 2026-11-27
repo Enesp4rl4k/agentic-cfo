@@ -10,10 +10,14 @@
 # (lower case, hyphens); pip itself is not listed.
 # Added by hand afterwards: defusedxml==0.7.1, a dependency-free package (no requires_dist), for the
 # spreadsheet isolation PR; the next Linux regeneration confirms it.
+# Langchain-family upgrade (security/langchain-upgrade, PR #157): resolved with `pip install --dry-run --report`
+# (pip 25.0.1, Python 3.12, Windows, nothing installed) over requirements.txt with the previous pins of this
+# file as constraints; colorama (Windows-only) dropped, uvloop kept. Removed with langchain: aiohttp, yarl,
+# multidict, frozenlist, aiosignal, aiohappyeyeballs, propcache, attrs, langchain-text-splitters. Added:
+# langgraph-checkpoint-postgres, psycopg, psycopg-binary, psycopg-pool. CONFIRMED on Linux: the Backend CI step
+# `pytest tests/test_dependency_pins.py` with CHECK_INSTALLED_PINS=1 (installed environment == this file, both
+# directions) passed on the head of that PR.
 aiofiles==25.1.0
-aiohappyeyeballs==2.7.1
-aiohttp==3.14.5
-aiosignal==1.4.0
 aiosmtplib==5.1.2
 aiosqlite==0.20.0
 alembic==1.19.1
@@ -24,7 +28,6 @@ apscheduler==3.10.4
 arq==0.28.0
 ast-serialize==0.13.1
 asyncpg==0.29.0
-attrs==26.1.0
 bcrypt==5.0.0
 brotli==1.2.1
 certifi==2026.11.20
@@ -44,7 +47,6 @@ et-xmlfile==2.0.0
 fastapi==0.141.1
 fonttools==4.68.0
 formulaic==1.2.2
-frozenlist==1.8.0
 greenlet==3.0.3
 h11==0.16.0
 hiredis==3.5.0
@@ -59,24 +61,28 @@ jiter==0.19.0
 joblib==1.6.0
 jsonpatch==1.48
 jsonpointer==3.12
-langchain==0.2.17
-langchain-core==0.2.43
-langchain-openai==0.1.25
-langchain-text-splitters==0.2.4
-langgraph==0.1.19
-langsmith==0.1.147
+langchain-core==1.4.9
+langchain-openai==1.1.9
+langchain-protocol==0.0.22
+langgraph-checkpoint-postgres==3.2.1
+langgraph-checkpoint-sqlite==3.1.3
+langgraph-checkpoint==4.3.2
+langgraph-prebuilt==1.1.3
+langgraph-sdk==0.4.14
+langgraph==1.2.24
+langsmith==0.9.8
 librt==0.17.0
 lxml==6.1.2
 mako==1.4.3
 markupsafe==3.0.4
-multidict==7.2.1
-mypy==2.3.1
 mypy-extensions==1.2.0
+mypy==2.3.1
 narwhals==2.29.0
 numpy==1.26.4
 openai==1.109.1
 openpyxl==3.1.5
 orjson==3.13.0
+ormsgpack==1.13.1
 packaging==24.2
 pandas==3.0.6
 passlib==1.7.4
@@ -88,13 +94,15 @@ pgvector==0.3.5
 pillow==13.0.0
 playwright==1.47.0
 pluggy==1.7.0
-propcache==0.5.4
+psycopg-binary==3.3.9
+psycopg-pool==3.3.3
 psycopg2-binary==2.9.9
+psycopg==3.3.9
 pyasn1==0.6.5
 pycparser==3.12
-pydantic==2.13.4
 pydantic-core==2.46.4
 pydantic-settings==2.15.0
+pydantic==2.13.4
 pydyf==0.13.0
 pyee==12.0.0
 pygments==2.21.0
@@ -102,10 +110,10 @@ pymupdf==1.28.2
 pypdfium2==5.15.2
 pyphen==0.18.1
 pytesseract==0.3.13
-pytest==9.1.1
 pytest-asyncio==1.4.0
 pytest-cov==5.0.0
 pytest-randomly==3.15.0
+pytest==9.1.1
 python-dateutil==4.0.0
 python-dotenv==1.2.4
 python-jose==3.5.0
@@ -115,8 +123,8 @@ pyyaml==6.0.3
 redis==5.0.7
 regex==2026.11.19
 reportlab==5.0.1
-requests==2.34.2
 requests-toolbelt==1.0.0
+requests==2.34.2
 rsa==4.9.1
 ruff==0.16.4
 scikit-learn==1.9.1
@@ -125,6 +133,7 @@ sentry-sdk==2.75.0
 six==1.17.0
 sniffio==1.3.1
 sqlalchemy==2.0.52
+sqlite-vec==0.1.9
 starlette==1.10.0
 statsmodels==0.15.0
 stripe==10.5.0
@@ -139,6 +148,7 @@ typing-inspection==0.4.5
 tzdata==2026.6
 tzlocal==5.4.5
 urllib3==2.8.0
+uuid-utils==0.19.0
 uvicorn==0.52.4
 uvloop==0.23.0
 watchfiles==1.3.0
@@ -146,5 +156,6 @@ weasyprint==70.0
 webencodings==0.6.1
 websockets==17.4
 wrapt==2.5.2
-yarl==1.25.1
+xxhash==4.1.0
 zopfli==0.4.3
+zstandard==0.25.0

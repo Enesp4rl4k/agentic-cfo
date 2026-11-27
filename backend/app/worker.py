@@ -124,6 +124,7 @@ async def run_ceo_analysis(
     # Meta
     company_name: str | None = None,
     period: str | None = None,
+    org_id: str | None = None,
 ) -> dict[str, Any]:
     """
     ARQ task: run the full CEO pipeline (CFO + CTO parallel) in background.
@@ -150,6 +151,7 @@ async def run_ceo_analysis(
             sprint_csv=sprint_csv,
             company_name=company_name,
             period=period,
+            org_id=org_id,
         )
 
         # Store result in Redis for polling — key: ceo:{job_id}
@@ -1026,6 +1028,7 @@ async def enqueue_ceo_analysis(
     sprint_csv: str | None = None,
     company_name: str | None = None,
     period: str | None = None,
+    org_id: str | None = None,
 ) -> None:
     """
     Enqueue a CEO analysis job. Called from POST /ceo/analyze-async.
@@ -1036,6 +1039,7 @@ async def enqueue_ceo_analysis(
     await pool.enqueue_job(
         "run_ceo_analysis",
         job_id,
+        org_id=org_id,
         cfo_file_path=cfo_file_path,
         cfo_file_type=cfo_file_type,
         cfo_transactions=cfo_transactions,
@@ -1119,10 +1123,20 @@ async def get_ceo_job_status(job_id: str) -> dict[str, Any]:
 
 # ── ARQ Worker settings ────────────────────────────────────────────────────────
 
+async def _verify_checkpointer(ctx: dict[str, Any]) -> None:
+    """Production: a durable checkpointer that cannot be built stops this worker (no per-process fallback)."""
+    import asyncio
+
+    from app.agents.checkpointer import verify_checkpointer
+
+    await asyncio.to_thread(verify_checkpointer)
+
+
 async def _start_crons(ctx: dict[str, Any]) -> None:
     """Run APScheduler here when SCHEDULER_PROCESS=worker (staging/prod)."""
     from app.scheduler import start_scheduler
 
+    await _verify_checkpointer(ctx)
     start_scheduler("worker")
 
 
@@ -1177,6 +1191,9 @@ class MaintenanceWorkerSettings:
     max_tries = 2
     job_completion_wait = 300       # docker-compose.prod.yml stop_grace_period stays above this
     health_check_interval = 30      # see WorkerSettings
+    # run_review_continuation reaches run_cfo_pipeline (post_completion): build the saver at startup, off the event
+    # loop, so production stops here and not inside a job (no crons in this worker type).
+    on_startup = _verify_checkpointer
 
     # A plain attribute: arq reads the settings class's `__dict__`, so a classmethod here is handed over as the raw
     # descriptor and `create_pool` fails with "'classmethod' object has no attribute 'host'" (the worker never started).

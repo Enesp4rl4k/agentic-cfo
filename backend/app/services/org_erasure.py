@@ -526,7 +526,7 @@ async def _erase(
     # `privacy.ephemeral`). In-process caches, other backends and Redis are in the plan, after the commit.
     from app.services.privacy.ephemeral import erase_org_in_transaction
 
-    counts["_ephemeral"] = await erase_org_in_transaction(db, org_id)
+    counts["_ephemeral"] = await erase_org_in_transaction(db, org_id, plan["job_ids"])
     return counts, plan
 
 

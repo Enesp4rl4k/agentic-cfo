@@ -26,7 +26,6 @@ import hmac
 import re
 import secrets
 from collections import Counter
-from dataclasses import dataclass, field
 
 from app.platform.llm_egress import detectors
 from app.platform.llm_egress.names import NameDictionary
@@ -64,17 +63,20 @@ def _variant(n: int) -> str:
     return "" if n == 0 else "bcdefghijklmnopqrstuvwxyz"[min(n - 1, 24)]
 
 
-@dataclass(repr=False, eq=False)
 class Pseudonymizer:
-    names: NameDictionary | None = None
-    stable_key: bytes | None = None          # set: STABLE flavour (embeddings)
-    nonce: str = field(default_factory=lambda: "".join(secrets.choice(_NONCE_ALPHABET) for _ in range(3)))
-    _entity: dict[tuple[str, str], int] = field(default_factory=dict)       # (label, entity key) -> number
-    _surface: dict[tuple[str, str, str], str] = field(default_factory=dict)  # (label, entity, exact text) -> token
-    _variants: Counter = field(default_factory=Counter)
-    _original: dict[str, str] = field(default_factory=dict)                 # token core -> exact original text
-    _next: Counter = field(default_factory=Counter)
-    counts: Counter = field(default_factory=Counter)                        # label -> occurrences replaced
+    """A plain class on purpose (not a dataclass, no __dict__ export): serializers that walk dataclass fields
+    (LangGraph's checkpoint serializer does) cannot copy the mapping; pickling is refused below."""
+
+    def __init__(self, names: NameDictionary | None = None, stable_key: bytes | None = None) -> None:
+        self.names = names
+        self.stable_key = stable_key                 # set: STABLE flavour (embeddings)
+        self.nonce = "".join(secrets.choice(_NONCE_ALPHABET) for _ in range(3))
+        self._entity: dict[tuple[str, str], int] = {}          # (label, entity key) -> number
+        self._surface: dict[tuple[str, str, str], str] = {}    # (label, entity, exact text) -> token
+        self._variants: Counter = Counter()
+        self._original: dict[str, str] = {}                    # token core -> exact original text
+        self._next: Counter = Counter()
+        self.counts: Counter = Counter()                       # label -> occurrences replaced
 
     def __repr__(self) -> str:  # never the mapping, never a name
         return f"Pseudonymizer(replaced={sum(self.counts.values())}, issued={len(self._original)})"

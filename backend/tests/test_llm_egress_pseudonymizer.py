@@ -243,3 +243,25 @@ def test_repr_and_str_show_counts_never_the_mapping_or_a_name(caplog) -> None:
     assert "Tarvelo" not in caplog.text and IBAN not in caplog.text
     with pytest.raises(TypeError):
         pickle.dumps(p)
+
+
+def test_the_mapping_can_never_reach_an_agent_checkpoint() -> None:
+    """#157 persists LangGraph state in Postgres. The mapping lives in a per-send object the graph never holds;
+    should one ever be put in state by mistake, the checkpoint serializer refuses it instead of storing names."""
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+    p = Pseudonymizer(names())
+    p.mask(f"Tarvelo Lojistik, Ahmet Yılmaz, IBAN {IBAN}")
+    from app.platform.llm_egress.dictionary import LoadedDictionary
+
+    serde = JsonPlusSerializer()
+    for obj in (p, p.names, LoadedDictionary(p.names)):
+        try:
+            _kind, blob = serde.dumps_typed({"state": obj})
+        except Exception:
+            continue  # refused: nothing stored
+        raw = bytes(blob).decode("utf-8", errors="ignore")
+        for secret in ("Tarvelo", "Yılmaz", "Yilmaz", IBAN):
+            assert secret not in raw, (type(obj).__name__, secret)
+    with pytest.raises(TypeError):
+        pickle.dumps(p.names)

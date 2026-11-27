@@ -13,13 +13,14 @@ from __future__ import annotations
 
 import secrets
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
 import bcrypt
 from jose import jwt
 
 from app.config import get_settings
+from app.core.clock import wall_now
 
 # JWT constants
 ACCESS_TOKEN_EXPIRE_MINUTES  = 30
@@ -60,9 +61,10 @@ def create_access_token(
     *,
     token_version: int = 0,
 ) -> str:
-    expire = datetime.now(UTC) + (
-        expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    )
+    # A token's times are checked against the wall clock (python-jose, the frontend's refresh rule), so they are
+    # stamped by it, never by a pinned test clock (app/core/clock.py `wall_now`).
+    issued = wall_now()
+    expire = issued + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
     payload: dict[str, Any] = {
         "sub":   user_id,
         "email": email,
@@ -70,20 +72,21 @@ def create_access_token(
         "type":  "access",
         "tv":    token_version,
         "exp":   expire,
-        "iat":   datetime.now(UTC),
+        "iat":   issued,
         "jti":   str(uuid.uuid4()),
     }
     return jwt.encode(payload, _secret(), algorithm=ALGORITHM)
 
 
 def create_refresh_token(user_id: str, *, token_version: int = 0) -> str:
-    expire = datetime.now(UTC) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    issued = wall_now()
+    expire = issued + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     payload: dict[str, Any] = {
         "sub":  user_id,
         "type": "refresh",
         "tv":   token_version,
         "exp":  expire,
-        "iat":  datetime.now(UTC),
+        "iat":  issued,
         "jti":  str(uuid.uuid4()),
     }
     return jwt.encode(payload, _secret(), algorithm=ALGORITHM)

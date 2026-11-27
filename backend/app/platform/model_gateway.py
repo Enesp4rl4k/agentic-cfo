@@ -15,8 +15,7 @@ sites:
   * graceful degradation — a placeholder API key raises :class:`LLMUnavailable`
                            so callers fall back to their deterministic templates
 
-Design rule (enforced by tests/test_platform/test_llm_egress_single_chokepoint.py):
-``from langchain_openai import ChatOpenAI`` appears in this module only.
+Design rule (tests/test_platform/test_llm_egress_single_chokepoint.py): ChatOpenAI is imported here only.
 """
 from __future__ import annotations
 
@@ -234,11 +233,11 @@ def _build_client(cfg: ModelConfig, temperature: float | None, max_tokens: int |
         raise LLMUnavailable("openai_api_key is a placeholder")
 
     from langchain_openai import ChatOpenAI
-
+    # ChatOpenAI >= 0.3 renames max_tokens to max_completion_tokens on the wire; extra_body keeps max_tokens.
     return ChatOpenAI(
         model=cfg.model_id,
         temperature=_first(temperature, cfg.temperature, settings.llm_temperature),
-        max_tokens=_first(max_tokens, cfg.max_tokens, settings.llm_max_tokens),
+        extra_body={"max_tokens": _first(max_tokens, cfg.max_tokens, settings.llm_max_tokens)},
         api_key=settings.openai_api_key,  # type: ignore[arg-type]  # langchain coerces str→SecretStr
         base_url=getattr(settings, "llm_base_url", None) or None,
     )
