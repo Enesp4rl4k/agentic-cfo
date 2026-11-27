@@ -549,7 +549,7 @@ async def run_cfo_pipeline(
     if persists(org_id):
         graph, config = cfo_graph, checkpoint_config(job_id, org_id=org_id, run_id=uuid.uuid4().hex, run_config=cfg)
     else:
-        logger.warning("CFO pipeline job=%s has no organisation: running without a checkpointer", job_id)
+        logger.warning("CFO pipeline run has no organisation: running without a checkpointer")
         graph, config = cfo_graph_ephemeral, ephemeral_config(cfg)
     result: CFOState = await graph.ainvoke(initial_state, config=config)
 

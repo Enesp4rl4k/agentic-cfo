@@ -33,6 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.agents import checkpointer as cp
 from app.agents.state import StepLog
 from app.config import get_settings
+from app.services.checkpoint_data import NAMESPACED_RE
 from app.services.privacy import ephemeral
 
 URL = os.environ.get("DATABASE_URL_OVERRIDE", "")
@@ -298,7 +299,7 @@ async def test_legacy_unnamespaced_rows_go_with_the_erasure_and_with_retention(m
     async with maker() as db:
         assert await _threads_naming(db, stranger) == set()
         unscoped = (await db.execute(
-            text("SELECT count(*) FROM checkpoints WHERE thread_id !~ :ns"), {"ns": cp.NAMESPACED_RE}
+            text("SELECT count(*) FROM checkpoints WHERE thread_id !~ :ns"), {"ns": NAMESPACED_RE}
         )).scalar_one()
         assert unscoped == 0
         assert await _rows(db, "checkpoints", org) > 0, "retention removed a fresh namespaced thread"
