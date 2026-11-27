@@ -10,12 +10,13 @@
 # (lower case, hyphens); pip itself is not listed.
 # Added by hand afterwards: defusedxml==0.7.1, a dependency-free package (no requires_dist), for the
 # spreadsheet isolation PR; the next Linux regeneration confirms it.
-# Langchain-family upgrade (security/langchain-upgrade): PROVISIONAL lines until the Backend CI
-# step "installed environment == lock" passes. Resolved with `pip install --dry-run --report`
-# (pip 25.0.1, Python 3.12, Windows, no install) over requirements.txt with this file's previous
-# pins as constraints (langchain family removed from the constraints); colorama (Windows-only)
-# dropped, uvloop kept. Removed with langchain: aiohttp, yarl, multidict, frozenlist, aiosignal,
-# aiohappyeyeballs, propcache, attrs, langchain-text-splitters.
+# Langchain-family upgrade (security/langchain-upgrade, PR #157): resolved with `pip install --dry-run --report`
+# (pip 25.0.1, Python 3.12, Windows, nothing installed) over requirements.txt with the previous pins of this
+# file as constraints; colorama (Windows-only) dropped, uvloop kept. Removed with langchain: aiohttp, yarl,
+# multidict, frozenlist, aiosignal, aiohappyeyeballs, propcache, attrs, langchain-text-splitters. Added:
+# langgraph-checkpoint-postgres, psycopg, psycopg-binary, psycopg-pool. CONFIRMED on Linux: the Backend CI step
+# `pytest tests/test_dependency_pins.py` with CHECK_INSTALLED_PINS=1 (installed environment == this file, both
+# directions) passed on the head of that PR.
 aiofiles==25.1.0
 aiosmtplib==5.1.2
 aiosqlite==0.20.0
