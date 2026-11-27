@@ -142,8 +142,10 @@ async def _alert(rid: str, reason: str) -> None:
 
 
 def _failure_code(exc: BaseException) -> str:
-    from app.services.privacy.ephemeral import AgentMemoryDeleteError
+    from app.services.privacy.ephemeral import AgentMemoryDeleteError, CheckpointDeleteError
 
+    if isinstance(exc, CheckpointDeleteError):
+        return "checkpoint_delete_failed"
     return "agent_memory_delete_failed" if isinstance(exc, AgentMemoryDeleteError) else "erase_failed"
 
 

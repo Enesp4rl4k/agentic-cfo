@@ -281,6 +281,8 @@ class Settings(BaseSettings):
     retention_token_days: int = 30
     # Retention: days after which an audit-log row's IP address is truncated and its browser string removed (the row stays)
     retention_audit_ip_days: int = 365
+    # Retention: days after an agent run's last checkpoint that its LangGraph checkpoints are deleted (Postgres; 0 = keep)
+    retention_checkpoint_days: int = 30
     # Retention: days after which in-app notifications are deleted
     retention_notification_days: int = 180
     # Retention: days after which alert history rows are deleted

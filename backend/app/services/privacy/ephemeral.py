@@ -155,9 +155,31 @@ def _agent_memory_delete_local(org_id: str) -> int:
     return 0
 
 
+class CheckpointDeleteError(RuntimeError):
+    """The LangGraph checkpoints of an organisation could not be deleted: the erasure aborts, like agent memory."""
+
+
+async def _checkpoints_delete(db: AsyncSession, org_id: str) -> int:
+    """The organisation's checkpoint threads (`<org_id>:<job_id>`) in the library's Postgres tables, inside the
+    erase transaction. Other backends hold checkpoints in memory or a local SQLite file, not in this database."""
+    from app.agents.checkpointer import erase_org_checkpoints
+
+    if db.bind is None or db.bind.dialect.name != "postgresql":
+        return 0
+    try:
+        return await erase_org_checkpoints(db, org_id)
+    except Exception as exc:
+        logger.warning("ephemeral erasure: checkpoints failed (%s)", type(exc).__name__)
+        raise CheckpointDeleteError("checkpoint delete failed") from exc
+
+
 async def erase_org_in_transaction(db: AsyncSession, org_id: str) -> dict[str, int]:
-    """What may run inside the erase transaction: the Postgres agent memory. Raises `AgentMemoryDeleteError`."""
-    return {"agent_memory_deleted": await _agent_memory_delete(db, org_id)}
+    """What may run inside the erase transaction: the Postgres agent memory and the LangGraph checkpoints.
+    Raises `AgentMemoryDeleteError` / `CheckpointDeleteError`."""
+    return {
+        "agent_memory_deleted": await _agent_memory_delete(db, org_id),
+        "checkpoints_deleted": await _checkpoints_delete(db, org_id),
+    }
 
 
 async def cleanup_ephemeral(org_id: str, user_ids: list[str], job_ids: list[str]) -> dict[str, int]:

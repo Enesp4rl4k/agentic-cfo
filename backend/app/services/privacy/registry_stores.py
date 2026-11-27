@@ -28,6 +28,12 @@ STORES: tuple[Store, ...] = (
     Store("agent_memory", "one narrative and summary per agent run per organisation",
           "table agent_memory_episodes (PostgreSQL) / agent_memory (SQLite), outside the ORM metadata",
           S.COUNTERPARTY, R.OPERATIONAL, "no expiry before this work", "privacy.ephemeral", (Flow.LLM,)),
+    Store("agent_checkpoints", "the state of an agent run between steps (what resume reloads): can hold the "
+          "statement's rows, figures and narrative of one run",
+          "tables checkpoints, checkpoint_blobs, checkpoint_writes (PostgreSQL, created by the langgraph library, "
+          "outside the ORM metadata; thread id `<org_id>:<job_id>`)",
+          S.COUNTERPARTY, R.OPERATIONAL, "30 days after the run's last step (RETENTION_CHECKPOINT_DAYS)",
+          "privacy.ephemeral (inside the erase transaction) and the retention job"),
     Store("llm_provider_side", "prompts and responses as the model provider keeps them", "the provider",
           S.ANYONE, R.OPERATIONAL, "set by the provider, outside our control",
           "cannot be erased by us: lawyer question Q1", (Flow.LLM,)),
