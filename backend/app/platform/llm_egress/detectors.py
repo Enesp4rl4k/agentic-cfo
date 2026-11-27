@@ -9,7 +9,10 @@ What counts as evidence, per type (checksum where the type has one, AND shape, A
          tolerated); digits only (no "TR") need the label IBAN right before them: 24 digits with mod 97, or
          the 22-digit Turkish BBAN (no checksum exists for it: label + exact length + reserved digit 0)
   CARD   Luhn + issuer prefix + (a card label right before it, or the printed 4-4-4-4 / 4-6-5 grouping)
-  TCKN   11 digits + both check digits + a label (TC, TCKN, T.C. Kimlik No, kimlik, tc_kimlik_no ...)
+  TCKN   11 digits + both check digits + a label (TC, TCKN, T.C. Kimlik No, kimlik, tc_kimlik_no ...); also a
+         BARE 11-digit token with both check digits when `figures` has not classified it as data (decided owner
+         trade-off: about 1 in 100 unlabelled 11-digit references is masked too, restored byte-exact; no amount
+         or date can be, they are protected first)
   VKN    10 digits + check digit + a label (VKN, Vergi No, Vergi Kimlik No, tax_id ...)
   TEL    a phone shape that no amount has (+90 / 0090 / leading 0, then 3-3-2-2 or 3-3-4 groups separated
          by spaces, dashes or brackets, never dots), or a label (Tel, GSM, Cep, Telefon ...) + 10/11 digits
@@ -19,8 +22,9 @@ What counts as evidence, per type (checksum where the type has one, AND shape, A
   KNOWN  a tax number the books hold for this organisation, as a whole unprotected digit token
 
 NOT masked by pattern, by design (fidelity outranks coverage; see docs/kvkk/yapay-zeka-veri-akisi.md):
-a compact mobile number with no label and no +90 ("05321234567"), an unlabelled TCKN/VKN, an unlabelled
-16-digit card number, an unlabelled plate. These go as written when they appear in free text.
+a compact mobile number with no label and no +90 ("05321234567"), an unlabelled VKN, an unlabelled 16-digit
+card number, an unlabelled plate. These go as written when they appear in free text: 10- and 16-digit runs
+collide with amounts and references far more often than 11-digit TCKN-checksummed ones.
 """
 from __future__ import annotations
 
@@ -128,7 +132,9 @@ _IBAN_CAND = re.compile(r"(?<![\w])[A-Za-z]{2}\d{2}(?:" + _SEP + r"[A-Za-z0-9]){
 _DIGITS_CAND = re.compile(r"(?<![\w.,])\d(?:" + _SEP + r"\d){5,25}(?![\w]|[.,]\d)")
 _EMAIL = re.compile(r"(?<![\w.+\-])[\w.+\-]+@[\w\-]+(?:\.[\w\-]+)*\.[^\W\d_]{2,}(?![\w\-])")
 _PHONE_SHAPE = re.compile(
-    r"(?<![\w+.,])(?:(?:\+|00)90[ \-]?\(?0?|\(?0)([2-5]\d{2})\)?[ \-]"
+    # +90 / 0090 / leading 0, the area code (bracketed or not), then 3-3-2-2 or 3-3-4 groups; after a closing
+    # bracket the separator is optional ("+90(532)123-45-67"). Never a dot: "532.123.45.67" reads as a number.
+    r"(?<![\w+.,])(?:(?:\+|00)90[ \-]?\(?0?|\(?0 ?)([2-5]\d{2})(?:\)[ \-]?|[ \-])"
     r"(\d{3})[ \-](?:(\d{2})[ \-](\d{2})|(\d{4}))(?![\w]|[.,]\d)"
     r"|(?<![\w+.,])\+90([2-5]\d{9})(?![\w]|[.,]\d)"
 )
@@ -258,6 +264,17 @@ def known_identifier_spans(text: str, known: dict[str, str], protected: list | N
     return out
 
 
+_BARE_11 = re.compile(r"(?<![\w.,])\d{11}(?![\w]|[.,]\d)")
+
+
+def _bare_tckn_spans(text: str, protected: list) -> list[Span]:
+    """An unlabelled 11-digit token with both TCKN check digits, unless it is protected data."""
+    return [
+        Span(m.start(), m.end(), TCKN, m.group(0)) for m in _BARE_11.finditer(text)
+        if tckn_ok(m.group(0)) and not overlaps(protected, m.start(), m.end())
+    ]
+
+
 def find_identifiers(text: str, known: dict[str, str] | None = None) -> list[Span]:
     """Every identifier in `text` with positive evidence, overlaps resolved by PRIORITY."""
     if not text:
@@ -266,6 +283,7 @@ def find_identifiers(text: str, known: dict[str, str] | None = None) -> list[Spa
     found = (
         _iban_spans(text, protected) + _card_spans(text, protected) + _email_spans(text)
         + _phone_spans(text, protected) + _digit_spans(text, protected) + _plate_spans(text, protected)
+        + _bare_tckn_spans(text, protected)
         + known_identifier_spans(text, known or {}, protected)
     )
     found.sort(key=lambda s: (PRIORITY.index(s.label), s.start))

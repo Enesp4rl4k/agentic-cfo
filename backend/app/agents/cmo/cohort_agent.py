@@ -19,6 +19,7 @@ import logging
 from typing import Any
 
 from app.agents.cmo.state import CMOState
+from app.agents.narrative_guard import labels_skipped_ai_step
 
 logger = logging.getLogger(__name__)
 
@@ -253,6 +254,7 @@ def _build_cohort_alerts(metrics: dict[str, Any]) -> list[dict[str, str]]:
 
 # ── LLM Narrative ─────────────────────────────────────────────────────────────
 
+@labels_skipped_ai_step
 async def _generate_cohort_narrative(metrics: dict[str, Any], settings) -> str:
     """Optional LLM narrative -- falls back to rule-based summary."""
     try:

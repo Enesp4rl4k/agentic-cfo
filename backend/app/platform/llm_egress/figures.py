@@ -39,7 +39,8 @@ _INTEGER = re.compile(r"(?<![\w.,])[+\-−]?\d+(?![\w]|[.,]\d)")
 _COMPACT_DATE = re.compile(r"(?<![\w.,])\d{8}(?![\w]|[.,]\d)")
 
 _CURRENCY = r"(?:tl|try|ytl|usd|eur|gbp|chf|jpy|rub|kuruş|kurus|krş|krs|lira|dolar|euro|avro|sterlin)"
-_SYMBOL_BEFORE = re.compile(r"(?:[₺$€£%]|\b" + _CURRENCY + r")\s{0,2}$", re.IGNORECASE)
+# a currency right before the number, a sign allowed between them ("EUR+71862066848", "TL−4.105,00")
+_SYMBOL_BEFORE = re.compile(r"(?:[₺$€£%]|\b" + _CURRENCY + r")\s{0,2}[+\-−]?\s{0,2}$", re.IGNORECASE)
 _SYMBOL_AFTER = re.compile(r"^\s{0,2}(?:[₺$€£%]|" + _CURRENCY + r"\b)", re.IGNORECASE)
 _AMOUNT_WORD = re.compile(
     r"(?:tutar[ıi]?|toplam[ıi]?|bakiye(?:si)?|net|brüt|brut|ciro(?:su)?|gelir(?:i)?|gider(?:i)?|kâr|kar|zarar|"

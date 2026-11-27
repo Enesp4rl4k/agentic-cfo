@@ -5,6 +5,15 @@ not at the start of a sentence, or followed by an apostrophe suffix), so "güne�
 while "ödemeyi Güneş'e yaptık" is masked. Words of a multi-word name are not affected: "Güneş Ticaret" as a
 whole is always masked. The over- and under-masking this rule produces was measured on synthetic Turkish
 financial text (tests/test_llm_egress_names.py); the numbers are in docs/kvkk/yapay-zeka-veri-akisi.md.
+
+Where the list comes from (hand-curated, reviewable line by line; no test fixture decides it):
+  _NAME_WORDS      words that are BOTH a headword of the TDK Güncel Türkçe Sözlük used as an ordinary noun or
+                   adjective AND a common Turkish given name or surname (Güneş, Deniz, Demir, Yıldız, Kaya,
+                   Çelik, Bulut, Toprak ...). A word that is only a name (Yılmaz, Aksoy) or only a word is left out.
+  _BUSINESS_WORDS  sector and form words that stand alone in company names and are everyday words of financial
+                   text alike (Ticaret, Gıda, Lojistik, Banka, Fatura ...).
+A name is added here only on that rule, never to make a test pass: the tests use real common words for the
+common-word cases and invented, non-word names for the leak cases.
 """
 from __future__ import annotations
 
@@ -21,7 +30,7 @@ kar kara karaca kartal kaya kaymak kazan keskin kılıç kırmızı kuğu kul ku
 meltem mert mutlu nehir nur ok onur oya ozan öz özen özgür pamuk pınar polat rüzgar saygı sağlam savaş
 sel selam serin sevgi sevinç şahin şeker şen şimşek taş tan temiz toprak tunç tutku türk uçar
 umut ümit yağmur yaman yasemin yavuz yaz yeşil yiğit yıldırım yıldız zafer zengin
-zümrüt menekşe kanarya lider ekol ufuk vizyon atlas yıldızlar cennet bereket kısmet huzur
+ufuk
 """
 
 # Words that often stand alone in a company name and in ordinary financial text alike.

@@ -216,7 +216,7 @@ async def test_an_unreadable_organisation_choice_fails_closed(world, monkeypatch
 
 async def test_masked_embeddings_use_stable_pseudonyms_for_index_and_query_alike(world) -> None:
     world.enter()
-    chunk = f"{DESCRIPTION} Menekşe Tekstil adına"
+    chunk = f"{DESCRIPTION} Velorin Tekstil adına"
     indexed = await embedding_gateway.embed_texts([chunk], org_id=world.org_id)
     query = await embedding_gateway.embed_texts([f"{CANARY.counterparty_short.upper()} ödemeleri"], org_id=world.org_id,
                                                 purpose="rag_query")

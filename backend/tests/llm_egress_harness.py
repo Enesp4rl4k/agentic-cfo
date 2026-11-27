@@ -40,13 +40,13 @@ CANARY = SimpleNamespace(
     vkn=VKN,
     pan="4111 1111 1111 1111",
     phone="0532 987 65 43",
-    email="kanarya.muhasebe@zumrut-nakliyat.example",
-    company="Menekşe Tekstil Sanayi A.Ş.",
-    company_short="Menekşe Tekstil",
-    counterparty="Kanarya Yapı Malzemeleri A.Ş.",
-    counterparty_short="Kanarya Yapı Malzemeleri",
-    vendor="Zümrüt Nakliyat Ltd. Şti.",
-    vendor_short="Zümrüt Nakliyat",
+    email="karvesta.muhasebe@zemtrak-nakliyat.example",
+    company="Velorin Tekstil Sanayi A.Ş.",
+    company_short="Velorin Tekstil",
+    counterparty="Karvesta Yapı Malzemeleri A.Ş.",
+    counterparty_short="Karvesta Yapı Malzemeleri",
+    vendor="Zemtrak Nakliyat Ltd. Şti.",
+    vendor_short="Zemtrak Nakliyat",
     person="Selin Aksoy",
     accountant="Murat Demirtaş",
 )
@@ -62,8 +62,8 @@ LEAK_VALUES = (
 # name, upper case, a surname or first name alone, an IBAN with dashes / a line break / lower case / no "TR"
 # (labelled), an e-mail with a non-ASCII domain.
 VARIANTS = (
-    f"{CANARY.counterparty_short}ye fatura; KANARYA\n YAPI   MALZEMELERİ ödemesi; {CANARY.vendor_short}ın faturası, "
-    f"MENEKŞE   TEKSTİLİN payı; {CANARY.surname}'un ve {CANARY.surname}un onayı, dün {CANARY.first_name} aradı; "
+    f"{CANARY.counterparty_short}ye fatura; KARVESTA\n YAPI   MALZEMELERİ ödemesi; {CANARY.vendor_short}ın faturası, "
+    f"VELORİN   TEKSTİLİN payı; {CANARY.surname}'un ve {CANARY.surname}un onayı, dün {CANARY.first_name} aradı; "
     f"Murat\nDemirtaş notu; IBAN: {' '.join(CANARY.iban[2:][i:i + 4] for i in range(0, 24, 4))}; "
     f"iban {CANARY.iban.lower()}; IBAN {'-'.join(CANARY.iban[i:i + 4] for i in range(0, 26, 4))}; "
     f"{CANARY.iban[:12]}\n{CANARY.iban[12:]}; {CANARY.email_idn}; Tel: 0532-987-65-43"
@@ -187,13 +187,13 @@ async def seed_company(maker) -> str:
     from app.models.user import User
 
     async with maker() as db:
-        org = Organization(name=CANARY.company, slug="menekse-tekstil", legal_title=CANARY.company, vkn=CANARY.vkn,
+        org = Organization(name=CANARY.company, slug="velorin-tekstil", legal_title=CANARY.company, vkn=CANARY.vkn,
                            country_code="TR", base_currency="TRY", locale="tr-TR")
         db.add(org)
         await db.flush()
-        owner = User(email="sahip@menekse.example", hashed_password="x", full_name=CANARY.person, org_id=org.id,
+        owner = User(email="sahip@velorin.example", hashed_password="x", full_name=CANARY.person, org_id=org.id,
                      role="owner", email_verified_at=datetime.now(UTC))
-        smmm = User(email="mm@menekse.example", hashed_password="x", full_name=CANARY.accountant, role="smmm")
+        smmm = User(email="mm@velorin.example", hashed_password="x", full_name=CANARY.accountant, role="smmm")
         db.add_all([owner, smmm])
         await db.flush()
         db.add(OrgMembership(user_id=smmm.id, org_id=org.id, role="smmm"))
@@ -210,7 +210,7 @@ async def seed_company(maker) -> str:
                                     description=DESCRIPTION))
         db.add(OpenItem(org_id=str(org.id), direction="payable", instrument="invoice", document_id="inv:b:k:1",
                         counterparty=CANARY.vendor, amount_cents=500_000, issue_date=date(2026, 3, 1)))
-        db.add(RelatedParty(org_id=str(org.id), name=CANARY.counterparty, normalized_name="kanarya",
+        db.add(RelatedParty(org_id=str(org.id), name=CANARY.counterparty, normalized_name="karvesta",
                             relationship_type="diger", tax_id=CANARY.vkn))
         await db.commit()
         return str(org.id)

@@ -64,7 +64,8 @@ sonucu "Yapay zekâ adımı atlandı" der (karar: kullanıcı boşluğu sessizce
 | Şirketin kendi adı ve unvanı | gitmez | yer tutucu (`[[CO_7KQ_1]]`) | olduğu gibi |
 | Üye ve mali müşavir adı (ad ya da soyad tek başına da) | gitmez | yer tutucu (`[[PER_7KQ_2]]`) | olduğu gibi |
 | IBAN, TCKN, VKN, kart, telefon, e-posta, plaka, "Hesap No" — **kanıtla** (etiket ya da şaşmaz biçim) | gitmez | yer tutucu | olduğu gibi |
-| Etiketsiz TCKN/VKN, etiketsiz 16 haneli kart no, `+90`/boşluk olmadan yazılmış cep no, etiketsiz plaka | gitmez | **olduğu gibi gider** (sayı olduğu varsayılır) | olduğu gibi |
+| Etiketsiz TCKN (11 hane, iki kontrol basamağı tutuyor, tutar/tarih/belge no değil) | gitmez | yer tutucu | olduğu gibi |
+| Etiketsiz VKN, etiketsiz 16 haneli kart no, `+90`/boşluk olmadan yazılmış cep no, etiketsiz plaka | gitmez | **olduğu gibi gider** (sayı olduğu varsayılır) | olduğu gibi |
 | İşlem açıklaması (serbest metin) | gitmez | **yalnızca yukarıdakiler değiştirilir; geri kalanı olduğu gibi** | olduğu gibi |
 | Belge metni (yedek çıkarım yolu: ilk 8.000 karakter) | gitmez | aynı kısmi maskeleme | olduğu gibi |
 | Sohbet sorusu ve geçmişi | gitmez | aynı kısmi maskeleme | olduğu gibi |
@@ -82,8 +83,15 @@ sonucu "Yapay zekâ adımı atlandı" der (karar: kullanıcı boşluğu sessizce
   sağlama + etiket (TCKN, T.C. Kimlik No, VKN, Vergi No, JSON alan adları). Telefon: hiçbir tutarın sahip olmadığı biçim (`+90`/`0` ile
   başlayan, boşluk/tire/parantezli gruplar; **asla nokta**) ya da etiket (Tel, GSM, Cep). E-posta: Unicode yerel kısım ve alan adı (IDN).
   Plaka ve "Hesap No": kontrol basamağı olmadığı için yalnızca etiketle. Defterin bildiği vergi numarası, korunan bir sayı değilse etiketsiz de bulunur.
-* **Kalıpla maskelenmeyenler (bilinçli olarak, doğruluk kapsama önce gelir):** etiketsiz TCKN/VKN, etiketsiz 16 haneli kart
-  numarası, `+90` ya da boşluk olmadan yazılmış cep numarası (`05321234567`), etiketsiz plaka. Bunlar serbest metinde olduğu gibi gider
+* **Etiketsiz TCKN (karar verildi):** 11 haneli, iki TCKN kontrol basamağı tutan ve `figures.py` tarafından tutar, tarih, saat, THP
+  kodu ya da bilinen bir alandaki belge numarası olarak sınıflanmamış bir sayı etiketsiz de maskelenir. Bedeli ölçüldü: 200.000 satırlık
+  bulanık testte hiçbir tutar ve tarih değişmedi; 5 satırda (%0,0025) etiketsiz 11 haneli bir **referans** numarası da maskelendi ve
+  geri çevirmede baytı baytına geri geldi (kullanıcıya gösterilen hiçbir rakam model metninden gelmez).
+* **Kalıpla maskelenmeyenler (bilinçli olarak, doğruluk kapsama önce gelir):** etiketsiz VKN, etiketsiz 16 haneli kart
+  numarası, `+90` ya da boşluk olmadan yazılmış cep numarası (`05321234567`), etiketsiz plaka. Aynı "orta kural" bunlara uygulansaydı,
+  aynı 200.000 satırda korunmayan referans numaralarından şunlara dokunurdu: 10 haneli VKN sağlaması tutan **58**, Luhn ve kart öneki
+  tutan 16 haneli **216**, `05` ile başlayan 11 haneli **8.511** referans. 10 ve 16 haneli diziler tutar ve referanslarla çok daha sık
+  çakıştığı için bu değişiklikte uygulanmadı (ölçülmüş kalan risk). Bunlar serbest metinde olduğu gibi gider
   (kalan risk). Sebep: aynı biçim tutar ya da referans numarası olarak çok daha sık geçer; bir tutarı bozmak, maskelememekten kötüdür.
 * **Defterin bildiği adlar** (`dictionary.py`, `names.py`): NER modeli yok. Şirketin kendi tablolarından kurulur: şirket adı ve
   unvanı, işlem tedarikçisi ve karşı tarafı, ana defter, açık kalemler, ilişkili taraflar, karşı taraf takma adları, kategori
@@ -94,7 +102,13 @@ sonucu "Yapay zekâ adımı atlandı" der (karar: kullanıcı boşluğu sessizce
   Aynı zamanda sıradan bir sözcük olan tek sözcük ("Güneş", "Deniz", "Demir": `common_words.py`) yalnızca ad gibi okunduğunda
   maskelenir: büyük harfle ve cümle başında değilken, ya da kesme işaretli ekle ("Güneş'e"). Çok sözcüklü ad her zaman maskelenir.
   **Ölçüm** (sentetik Türkçe finans metni, tohum 7, 5.000 sıradan + 5.000 adlı cümle): sıradan sözcüğün yanlışlıkla maskelenmesi
-  **%0,0**; adın kaçırılması **%8,7** (hepsi cümle başındaki ortak sözcük adları, ör. "Güneş ile toplantı yapıldı"). Test sınırları: ≤%1 ve ≤%25.
+  **%0,0**; adın kaçırılması **%8,7**. Kaçırılanların hepsi, sıradan sözcükle başlayan bir adın **ilk sözcüğünün tek başına**
+  (ya da banka alanında kesilmiş hâlinin) cümle/satır başında geçtiği durumlardır, ör. "Güneş ile toplantı yapıldı", "DENIZ HAVALE";
+  adın tamamı satır başında da maskelenir (bağımsız inceleme: 378 satırın 0'ı kaçtı). Test sınırları: ≤%1 ve ≤%25.
+  Sıradan sözcük listesi (`common_words.py`) elle derlenmiştir ve satır satır gözden geçirilebilir: hem TDK Güncel Türkçe Sözlük'te
+  sıradan ad/sıfat olarak geçen hem de yaygın bir Türkçe ad veya soyad olan sözcükler (Güneş, Deniz, Demir, Yıldız, Kaya, Çelik ...) ve
+  şirket adında tek başına duran sektör sözcükleri (Ticaret, Gıda, Lojistik ...). Hiçbir test verisi listeyi belirlemez; testlerde
+  sızıntı vakaları uydurma, sözlükte olmayan adlarla (Karvesta, Velorin, Zemtrak) yazılır.
   Eşleştirici sözcük başına bir karma araması yapar: 5.000 adlık sözlükle 8.000 karakter ≈0,03 sn, 100.000 karakter ≈0,35 sn
   (kötü niyetli girdide de doğrusal; `test_llm_egress_names.py`).
   Her kaynak 5.000 ayrık değerle sınırlıdır; sınır aşılırsa ekran ve denetim satırı bunu söyler (sınırın ötesindeki adlar maskelenmez).
@@ -164,8 +178,13 @@ bekler), THP hesap tahmini (varsayılan hesap), anomali açıklaması, belge anl
   yalnızca bir notta geçen bir kişi, **okunan belgede ilk kez geçen ve henüz defterde olmayan adlar** (belge okumanın en büyük akışı ve
   en az maskelenen kısmı), defterde farklı yazılmış bir ad, yazım hatası, takma ad, "Ahmet Bey", cümle başında sıradan sözcük olan bir ad
   ("Güneş ile..."), pasaport veya başka bir kimlik numarası, adres, görseldeki metin.
-* **Kalıpla maskelenmeyen kimlik biçimleri** (yukarıda): etiketsiz TCKN/VKN, etiketsiz kart numarası, `+90` ya da boşluk olmadan yazılmış
-  cep numarası, etiketsiz plaka. Doğruluk için bilinçli bir seçimdir.
+* **Kalıpla maskelenmeyen kimlik biçimleri** (yukarıda, ölçülerle): etiketsiz VKN, etiketsiz kart numarası, `+90` ya da boşluk
+  olmadan yazılmış cep numarası, etiketsiz plaka. Doğruluk için bilinçli bir seçimdir. Telefonda `+90(532)123-45-67` gibi parantez ve
+  tire biçimleri maskelenir; `0532.123.45.67` ve `532 123 4567` (önek ve etiket yok) gitmez.
+* **Reddedilen ya da `off` kipindeki anlatılar** şablon metne düşer ve metnin başında bunu söyler: "Yapay zekâ adımı atlandı
+  (maskeli modda veri gönderilmedi): şablon metin." / `off` için "(LLM_DATA_MODE=off)". Ajan özet düğümleri (`node_*_summary`) bu
+  notu henüz taşımaz.
+* JSON yanıtında yer tutucu bir **anahtar** da geri çevrilir; bilinmeyen bir anahtar alanı eksik sayar (satır bekletilir).
 * Belge okumada iki geçişli bir yol (aynı belgede deterministik ayrıştırıcıların bulduğu adları yapay zekâ adımından önce sözlüğe eklemek)
   düşünüldü, yapılmadı: yapay zekâ adımı yalnızca hiçbir ayrıştırıcı belgeyi tanımadığında çalışır, o anda eklenecek ad yoktur.
 * **Tutarlar, tarihler ve para birimleri her zaman gider.** Defterin yapısı (kaç işlem, hangi aylar, hangi kategoriler) sağlayıcıya görünür.

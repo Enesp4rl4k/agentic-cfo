@@ -42,6 +42,6 @@ def test_a_langsmith_client_built_now_hides_run_inputs_and_outputs() -> None:
     client = Client(api_key="ls-test-not-a-secret", api_url="http://127.0.0.1:9")  # never contacted
     hide_in = getattr(client, "_hide_run_inputs", None) or getattr(client, "_hide_inputs", None)
     if callable(hide_in):
-        assert hide_in({"messages": ["Kanarya Yapı Malzemeleri A.Ş."]}) == {}
+        assert hide_in({"messages": ["Karvesta Yapı Malzemeleri A.Ş."]}) == {}
     else:
         assert hide_in is True

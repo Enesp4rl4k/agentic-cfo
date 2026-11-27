@@ -37,7 +37,7 @@ Aşağıdakiler **seçeneklerdir**; hangisinin yeterli olduğu hukukçunun ve sa
   soyad yazımları dahil) yer tutucuyla gider, yanıtta baytı baytına geri çevrilir. Tutar, tarih ve para birimi **değişmez** (200.000+ satırlık
   bulanık testte sıfır değişiklik). **Bedeli:** adın anlamına dayanan çıkarımlarda kalite biraz değişebilir. **Sınırı:** serbest metinde kalıpların ve
   defterin bilmediği kişisel veri gidebilir: özellikle **okunan belgede ilk kez geçen, henüz defterde olmayan adlar olduğu gibi gider**; etiketsiz
-  TCKN/VKN/kart numarası ve `+90`/boşluksuz cep numarası, tutarlarla karışmasın diye bilinçli olarak kalıpla maskelenmez. Bu, tam güvence değildir.
+  VKN/kart numarası ve `+90`/boşluksuz cep numarası, tutarlarla karışmasın diye bilinçli olarak kalıpla maskelenmez (etiketsiz TCKN, tutar değilse maskelenir). Bu, tam güvence değildir.
 - **Kapalı kalarak başarısız olma.** Maskeli kipte bir çağrının şirketi bilinmiyorsa ya da şirketin isim listesi okunamazsa o çağrı **yapılmaz**
   (adlar maskesiz gitmez); ret kaydedilir, sahibin ekranında ve işletmeciye uyarıda görünür. Şirketsiz çalışmasına izin verilen sistem işi listesi bugün boştur.
 - **İzleme (LangSmith).** Varsayılan kapalı; açılırsa bile girdi ve çıktılar gizlenir (yük gitmez), üretimde başlangıç denetimi uyarır.

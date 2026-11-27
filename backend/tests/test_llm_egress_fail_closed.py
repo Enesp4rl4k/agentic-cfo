@@ -192,3 +192,41 @@ async def test_the_nl_stream_survives_a_restored_name_inside_its_follow_up_json(
     text = "".join(p for p in pieces if not p.startswith("\x00"))
     assert f"{quoted} borcu 1.500,00 TL." in text and "[[" not in text
     assert any(p.startswith("\x00FOLLOW_UPS:") for p in pieces)   # degrades to [] if the JSON broke; never crashes
+
+
+async def test_a_refused_or_off_narrative_says_it_is_a_template(monkeypatch) -> None:
+    """Narrative paths fall back to their template; the template says the AI step was skipped, and why."""
+    from app.agents.anomaly_agent import _generate_anomaly_narrative
+    from app.agents.narrative_guard import AI_STEP_SKIPPED
+
+    anomalies = [{"severity": "high", "title": "x", "description": "y"}]
+    async with open_world(monkeypatch) as env:  # no company context: masked mode refuses
+        text = await _generate_anomaly_narrative(anomalies, None)
+        assert env.rec.count() == 0
+    assert text.startswith(AI_STEP_SKIPPED["refused"]) and "anomali" in text
+    async with open_world(monkeypatch, mode="off", tenant=True):
+        text = await _generate_anomaly_narrative(anomalies, None)
+    assert text.startswith(AI_STEP_SKIPPED["off"])
+    async with open_world(monkeypatch, tenant=True) as env:  # the model answered: no note
+        text = await _generate_anomaly_narrative(anomalies, None)
+        assert env.rec.count() == 1
+    assert not any(text.startswith(n) for n in AI_STEP_SKIPPED.values())
+
+
+def test_json_keys_are_restored_and_an_unknown_key_is_missing() -> None:
+    from app.platform.llm_egress.names import NameDictionary
+    from app.platform.llm_egress.policy import DataMode, ModeDecision
+    from app.platform.llm_egress.pseudonymizer import UNKNOWN_NAME, Pseudonymizer
+    from app.platform.llm_egress.session import EgressSession
+
+    nd = NameDictionary()
+    nd.add("CP", "Karvesta Yapı Malzemeleri A.Ş.")
+    p = Pseudonymizer(nd)
+    token = p.mask("Karvesta Yapı Malzemeleri A.Ş.")
+    sess = EgressSession(ModeDecision(DataMode.MASKED, "platform", DataMode.MASKED, None, False), "o", p, set())
+    reply = {token: 1500.0, "[[CP_ZZZ_9]]": 20.0, "ok": token}
+    strict = sess.restore_json(reply, strict=True)
+    assert strict == {"Karvesta Yapı Malzemeleri A.Ş.": 1500.0, "ok": "Karvesta Yapı Malzemeleri A.Ş.",
+                      "__unresolved__": ["[[CP_ZZZ_9]]"]}
+    narrative = sess.restore_json(reply, strict=False)
+    assert narrative["Karvesta Yapı Malzemeleri A.Ş."] == 1500.0 and narrative[UNKNOWN_NAME] == 20.0

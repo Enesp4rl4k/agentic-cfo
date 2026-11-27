@@ -30,10 +30,11 @@ from app.platform.llm_egress.session import (
     current_tally,
     end_call,
     open_session,
+    skipped_steps,
     tallied,
 )
 
 __all__ = [
     "NOT_JSON", "CallTally", "DataMode", "EgressRefused", "EgressSession", "PolicyOff", "begin_call",
-    "current_tally", "effective_mode", "end_call", "open_session", "restore_json_reply", "tallied",
+    "current_tally", "effective_mode", "end_call", "open_session", "restore_json_reply", "skipped_steps", "tallied",
 ]

@@ -19,6 +19,7 @@ import statistics
 from collections import defaultdict
 from typing import Any
 
+from app.agents.narrative_guard import labels_skipped_ai_step
 from app.agents.state import AgentRunConfig, CFOState, SkillResult, is_correction_row
 
 logger = logging.getLogger(__name__)
@@ -182,6 +183,7 @@ def _compute_kpi_trends(
     }
 
 
+@labels_skipped_ai_step
 async def _generate_multiperiod_narrative(
     multi: dict[str, Any], settings
 ) -> str:

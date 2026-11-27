@@ -22,7 +22,7 @@ from app.platform.llm_egress.pseudonymizer import Pseudonymizer
 def _dictionary() -> NameDictionary:
     nd = NameDictionary()
     for name in ("Işık Gıda Ltd. Şti.", "Yıldız Holding A.Ş.", "Güneş Ticaret A.Ş.", "ACME Lojistik",
-                 "Kanarya Yapı Malzemeleri A.Ş.", "Usta \"Gıda\" Ltd. Şti."):
+                 "Karvesta Yapı Malzemeleri A.Ş.", "Usta \"Gıda\" Ltd. Şti."):
         nd.add("CP", name)
     for person in ("Selin Aksoy", "Ahmet Yılmaz", "Deniz Demir"):
         nd.add("PER", person, person=True)
@@ -37,8 +37,8 @@ NAME_VARIANTS = (
     ("Tutar Işık      Gıda hesabına.", "Işık      Gıda"), ("Tutar Işık​Gıda hesabına.", "Işık​Gıda"),
     ("Tutar Iş​ık Gıda hesabına.", "Iş​ık Gıda"), ("Onayı Aksoy verdi.", "Aksoy"),
     ("Onayı dün Selin verdi.", "Selin"), ("Rapor Aksoy'a gitti.", "Aksoy"), ("Rapor Aksoya gitti.", "Aksoy"),
-    ("KANARYA YAPI MALZEMELERİ A.Ş. ödemesi", "KANARYA YAPI"), ("kanarya yapi malzemeleri faturasi", "kanarya yapi"),
-    ("Kanarya Yapı Malzemeleri'ne havale", "Kanarya Yapı"), ("Kanarya Yapı Malzemelerine havale", "Kanarya Yapı"),
+    ("KARVESTA YAPI MALZEMELERİ A.Ş. ödemesi", "KARVESTA YAPI"), ("karvesta yapi malzemeleri faturasi", "karvesta yapi"),
+    ("Karvesta Yapı Malzemeleri'ne havale", "Karvesta Yapı"), ("Karvesta Yapı Malzemelerine havale", "Karvesta Yapı"),
     ("Isik Gida Ltd Sti faturasi", "Isik Gida"), ("IŞIK GIDA LTD. ŞTİ.", "IŞIK GIDA"), ("ışık gıdanın borcu", "ışık gıda"),
     ("Işık Gıda'nın borcu", "Işık Gıda"), ("Yıldız Holding'e", "Yıldız Holding"), ("Ahmet\nYılmaz imzaladı", "Ahmet\nYılmaz"),
     ("AHMET YILMAZ imzaladı", "AHMET YILMAZ"), ("ahmet yılmaz imzaladı", "ahmet yılmaz"), ("Selin Aksoyun onayı", "Selin Aksoy"),
@@ -52,7 +52,7 @@ IBAN_VARIANTS = (
     f"IBAN: {IBAN[4:]}",
 )
 EMAILS = ("info@ışık.com.tr", "user@münchen.de", "muhasebe@gıda-dünyası.com", "satış@örnek.com.tr",
-          "kanarya.muhasebe@zumrut-nakliyat.example", "ali@xn--k-7ga.com")
+          "karvesta.muhasebe@zemtrak-nakliyat.example", "ali@xn--k-7ga.com")
 
 
 @pytest.mark.parametrize(("text", "name"), NAME_VARIANTS)

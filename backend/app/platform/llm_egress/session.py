@@ -58,6 +58,9 @@ class CallTally:
 
 
 _TALLY: contextvars.ContextVar[CallTally | None] = contextvars.ContextVar("llm_call_tally", default=None)
+# Set (to a list) by a narrative function that labels its template: the gateway appends "off" / "refused" when it
+# did not send (agents.narrative_guard.labels_skipped_ai_step).
+skipped_steps: contextvars.ContextVar[list[str] | None] = contextvars.ContextVar("llm_skipped_steps", default=None)
 
 
 def begin_call(org_id: str | None = None, task: str | None = None) -> tuple[CallTally, contextvars.Token]:
@@ -189,8 +192,19 @@ class EgressSession:
         placeholder becomes None, the field is missing (data for the books is never a placeholder);
         otherwise it reads "[bilinmeyen taraf]"."""
         if isinstance(value, dict):
-            out = {k: self.restore_json(v, strict=strict) for k, v in value.items()}
-            missing = [k for k, v in value.items() if strict and isinstance(v, str) and out[k] is None]
+            out: dict[Any, Any] = {}
+            missing: list[str] = []
+            for k, v in value.items():
+                key = k
+                if isinstance(k, str):  # keys are restored too: a placeholder can stand where a name was a key
+                    restored_key = self.restore_json(k, strict=strict)
+                    if restored_key is None:  # unknown placeholder as a key: the field is missing, the row held
+                        missing.append(k)
+                        continue
+                    key = restored_key
+                out[key] = self.restore_json(v, strict=strict)
+                if strict and isinstance(v, str) and out[key] is None:
+                    missing.append(key)
             if missing:  # say which fields were placeholders nobody can resolve: the consumer holds the row
                 out[UNRESOLVED_KEY] = missing
             return out

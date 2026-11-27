@@ -21,6 +21,7 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Any
 
+from app.agents.narrative_guard import labels_skipped_ai_step
 from app.agents.state import AgentRunConfig, CFOState, SkillResult, is_correction_row
 from app.core.turkish import fold
 
@@ -409,6 +410,7 @@ def detect_negative_cashflow_streak(
 
 # ── LLM narrative for anomaly summary ────────────────────────────────────────
 
+@labels_skipped_ai_step
 async def _generate_anomaly_narrative(
     anomalies: list[dict[str, Any]],
     settings,

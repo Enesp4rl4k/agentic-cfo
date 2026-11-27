@@ -263,9 +263,17 @@ async def _open_egress(org_id: str | None, task: str | None) -> egress.EgressSes
     try:
         return await egress.open_session(org_id, task=task)
     except egress.EgressRefused as exc:
+        _note_skip("refused")
         raise LLMEgressRefused(str(exc), exc.reason) from exc
     except egress.PolicyOff as exc:
+        _note_skip("off")
         raise LLMDisabled(str(exc)) from exc
+
+
+def _note_skip(kind: str) -> None:
+    skipped = egress.skipped_steps.get()
+    if skipped is not None:
+        skipped.append(kind)
 
 
 def _texts(messages: list[Any]) -> list[str]:
@@ -360,6 +368,7 @@ async def complete(
 
     if use_cache:
         if (await egress.effective_mode(org_id)).mode == egress.DataMode.OFF:
+            _note_skip("off")
             raise LLMDisabled("Yapay zekâya veri gönderimi kapalı (LLM_DATA_MODE=off): önbellekteki yanıt da verilmez")
         key = _cache_key(cfg.model_id, system_prompt, prompt, schema_name + (json_reply or ""))
         hit = _CACHE.get(key)
