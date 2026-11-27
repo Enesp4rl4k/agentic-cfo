@@ -5,7 +5,7 @@ Four master-red incidents in one week were tests whose outcome depended on the d
 cure is not more care in each test: it is one seam a test session (and the browser journey's API) can
 freeze, so a date-relative fixture means the same date on every run.
 
-How it works. `install()` adds an import hook: every `app.*` / `tests.*` module imported afterwards that says
+How it works. `install()` wraps `builtins.__import__`: every `app.*` / `tests.*` module imported afterwards that says
 `from datetime import datetime, date` (or `import datetime`) gets subclasses whose `now()` / `utcnow()` /
 `today()` read `now()` below; nothing in the 380-odd call sites changes. Third-party modules keep the
 stdlib classes. While nothing is pinned the subclasses return the real time, so production behaviour is
@@ -27,9 +27,7 @@ from __future__ import annotations
 
 import builtins
 import datetime as _dt
-import importlib.abc
 import os
-import sys
 import time
 import types
 from collections.abc import Iterator
@@ -190,64 +188,33 @@ _proxy.__dict__.update({k: v for k, v in vars(_dt).items() if k not in ("__name_
 _proxy.__dict__.update(datetime=ClockDatetime, date=ClockDate)
 
 
-_real_import = builtins.__import__
-
-
-def _scoped_import(name: str, globals: Any = None, locals: Any = None, fromlist: Any = (), level: int = 0) -> Any:
-    if name == "datetime" and level == 0:
-        return _proxy
-    return _real_import(name, globals, locals, fromlist, level)
-
-
-_SCOPED_BUILTINS = {**vars(builtins), "__import__": _scoped_import}
-
-
-class _ScopedLoader(importlib.abc.Loader):
-    """Runs a module body with `datetime` resolving to the clock's classes (in scope) or the stdlib's."""
+class _ScopedImport:
+    """`builtins.__import__`, answering `import datetime` / `from datetime import ...` with the clock's classes
+    when the importing module is `app.*` or `tests.*` (module level and inside functions alike). Every other
+    import, and every other caller, goes to the import function that was in place before (a test that
+    monkeypatches `builtins.__import__` wraps this one and keeps working)."""
 
     def __init__(self, inner: Any) -> None:
-        self._inner = inner
+        self.inner = inner
 
-    def create_module(self, spec: Any) -> Any:
-        return self._inner.create_module(spec)
-
-    def exec_module(self, module: types.ModuleType) -> None:
-        if module.__name__.split(".")[0] in SCOPES:
-            # The module's own builtins: its `import datetime` / `from datetime import ...` statements, at module
-            # level AND inside functions (a lazy import runs long after this), resolve to the clock's classes.
-            module.__dict__["__builtins__"] = _SCOPED_BUILTINS
-        self._inner.exec_module(module)
-
-    def __getattr__(self, name: str) -> Any:  # get_source, get_resource_reader, is_package, ...
-        return getattr(self._inner, name)
-
-
-class _ScopedFinder(importlib.abc.MetaPathFinder):
-    def find_spec(self, name: str, path: Any, target: Any = None) -> Any:
-        for finder in sys.meta_path:
-            if finder is self or not hasattr(finder, "find_spec"):
-                continue
-            spec = finder.find_spec(name, path, target)
-            if spec is not None:
-                if spec.loader is not None and hasattr(spec.loader, "exec_module"):
-                    spec.loader = _ScopedLoader(spec.loader)
-                return spec
-        return None
+    def __call__(self, name: str, globals: Any = None, locals: Any = None, fromlist: Any = (), level: int = 0) -> Any:
+        if name == "datetime" and level == 0 and globals and str(globals.get("__name__", "")).split(".")[0] in SCOPES:
+            return _proxy
+        return self.inner(name, globals, locals, fromlist, level)
 
 
 def install() -> None:
-    """Route `datetime.datetime` / `datetime.date` through this clock in every `app.*` / `tests.*` module
-    imported from now on (`from datetime import datetime`, `import datetime`).
+    """Route `datetime.datetime` / `datetime.date` through this clock in every `app.*` / `tests.*` module that
+    imports them from now on.
 
     Idempotent. Harmless while nothing is pinned (the real time is returned)."""
-    if not any(isinstance(f, _ScopedFinder) for f in sys.meta_path):
-        sys.meta_path.insert(0, _ScopedFinder())
+    if not isinstance(builtins.__import__, _ScopedImport):
+        builtins.__import__ = _ScopedImport(builtins.__import__)
         import sqlite3
 
         # sqlite3 looks its adapters up by exact type: the stdlib's own conversions, for the subclasses.
         sqlite3.register_adapter(ClockDatetime, lambda v: v.isoformat(" "))
         sqlite3.register_adapter(ClockDate, lambda v: v.isoformat())
-
 
 def install_from_env(environ: Any = None) -> real_datetime | None:
     """For the API and worker processes: pin to `APP_CLOCK_START` when the environment allows it."""
