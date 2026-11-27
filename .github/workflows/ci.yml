@@ -204,6 +204,22 @@ jobs:
         working-directory: backend
         run: python -m pytest tests/test_erasure_postgres.py -q -p no:randomly
 
+      # The langgraph checkpoint tables are created by the library when the saver first connects (not by Alembic).
+      # A skipped safety test is a defect: the summary line is checked, as for the atomicity test below.
+      - name: LangGraph checkpoints on Postgres (resume in a rebuilt app, tenant isolation, erasure, retention)
+        working-directory: backend
+        run: |
+          out="$(python -m pytest tests/test_checkpointer_postgres.py -q -p no:randomly -rs)"
+          echo "$out"
+          if echo "$out" | grep -Eqi "skipped|no tests ran" || ! echo "$out" | grep -Eq "[0-9]+ passed"; then
+            echo "::error::the Postgres checkpointer test did not run (skipped or not collected)"
+            exit 1
+          fi
+
+      - name: Schema drift still clean with the library-managed checkpoint tables present
+        working-directory: backend
+        run: python ../scripts/schema_drift.py
+
       - name: Every migration can be rolled back
         working-directory: backend
         run: alembic downgrade base
@@ -708,9 +724,10 @@ jobs:
   # are written to the job summary (last step).
   # History: report-only until 2026-11-26, when the langchain family was upgraded
   # (docs/ops/dependency-pinning.md) and both scans reached 0. Findings with no fixed
-  # release are not counted (`ignore-unfixed`): python-jose and ecdsa are listed, with
-  # their reachability, in that document. To accept a fixable finding, name it in a
-  # .trivyignore with a reason; do not turn the exit code back to 0.
+  # release are NOT skipped wholesale (no `ignore-unfixed`): the accepted ones are named, with a reason
+  # and an expiry date, in .trivyignore.yaml (TRIVY_IGNOREFILE), so a new unfixed advisory in any other
+  # package fails the job. Each entry's reachability is in docs/ops/dependency-pinning.md. Do not turn the
+  # exit code back to 0.
   security:
     name: Security Scan (BLOCKING, fixable HIGH or CRITICAL findings fail)
     runs-on: ubuntu-latest
@@ -733,8 +750,9 @@ jobs:
           scanners:    vuln
           format:      table
           exit-code:   1    # BLOCKING - see the comment above the job
-          ignore-unfixed: true
           severity:    CRITICAL,HIGH
+        env:
+          TRIVY_IGNOREFILE: .trivyignore.yaml
 
       - name: Trivy - full pinned set incl. transitive (BLOCKING)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
@@ -744,8 +762,9 @@ jobs:
           scanners:    vuln
           format:      table
           exit-code:   1    # BLOCKING - see the comment above the job
-          ignore-unfixed: true
           severity:    CRITICAL,HIGH
+        env:
+          TRIVY_IGNOREFILE: .trivyignore.yaml
 
       # Totals in the run's summary page, so the count is visible without opening the log.
       # This step only reports; the two scans above are the gate.
@@ -753,14 +772,14 @@ jobs:
         if: always()
         run: |
           {
-            echo "### Trivy: fixable HIGH/CRITICAL findings (the scans above fail the job on any)"
+            echo "### Trivy: HIGH/CRITICAL findings not named in .trivyignore.yaml (the scans above fail the job on any)"
             echo
             echo "| Scan | CRITICAL | HIGH | Total |"
             echo "|---|---|---|---|"
           } >> "$GITHUB_STEP_SUMMARY"
           for scan in "direct pins (backend/)|./backend" "full pinned set (constraints.txt)|./.trivy-scan"; do
             label="${scan%%|*}"; ref="${scan##*|}"
-            if trivy fs --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed --format json --output /tmp/trivy.json "$ref" >/dev/null 2>&1; then
+            if trivy fs --scanners vuln --severity CRITICAL,HIGH --ignorefile .trivyignore.yaml --format json --output /tmp/trivy.json "$ref" >/dev/null 2>&1; then
               python3 - "$label" >> "$GITHUB_STEP_SUMMARY" <<'PY'
           import json, sys
           c = {"CRITICAL": 0, "HIGH": 0}

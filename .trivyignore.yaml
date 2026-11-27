@@ -1,0 +1,18 @@
+# Advisories the Security Scan job accepts BY NAME (TRIVY_IGNOREFILE in .github/workflows/ci.yml).
+# Every entry: the advisory id, why it is accepted, and an expiry date at most 90 days out. After the date Trivy
+# reports the finding again and the job fails until the entry is renewed with a fresh look or the package replaced.
+# Anything NOT listed here fails the job, fixable or not. Reachability analysis: docs/ops/dependency-pinning.md.
+# Entries added 2026-11-27; expire 2027-02-25.
+vulnerabilities:
+  - id: CVE-2024-33663
+    statement: >-
+      python-jose 3.5.0, no fixed release. Algorithm confusion with ECDSA/PEM public keys. HS256 only: the single
+      use is jwt.decode(token, secret, algorithms=["HS256"]) with a symmetric secret (app/services/auth.py), so the
+      ECDSA/algorithm-confusion paths are unreachable. Replacement of python-jose is a tracked follow-up.
+    expired_at: 2027-02-25
+  - id: CVE-2024-23342
+    statement: >-
+      ecdsa 0.19.2, no fixed release (Minerva timing side channel on signing). Pulled in by python-jose only;
+      nothing in this repository signs with ECDSA, so the vulnerable path is unreachable. Goes with the python-jose
+      replacement.
+    expired_at: 2027-02-25
