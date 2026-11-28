@@ -284,10 +284,12 @@ async def _monday_briefing_for_org(org_id: str, anchor: Any, db: Any) -> None:
     )
     # Redis cache: a convenience copy, best effort (the screen recomputes from the radar).
     try:
+        from app.services.privacy.tombstone import redis_write_allowed
         from app.worker import get_arq_pool
 
         pool = await get_arq_pool()
-        await pool.set(monday_briefing_key(org_id), json.dumps(briefing.to_dict()), ex=7 * 86400)
+        if await redis_write_allowed(org_id):
+            await pool.set(monday_briefing_key(org_id), json.dumps(briefing.to_dict()), ex=7 * 86400)
     except Exception as exc:
         logger.debug("Could not cache monday briefing in Redis for org %s: %s", org_id, exc)
 
@@ -518,9 +520,12 @@ async def _generate_morning_brief_for_org(org_id: str) -> None:
 
         # Store in Redis with 25h TTL (survives until next brief)
         try:
+            from app.services.privacy.tombstone import redis_write_allowed
             from app.worker import get_arq_pool
+
             pool = await get_arq_pool()
-            await pool.set(morning_brief_key(org_id), json.dumps(brief), ex=90000)
+            if await redis_write_allowed(org_id):
+                await pool.set(morning_brief_key(org_id), json.dumps(brief), ex=90000)
             logger.info("Scheduler: morning brief generated and stored in Redis")
         except Exception as exc:
             logger.warning("Could not store morning brief in Redis: %s", exc)

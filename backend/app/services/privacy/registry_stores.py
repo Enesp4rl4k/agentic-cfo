@@ -111,10 +111,13 @@ PURGES: dict[str, Purge] = {
     "checkpoints_orphaned": Purge("checkpoint threads of an organisation that is erased or no longer exists",
                                   CHECKPOINT_TABLES, "at once, any age",
                                   E.ENFORCED, "erasure, not retention: the company is gone and nothing reads them"),
-    "erasure_leftovers": Purge("what a run in flight wrote for an organisation erased in the last 30 days: "
-                               "checkpoints, agent memory, model-call log and run-ledger rows",
-                               (*CHECKPOINT_TABLES, "agent_memory_episodes", "llm_call_logs", "agent_runs"),
+    "erasure_leftovers": Purge("whatever was written for an organisation after its erasure committed (organisations "
+                               "erased in the last 30 days): the erasure's OWN plan run again, so every "
+                               "organisation-scoped table (org_erasure.derive_scope, listed in the Tables section "
+                               "under this key), the checkpoints, the agent memory, the files and the Redis keys",
+                               (*CHECKPOINT_TABLES, "agent_memory_episodes"),
                                "at once (organisations erased in the last ERASURE_SWEEP_DAYS = 30 days)", E.ENFORCED,
-                               "erasure, not retention: the company is erased; refused at write time "
-                               "(privacy.tombstone), swept again here"),
+                               "erasure, not retention: the company is erased. Writes are refused under the "
+                               "organisation's lock (privacy.write_guard, privacy.tombstone); this removes what got "
+                               "past, with no second list of tables"),
 }

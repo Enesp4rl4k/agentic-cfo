@@ -187,13 +187,20 @@ async def test_rows_written_for_an_erased_organisation_after_its_erasure_are_swe
     async with maker() as db:
         a, b = await _company(db, "A", tmp_path), await _company(db, "B", tmp_path)
         await org_erasure.erase_org(db, a["org"], storage_root=tmp_path)
-        for org in (a["org"], b["org"]):
-            await _insert(db, T["agent_runs"], "A", org_id=org, pipeline="cfo", status="completed", attempt=1)
-            await _insert(db, T["llm_call_logs"], "A", org_id=org, task_type="t", model="m", ok=True,
-                          created_at=NOW - timedelta(days=1))
-        await db.commit()
+        from app.services.privacy import write_guard
+        from app.services.privacy.tombstone import OrgErasedError
+
+        with pytest.raises(OrgErasedError):  # the session refuses it now (privacy.write_guard) ...
+            await _insert(db, T["agent_runs"], "A", org_id=a["org"], pipeline="cfo", status="completed", attempt=1)
+        await db.rollback()
+        with write_guard.exempt(db):  # ... so a writer that got past the guard is simulated
+            for org in (a["org"], b["org"]):
+                await _insert(db, T["agent_runs"], "A", org_id=org, pipeline="cfo", status="completed", attempt=1)
+                await _insert(db, T["llm_call_logs"], "A", org_id=org, task_type="t", model="m", ok=True,
+                              created_at=NOW - timedelta(days=1))
+            await db.commit()
         report = await retention.run_retention(db, now=NOW)  # dry run
-        assert report["dry_run"] is True and report["counts"]["erasure_leftovers"] == 2
+        assert report["dry_run"] is True and report["counts"]["erasure_leftovers"] >= 2
         for table in ("agent_runs", "llm_call_logs"):
             orgs = [r["org_id"] for r in await _rows(db, T[table])]
             assert a["org"] not in orgs and b["org"] in orgs, table

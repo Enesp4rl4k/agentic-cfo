@@ -175,7 +175,14 @@ FULL = {"old_notifications": 1, "fresh_notifications": 1, "old_alerts": 1, "fres
         "fresh_bodies": 1}
 
 
-async def test_dry_run_deletes_the_always_enforced_stores_and_only_counts_the_others(maker) -> None:
+async def test_dry_run_deletes_the_always_enforced_stores_and_only_counts_the_others(
+    maker, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.services import checkpoint_data
+
+    # One thread per DELETE statement: the batched purge (CHECKPOINT_DELETE_BATCH) still reaches every thread.
+    monkeypatch.setattr(checkpoint_data, "CHECKPOINT_DELETE_BATCH", 1)
+    assert checkpoint_data.CHECKPOINT_DELETE_BATCH == 1
     now = datetime.now(UTC)
     gone_org = str(uuid.uuid4())  # an organisation id with no row: a deleted company
     async with maker() as db:
@@ -269,9 +276,12 @@ async def test_leftovers_of_an_erased_organisation_are_swept_with_dry_run_on_and
         return thread
 
     _ = _graph()  # the library's tables exist before raw rows are written
+    from app.services.privacy import write_guard
+
     async with maker() as db:
-        t_erased, t_other = await late_rows(db, erased), await late_rows(db, other)
-        await db.commit()
+        with write_guard.exempt(db):  # writers that got past the session guard (it refuses these now)
+            t_erased, t_other = await late_rows(db, erased), await late_rows(db, other)
+            await db.commit()
 
     async def left(db: AsyncSession, org: str) -> dict[str, int]:
         out = {"memory": int((await db.execute(text("SELECT count(*) FROM agent_memory_episodes WHERE org_id = :o"),

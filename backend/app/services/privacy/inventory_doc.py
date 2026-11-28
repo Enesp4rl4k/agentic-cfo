@@ -39,6 +39,8 @@ def _flows(flows: tuple[Flow, ...]) -> str:
 def _retention_job(table: str) -> str:
     """Which retention purges touch this table and whether each is in effect; `-` when none does."""
     keys = [f"`{k}` ({p.enforcement.value})" for k, p in PURGES.items() if table in p.tables]
+    if table in org_erasure.derive_scope():  # the final sweep re-runs the erasure's own plan over these
+        keys.append(f"`erasure_leftovers` ({PURGES['erasure_leftovers'].enforcement.value})")
     return ", ".join(keys) or "- (no retention job: kept until erasure)"
 
 

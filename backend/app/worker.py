@@ -50,6 +50,11 @@ initialize_telemetry(
 # The maintenance worker (arq app.worker.MaintenanceWorkerSettings) parses no uploads: the parser memory rule is the analysis worker's.
 enforce_or_exit(get_settings(), process="worker-maintenance" if any(a.endswith("MaintenanceWorkerSettings") for a in sys.argv) else "worker")
 
+# The erasure tombstone on every database write of company data (app/services/privacy/write_guard.py).
+from app.services.privacy import write_guard as _write_guard
+
+_write_guard.install()
+
 
 class TransientWorkerError(RuntimeError):
     """Retryable infra error (network/redis/timeout)."""

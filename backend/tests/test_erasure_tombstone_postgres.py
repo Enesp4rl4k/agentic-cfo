@@ -255,3 +255,158 @@ async def test_the_run_ledger_and_the_agent_memory_write_nothing_for_an_erased_o
         async with maker() as db:
             await db.execute(text("DELETE FROM agent_memory_episodes WHERE org_id IN (:a, :b)"), {"a": org, "b": other})
             await db.commit()
+
+
+# ── #164 review B1: every write path, by the session itself (privacy.write_guard) ─────────────────────────────
+
+
+async def _context_rows(db: AsyncSession, org: str) -> dict[str, int]:
+    out = {}
+    for name in ("company_context_snapshots", "company_semantic_snapshots"):
+        t = T[name]
+        out[name] = int((await db.execute(select(func.count()).select_from(t).where(t.c.org_id == org))).scalar_one())
+    return out
+
+
+async def _redis() -> Any:
+    from app.core.redis_client import get_redis
+
+    client = await get_redis()
+    assert client is not None, "the CI job has a Redis service: the Redis half of this test must run"
+    return client
+
+
+async def test_a_view_written_after_the_erasure_committed_and_was_swept_leaves_zero_rows(
+    maker, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The reviewer's scenario: the continuation's unlocked check passed; while the company view was being computed
+    (minutes, LLM calls) the erasure committed and its final sweep finished; THEN the view is written. Refused: no
+    company context, no semantic snapshot, no Redis key, no auto-chain."""
+    from app import post_completion
+    from app.services import company_view
+    from app.services.privacy.tombstone import sweep_erased_org
+
+    async with maker() as db:
+        org = await company(db)
+    spawned: list[str] = []
+    monkeypatch.setattr(post_completion, "spawn_auto_chain", lambda *a, **k: spawned.append("chain"))
+    computed: list[str] = []
+
+    def should_replace(current: Any, new: Any) -> tuple[bool, str]:
+        computed.append("view")  # the view was computed for a company that was live when the check ran
+        return True, "applied_by_test"
+
+    monkeypatch.setattr(company_view, "should_replace", should_replace)
+    # Deterministic order: the erasure commits and its final sweep finishes ...
+    async with maker() as eraser:
+        await org_erasure.erase_org(eraser, org, storage_root=tmp_path)
+    async with maker() as sweeper:
+        await sweep_erased_org(sweeper, org, storage_root=tmp_path)
+    # ... THEN the write of the view that was computed before starts.
+    chain = {"dashboard": {"period": "2026-11", "kpis": {"revenue": 1}}, "anomalies": []}
+    async with maker() as db:
+        applied = await post_completion.apply_company_view(str(uuid.uuid4()), org, chain, db, force=True)
+    assert applied is False and computed == ["view"] and spawned == []
+    async with maker() as db:
+        assert await _context_rows(db, org) == {"company_context_snapshots": 0, "company_semantic_snapshots": 0}
+    client = await _redis()
+    assert await client.get(f"company_context:{org}") is None
+
+    # Every writer of the context is refused, not only the continuation's explicit check (the session guard).
+    from app.services.company_context import CompanyContext, save_company_context
+
+    async with maker() as db:
+        await save_company_context(CompanyContext(org_id=org), db)
+    async with maker() as db:
+        assert await _context_rows(db, org) == {"company_context_snapshots": 0, "company_semantic_snapshots": 0}
+    assert await client.get(f"company_context:{org}") is None
+
+
+async def test_a_write_that_got_past_the_guard_is_removed_by_the_next_retention_run_rows_and_redis(
+    maker, tmp_path: Path
+) -> None:
+    from app.services.privacy import retention, write_guard
+
+    async with maker() as db:
+        org, other = await company(db), await company(db)
+    async with maker() as db:
+        await org_erasure.erase_org(db, org, storage_root=tmp_path)
+    client = await _redis()
+    async with maker() as db:
+        with write_guard.exempt(db):  # a writer the guard did not see
+            for target in (org, other):
+                await put(db, "company_context_snapshots", org_id=target, context_json="{}")
+                await put(db, "company_semantic_snapshots", org_id=target, period_key="2026-11")
+            await db.commit()
+    for target in (org, other):
+        await client.set(f"company_context:{target}", "late", ex=600)
+        await client.set(f"trend:{target}", "late", ex=600)
+    try:
+        async with maker() as db:
+            report = await retention.run_retention(db, dry_run=True)
+        assert report["counts"]["erasure_leftovers"] >= 4
+        async with maker() as db:
+            assert await _context_rows(db, org) == {"company_context_snapshots": 0, "company_semantic_snapshots": 0}
+            assert await _context_rows(db, other) == {"company_context_snapshots": 1, "company_semantic_snapshots": 1}
+        assert await client.get(f"company_context:{org}") is None and await client.get(f"trend:{org}") is None
+        assert await client.get(f"company_context:{other}") is not None, "the sweep reached another company's keys"
+    finally:
+        await client.delete(f"company_context:{other}", f"trend:{other}")
+
+
+async def test_a_long_writer_holding_the_shared_lock_through_the_session_guard_makes_the_erasure_wait(
+    maker, tmp_path: Path
+) -> None:
+    """No explicit call: the session's own guard takes the shared lock at the first flush of the org's rows."""
+    from app.models.in_app_notification import InAppNotification
+
+    async with maker() as db:
+        org = await company(db)
+    async with maker() as writer, maker() as eraser:
+        writer.add(InAppNotification(org_id=org, level="info", domain="cfo", message="a long run's result"))
+        await writer.flush()  # write_guard: lock shared, tombstone read, then the INSERT
+        erasure = asyncio.create_task(org_erasure.erase_org(eraser, org, storage_root=tmp_path))
+        await asyncio.sleep(1.0)
+        assert not erasure.done(), "the erasure did not wait for a writer the session guard locked"
+        writer.add(InAppNotification(org_id=org, level="info", domain="cfo", message="more of it"))
+        await writer.commit()
+        await asyncio.wait_for(erasure, 60)
+    async with maker() as db:
+        t = T["in_app_notifications"]
+        assert (await db.execute(select(func.count()).select_from(t).where(t.c.org_id == org))).scalar_one() == 0
+        db.add(InAppNotification(org_id=org, level="info", domain="cfo", message="after"))
+        with pytest.raises(OrgErasedError):
+            await db.flush()
+
+
+async def test_the_tombstone_costs_two_statements_per_organisation_per_transaction(maker) -> None:
+    """Measured: the shared lock and the tombstone read run once per organisation per transaction, however many rows
+    the transaction writes (the answer is cached on the transaction, which holds the lock)."""
+    from sqlalchemy import event, update
+
+    from app.models.in_app_notification import InAppNotification
+
+    async with maker() as db:
+        org = await company(db)
+    seen: list[str] = []
+
+    def record(conn: Any, cursor: Any, statement: str, *args: Any) -> None:
+        if "pg_advisory_xact_lock_shared" in statement:
+            seen.append("lock")
+        elif "org_erasure_records" in statement:
+            seen.append("tombstone")
+
+    async with maker() as db:
+        engine = db.bind.sync_engine  # type: ignore[union-attr]
+        event.listen(engine, "before_cursor_execute", record)
+        try:
+            for _ in range(2):  # two transactions, five inserts and an update each
+                for i in range(5):
+                    db.add(InAppNotification(org_id=org, level="info", domain="cfo", message=f"row {i}"))
+                    await db.flush()
+                t = T["in_app_notifications"]
+                await db.execute(update(t).where(t.c.org_id == org).values(is_read=True))
+                await db.commit()
+        finally:
+            event.remove(engine, "before_cursor_execute", record)
+    assert seen == ["lock", "tombstone", "lock", "tombstone"], seen

@@ -238,8 +238,10 @@ async def get_company_context(
             snapshot = result.scalar_one_or_none()
             if snapshot:
                 ctx = CompanyContext.from_dict(json.loads(snapshot.context_json))
-                # Warm Redis cache
-                if redis:
+                # Warm Redis cache (not for a company being erased: privacy.tombstone)
+                from app.services.privacy.tombstone import redis_write_allowed
+
+                if redis and await redis_write_allowed(org_id):
                     try:
                         await redis.setex(
                             _redis_key(org_id),
@@ -350,9 +352,11 @@ async def save_company_context(
     else:
         payload = raw_payload
 
-    # 1. Write to Redis
+    # 1. Write to Redis (not for a company being erased; its DB write is refused by privacy.write_guard)
+    from app.services.privacy.tombstone import redis_write_allowed
+
     redis = await _get_redis()
-    if redis:
+    if redis and await redis_write_allowed(ctx.org_id):
         try:
             await redis.setex(_redis_key(ctx.org_id), CONTEXT_TTL_SECONDS, payload)
         except Exception as exc:
@@ -381,7 +385,10 @@ async def save_company_context(
                 sess.add(snapshot)
             await sess.commit()
         except Exception as exc:
-            logger.warning("DB context write failed: %s", exc)
+            # A refused write (privacy.write_guard: the company is being erased) or a failed one: the session must
+            # be usable again for the caller.
+            await sess.rollback()
+            logger.warning("DB context write failed: %s", type(exc).__name__)
 
 
 async def invalidate_company_context(org_id: str, db: Any = None) -> None:

@@ -15,26 +15,36 @@ What marks an organisation (no new table, no migration; both rows exist already 
 A `failed` request is not a tombstone: its transaction rolled back whole, the company is intact and keeps working;
 the retry erases whatever was written meanwhile. A cancelled one never touched anything.
 
-How a write path uses it (`refuse_if_erased`), and why it is airtight on PostgreSQL: the writer takes the
-organisation's advisory lock in SHARED mode inside its own transaction, then reads the tombstone. The erase
-transaction takes the same lock EXCLUSIVELY as its first statement (`org_erasure._lock_org`). So either the writer
-saw no tombstone and holds the shared lock until its commit (the erasure waits for it and then deletes what it
-wrote), or it waits for the erasure and then sees the proof record and refuses. There is no third order. SQLite
-(development) has one writer at a time and no advisory locks: the check alone.
+How it is applied (`refuse_if_erased`), and why it is airtight on PostgreSQL: the writer takes the organisation's
+advisory lock in SHARED mode inside its own transaction, then reads the tombstone. The erase transaction takes the
+same lock EXCLUSIVELY as its first statement (`org_erasure._lock_org`). So either the writer saw no tombstone and
+holds the shared lock until its commit (the erasure waits for it and then deletes what it wrote), or it waits for the
+erasure and then sees the proof record and refuses. There is no third order. SQLite (development) has one writer at a
+time and no advisory locks: the check alone.
 
-Writers that are not on our session read the tombstone without the lock (the LangGraph saver's own pool, the CEO
-result in Redis) or not at all (the model-call log: the platform layer may not import this one; the agent memory
-insert carries the predicate and the lock itself); what can slip through is removed by the final
-sweep at the end of the erasure (`sweep_erased_org`) and again by every retention run
-(`retention.sweep_erasure_leftovers`), neither gated by RETENTION_DRY_RUN.
+Where it is applied:
+
+* EVERY database write of an organisation-scoped table, by the session itself (`privacy.write_guard`: the ORM flush
+  and every Core INSERT / UPDATE), so no write path has to remember it; the analysis paths also call
+  `refuse_if_erased` explicitly as the first statement of their transactions;
+* Redis writes of company data (`redis_write_allowed`, a check right before the write: Redis has no transaction);
+  `tests/test_write_guard.py` fails on a Redis write site that neither checks nor is exempt with a reason;
+* writers on connections of their own: the LangGraph saver checks without the lock; the agent memory insert carries
+  the predicate and takes the lock itself; the model-call log (platform layer, may not import this) does not check.
+
+What gets past (a write that cannot be resolved to its organisation, the model-call log, a Redis write racing the
+check) is removed by the final sweep at the end of the erasure and by every retention run (`sweep_erased_org`): the
+erasure's own plan run again, every org-scoped table, checkpoints, agent memory, files and Redis keys, not gated by
+RETENTION_DRY_RUN.
 """
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+import re
+from pathlib import Path
 from typing import Any
 
-from sqlalchemy import delete, exists, func, or_, select
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
@@ -98,6 +108,8 @@ async def refuse_if_erased(db: AsyncSession, org_id: str | None) -> None:
     if await is_erased(db, org_id):
         logger.warning("write refused: the organisation is being erased or was erased")
         raise OrgErasedError()
+    if db.get_bind().dialect.name == "postgresql":  # the session-wide guard need not read it again (write_guard)
+        db.info.setdefault("tombstone_checked", set()).add(str(org_id))
 
 
 async def org_erased_now(org_id: str | None) -> bool:
@@ -114,6 +126,37 @@ async def org_erased_now(org_id: str | None) -> bool:
     except Exception as exc:
         logger.warning("erasure tombstone unreadable (%s): write allowed, the final sweep covers it", type(exc).__name__)
         return False
+
+
+_UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+# Per process: an organisation found erased stays erased (cached for good); one found live is asked again after
+# NEGATIVE_TTL seconds. A Redis write in that window is removed by the final sweep / retention (keys naming the org).
+NEGATIVE_TTL = 5.0
+_ERASED_SEEN: set[str] = set()
+_LIVE_SEEN: dict[str, float] = {}
+
+
+async def redis_write_allowed(*names: str | None) -> bool:
+    """Before a Redis write of company data: False when an organisation named by `names` (an organisation id, or a
+    key that contains one) is being erased or was erased. Redis has no transaction to lock in, so this is a check
+    immediately before the write; the erasure's Redis sweep, run again by the final sweep and every retention run,
+    deletes any key that names the organisation. `tests/test_write_guard.py` requires every Redis write site to call
+    this or to be listed as exempt with a reason."""
+    import time
+
+    candidates = {m for n in names if n for m in _UUID_RE.findall(str(n).lower())}
+    now = time.monotonic()
+    for org in candidates:
+        if org in _ERASED_SEEN:
+            return False
+        if now - _LIVE_SEEN.get(org, -NEGATIVE_TTL - 1) < NEGATIVE_TTL:
+            continue
+        if await org_erased_now(org):
+            _ERASED_SEEN.add(org)
+            logger.warning("redis write refused: the organisation is being erased or was erased")
+            return False
+        _LIVE_SEEN[org] = now
+    return True
 
 
 def org_of_thread(thread_id: str) -> str | None:
@@ -147,34 +190,42 @@ def thread_refused(pool: Any, thread_id: str) -> bool:
     return bool(value)
 
 
-async def sweep_erased_org(db: AsyncSession, org_id: str, job_ids: Sequence[str] = ()) -> dict[str, int]:
-    """The final sweep of an erased organisation: what an analysis run in flight could still write after the erase
-    transaction committed, removed in a transaction of its own under the same per-organisation lock. Commits.
+async def sweep_erased_org(
+    db: AsyncSession, org_id: str, *, mode: str = "anonymise", plan: dict[str, Any] | None = None,
+    storage_root: Path | None = None,
+) -> dict[str, int]:
+    """The final sweep of an erased organisation: the ERASURE'S OWN PLAN run again, in a transaction of its own under
+    the same per-organisation lock, then its cleanup (files, caches, Redis). Commits. Counts only.
 
-    The write paths that hold a session refuse an erased company under that lock (`privacy.tombstone`), so nothing
-    of theirs can survive. Two writers have connections of their own and read the tombstone without the lock (the
-    LangGraph saver; the CEO result in Redis, which expires with its 24-hour time-to-live), and the model-call log, in the platform
-    layer, does not read it at all (the layer may not import this one). This deletes the
-    organisation's checkpoint threads, Postgres agent memory, model-call log rows and run-ledger rows again. Run at the
+    There is no second list of tables: `org_erasure._erase` derives the organisation's tables from the schema (a new
+    org-scoped table the erasure does not place fails `tests/test_org_erasure.py`, so it cannot escape this either),
+    deletes what is not retained, re-scrubs only rows not yet scrubbed (`_not_scrubbed`), and erases the checkpoints
+    and the Postgres agent memory. `plan` is the erasure's stored cleanup plan: its user, job and export ids are gone
+    from the tables now and are added to the cleanup so their Redis keys and files are looked for again. Run at the
     end of an erasure's cleanup (`erasure_flow.run_cleanup_step`) and by every retention run for organisations erased
-    in the last `retention.ERASURE_SWEEP_DAYS` days, whatever RETENTION_DRY_RUN says. Idempotent; counts only."""
-    from app.database import Base
-    from app.services.org_erasure import _lock_org
-    from app.services.privacy.ephemeral import erase_org_in_transaction
-    from app.services.privacy.erasure_cleanup import require_ids
+    in the last `retention.ERASURE_SWEEP_DAYS` days, whatever RETENTION_DRY_RUN says. Idempotent."""
+    from app.config import get_settings
+    from app.services.org_erasure import _erase, _lock_org, hash_id
+    from app.services.privacy.erasure_cleanup import require_ids, run_cleanup
+    from app.services.privacy.write_guard import exempt
 
-    jobs = list(job_ids)
-    require_ids(org_id, jobs)
-    tables = dict(Base.metadata.tables)
+    require_ids(org_id)
+    root = storage_root or Path(get_settings().storage_local_path)
     try:
-        await _lock_org(db, org_id)
-        eph = await erase_org_in_transaction(db, org_id, jobs)
-        out = {"checkpoints": int(eph.get("checkpoints_deleted", 0)), "agent_memory": int(eph.get("agent_memory_deleted", 0))}
-        for name in ("llm_call_logs", "agent_runs"):
-            result: Any = await db.execute(delete(tables[name]).where(tables[name].c.org_id == org_id))
-            out[name] = int(result.rowcount or 0)
-        await db.commit()
+        with exempt(db):
+            await _lock_org(db, org_id)
+            counts, again = await _erase(db, org_id, hash_id("org", org_id), mode, root)
+            await db.commit()
     except BaseException:
         await db.rollback()
         raise
-    return out
+    for key in ("user_ids", "job_ids", "export_ids", "paths"):
+        again[key] = list(dict.fromkeys([*(again.get(key) or []), *((plan or {}).get(key) or [])]))
+    done = await run_cleanup(again, root)
+    rows = sum(int(n) for table, kinds in counts.items() if not table.startswith("_") and isinstance(kinds, dict)
+               for n in kinds.values())
+    eph = {**(counts.get("_ephemeral") or {}), **(done.get("_ephemeral") or {})}
+    return {"rows": rows, "checkpoints": int((counts.get("_ephemeral") or {}).get("checkpoints_deleted", 0)),
+            "agent_memory": int((counts.get("_ephemeral") or {}).get("agent_memory_deleted", 0)),
+            "files": int((done.get("_files") or {}).get("deleted", 0)), "redis": int(eph.get("redis_deleted", 0)),
+            "redis_failed": int(eph.get("redis_failed", 0))}

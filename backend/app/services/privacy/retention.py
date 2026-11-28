@@ -266,16 +266,18 @@ async def sweep_erasure_leftovers(db: AsyncSession, now: datetime) -> int:
     from app.services.privacy.tombstone import ORG_MODES, sweep_erased_org
 
     since = now - timedelta(days=ERASURE_SWEEP_DAYS)
-    recent = set((await db.execute(select(OrgErasureRecord.org_hash).where(
-        OrgErasureRecord.mode.in_(ORG_MODES), OrgErasureRecord.executed_at >= since))).scalars().all())
+    recent = dict((await db.execute(select(OrgErasureRecord.org_hash, OrgErasureRecord.mode).where(
+        OrgErasureRecord.mode.in_(ORG_MODES), OrgErasureRecord.executed_at >= since))).tuples().all())
     if not recent:
         return 0
     inactive = (await db.execute(select(Organization.id).where(Organization.is_active.is_(False)))).scalars().all()
     await db.commit()
     removed = 0
     for org_id in inactive:
-        if hash_id("org", str(org_id)) in recent:
-            removed += sum((await sweep_erased_org(db, str(org_id))).values())
+        mode = recent.get(hash_id("org", str(org_id)))
+        if mode:
+            out = await sweep_erased_org(db, str(org_id), mode=str(mode))
+            removed += sum(v for k, v in out.items() if k != "redis_failed")
     return removed
 
 

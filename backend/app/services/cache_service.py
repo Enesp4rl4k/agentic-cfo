@@ -150,6 +150,10 @@ class CacheService:
     async def set(self, key: str, value: dict, ttl: int) -> None:
         """Store value with TTL (seconds). Fire-and-forget."""
         # Always update memory cache as fallback
+        from app.services.privacy.tombstone import redis_write_allowed
+
+        if not await redis_write_allowed(key):  # a key naming an organisation being erased (privacy.tombstone)
+            return
         self._set_memory(key, value, ttl)
         try:
             r = await _get_redis()
