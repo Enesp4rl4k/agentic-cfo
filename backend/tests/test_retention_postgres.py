@@ -225,7 +225,7 @@ async def test_dry_run_deletes_the_always_enforced_stores_and_only_counts_the_ot
                 assert await counts(db, org, now) == {**FULL, "old_notifications": 0, "old_alerts": 0, "old_bodies": 0}
             assert await threads(db, tid["fresh_a"]) == {tid["fresh_a"]}
         async with maker() as db:  # the run rows carry counts only
-            runs = (await db.execute(select(T["retention_runs"]).order_by(T["retention_runs"].c.started_at.desc())
+            runs = (await db.execute(select(T["retention_runs"]).order_by(T["retention_runs"].c.finished_at.desc())
                                      .limit(3))).all()
             assert [r.dry_run for r in runs] == [False, False, True] and a not in repr([r.counts for r in runs])
     finally:
