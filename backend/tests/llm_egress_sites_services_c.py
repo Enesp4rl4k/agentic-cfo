@@ -158,20 +158,12 @@ def _think_result(env: SiteEnv):
 
 
 def _loop():
-    """The loop calls `router.complete(task=, prompt=, max_tokens=)` and treats the result as a string, but
-    `LLMTaskRouter.complete` takes no `max_tokens` and returns an `LLMResponse`: today every phase raises TypeError,
-    is swallowed, and answers from its template, so the model is never reached (a product bug, reported).
-    The adapter bridges exactly that signature mismatch; the prompts are the loop's own and go through the real router."""
-    from app.services.llm_router import get_llm_router
+    """The loop's phases call the Model Gateway themselves (`complete` / `complete_text` with `max_tokens`).
+    Before, they called `LLMTaskRouter.complete(..., max_tokens=)`, which raised TypeError in every phase and
+    always fell back to the template; this driver needed an adapter then. Now it runs the loop as is."""
     from app.services.reasoning_loop import ReasoningLoop
 
-    class _Adapter:
-        async def complete(self, *, task: str, prompt: str, max_tokens: int | None = None) -> str:
-            return (await get_llm_router().complete(task=task, prompt=prompt)).content
-
-    loop = ReasoningLoop()
-    loop._llm = _Adapter()
-    return loop
+    return ReasoningLoop()
 
 
 async def _loop_think(env: SiteEnv) -> None:
@@ -268,6 +260,4 @@ SITES: dict[str, Site] = {
 ALIASED: dict[str, str] = {
     "services/llm_structured.py::_router_model_for":
         "covered by services/llm_structured.py::call_llm because it only selects a model id and sends no payload",
-    "services/reasoning_loop.py::ReasoningLoop._get_llm":
-        "covered by services/reasoning_loop.py::ReasoningLoop._think because it only returns the router the phases use",
 }

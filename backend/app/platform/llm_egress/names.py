@@ -5,7 +5,9 @@ TOKENS, not characters, so spelling noise does not break a match:
 
 * case- and diacritic-insensitive, with Turkish casing (İ/I/ı/i) folded first;
 * any amount of whitespace, line breaks or zero-width characters between the words of a name (at most one
-  of `. - & /` besides);
+  of `. - & /` besides); a word hyphenated across a line break ("Iş-\\nık") is one word; a Cyrillic / Greek letter
+  that looks like a Latin one ("Аhmet") reads as Latin in an otherwise Latin word. Both for MATCHING only: offsets
+  stay the original ones, so the masked span is the original text and restores byte for byte;
 * an attached Turkish suffix after the last word, with or without an apostrophe ("Yılmazın", "ACMEye",
   "Işık Gıdaya"), from a bounded grammar (`suffixes.py`), never "anything after";
 * the legal-form tail ("A.Ş.", "Ltd. Şti.", "San. ve Tic.") optional on either side;
@@ -77,8 +79,55 @@ def _shape(raw: str) -> str:
     return "lower" if all(c.islower() for c in letters) else "other"
 
 
+# Cyrillic and Greek letters that look like Latin ones ("Аhmet" with a Cyrillic А). Folded to Latin FOR MATCHING
+# ONLY (the text that leaves is masked or kept byte for byte, never rewritten), and only in a word that has no
+# other non-Latin letter: a real Russian or Greek word ("Дмитрий", "Αθήνα") keeps its letters and matches only
+# itself. Keyed by the original character, upper and lower case apart (Н looks like H, its lower case н does not).
+_CONFUSABLE = {
+    # Cyrillic upper / lower
+    "А": "A", "В": "B", "Е": "E", "Ё": "E", "К": "K", "М": "M", "Н": "H", "О": "O", "Р": "P", "С": "C", "Т": "T",
+    "У": "Y", "Х": "X", "І": "I", "Ї": "I", "Ј": "J", "Ѕ": "S", "Ԛ": "Q", "Ԝ": "W", "Һ": "H", "Ӏ": "I",
+    "а": "a", "е": "e", "ё": "e", "о": "o", "р": "p", "с": "c", "у": "y", "х": "x", "і": "i", "ї": "i", "ј": "j",
+    "ѕ": "s", "ԁ": "d", "һ": "h", "ӏ": "l", "ԛ": "q", "ԝ": "w", "к": "k",
+    # Greek upper / lower
+    "Α": "A", "Β": "B", "Ε": "E", "Ζ": "Z", "Η": "H", "Ι": "I", "Κ": "K", "Μ": "M", "Ν": "N", "Ο": "O", "Ρ": "P",
+    "Τ": "T", "Υ": "Y", "Χ": "X", "α": "a", "ο": "o", "ι": "i", "κ": "k", "ν": "v", "ρ": "p", "υ": "u", "χ": "x",
+    "ε": "e",
+}
+
+
+def _latin(ch: str) -> bool:
+    return "LATIN" in unicodedata.name(ch, "")
+
+
+def _fold_word(raw: str) -> str:
+    """`fold`, with look-alike Cyrillic / Greek letters read as Latin when the word is otherwise Latin."""
+    if any(c in _CONFUSABLE for c in raw) and all(c in _CONFUSABLE or not c.isalpha() or _latin(c) for c in raw):
+        raw = "".join(_CONFUSABLE.get(c, c) for c in raw)
+    return fold(raw)
+
+
+# A word hyphenated across a line break ("Iş-\nık"): one word for matching, its offsets the original ones.
+_HYPHEN_BREAK = re.compile(r"^[\-‐‑][ \t]*\r?\n[ \t]*$")
+
+
+def _merge_hyphenated(text: str, tokens: list[Token]) -> list[Token]:
+    out: list[Token] = []
+    for tok in tokens:
+        prev = out[-1] if out else None
+        if prev is not None and text[prev.end - 1].isalpha() and text[tok.start].isalpha():
+            gap = "".join(c for c in text[prev.end:tok.start] if c not in _ZERO_WIDTH)
+            if _HYPHEN_BREAK.match(gap):
+                raw = "".join(c for c in text[prev.start:prev.end] + text[tok.start:tok.end] if c not in _ZERO_WIDTH)
+                out[-1] = Token(prev.word + tok.word, prev.start, tok.end, _shape(raw))
+                continue
+        out.append(tok)
+    return out
+
+
 def tokenize(text: str) -> list[Token]:
-    """Words of `text` with their original offsets; a zero-width character inside a word does not split it."""
+    """Words of `text` with their original offsets; a zero-width character inside a word does not split it, and
+    neither does a hyphen at a line break."""
     if any(c in _ZERO_WIDTH for c in text):
         index = [i for i, c in enumerate(text) if c not in _ZERO_WIDTH]
         clean = "".join(text[i] for i in index)
@@ -87,8 +136,8 @@ def tokenize(text: str) -> list[Token]:
     out: list[Token] = []
     for m in _WORD.finditer(clean):
         s, e = (index[m.start()], index[m.end() - 1] + 1) if index is not None else (m.start(), m.end())
-        out.append(Token(fold(m.group(0)), s, e, _shape(m.group(0))))
-    return out
+        out.append(Token(_fold_word(m.group(0)), s, e, _shape(m.group(0))))
+    return _merge_hyphenated(text, out) if "\n" in text else out
 
 
 def words_of(text: str) -> list[str]:

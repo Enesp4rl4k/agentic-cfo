@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -23,6 +24,41 @@ ERROR_PREFIX = "egress_refused:"  # == refusals.ERROR_PREFIX (refusals imports t
 logger = logging.getLogger(__name__)
 
 _TASK_MAX = 48
+
+# `llm_call_logs.error` holds an exception TYPE and a short code from a closed vocabulary, never a message: a
+# provider's or a validator's message can quote the model's output or our input (a name, an amount).
+_SAFE_ERROR = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]{0,63}(?::[a-z0-9_]{1,48})?$")
+_ERROR_HEAD = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]{0,63}")
+
+
+def error_code(exc: BaseException, code: str | None = None) -> str:
+    """What the audit row stores for a failure: `TimeoutError`, `APIStatusError:http_429`, ..."""
+    name = type(exc).__name__
+    return f"{name}:{code}" if code else name
+
+
+def failure_code(exc: BaseException, rejected: bool = False) -> str:
+    """A failed model call's `error`: `TimeoutError:timeout`, `<Type>:provider_rejected_<status>` (4xx, not
+    retried), `<Type>:http_<status>`, else `<Type>:failed`."""
+    from app.platform.model_catalog import http_status
+
+    status = http_status(exc)
+    if isinstance(exc, TimeoutError):
+        return error_code(exc, "timeout")
+    if rejected:
+        return error_code(exc, f"provider_rejected_{status}" if status else "provider_rejected")
+    return error_code(exc, f"http_{status}" if status else "failed")
+
+
+def safe_error(error: str | None) -> str | None:
+    """The stored form of `error`: unchanged when it is a type and a code; otherwise only its leading identifier
+    (a caller that passed `f"{type}: {message}"` keeps the type), the rest dropped."""
+    if not error:
+        return None
+    if _SAFE_ERROR.match(error):
+        return error
+    head = _ERROR_HEAD.match(error)
+    return f"{head.group(0)}:detail_dropped" if head else "error:detail_dropped"
 
 
 def persist_call_log(
@@ -64,7 +100,7 @@ def persist_call_log(
                         ok=ok,
                         from_cache=res.from_cache if res else False,
                         attempts=res.attempts if res else 1,
-                        error=(error or None),
+                        error=safe_error(error),
                         data_mode=(tally.mode if tally else None) or data_mode,
                         bytes_out=tally.bytes_out if tally else 0,
                         replaced=tally.as_record() if tally else None,

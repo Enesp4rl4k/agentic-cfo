@@ -2,14 +2,17 @@
 
 Order of work (the fidelity rule, see `figures`): first every amount, date, time, account code and document
 number is classified as data and protected; only then do identifier patterns run, and a candidate that touches
-protected data is dropped. A bare digit run is never an identifier.
+protected data is dropped. A digit run with no label is an identifier only in the shapes below that need none
+(an IBAN with its country letters, a printed card grouping, a +90 / spaced phone, a single 11-digit token with
+both TCKN check digits, a tax number the books hold), and never when it is protected data.
 
 What counts as evidence, per type (checksum where the type has one, AND shape, AND context):
   IBAN   letters + check digits + the country's exact length + mod 97 (spaces, dashes, line breaks, lower case
          tolerated); digits only (no "TR") need the label IBAN right before them: 24 digits with mod 97, or
          the 22-digit Turkish BBAN (no checksum exists for it: label + exact length + reserved digit 0)
   CARD   Luhn + issuer prefix + (a card label right before it, or the printed 4-4-4-4 / 4-6-5 grouping)
-  TCKN   11 digits + both check digits + a label (TC, TCKN, T.C. Kimlik No, kimlik, tc_kimlik_no ...); also a
+  TCKN   11 digits + both check digits + a label (TC, TCKN, T.C. Kimlik No, kimlik, tc_kimlik_no ...), written
+         as one token or, with the label, in groups ("Kimlik: 100 000 001 46"); also a
          BARE 11-digit token with both check digits when `figures` has not classified it as data (decided owner
          trade-off: about 1 in 100 unlabelled 11-digit references is masked too, restored byte-exact; no amount
          or date can be, they are protected first)
@@ -194,7 +197,9 @@ def _classify(raw: str, types: list[str], start: int, end: int) -> Span | None:
     single = raw == digits
     if PAN in types and 13 <= len(digits) <= 19 and luhn_ok(digits) and _IIN.match(digits):
         return Span(start, end, PAN, digits)
-    if TCKN in types and single and tckn_ok(digits):
+    # A TCKN with its identity label right before it may be written in groups ("Kimlik: 100 000 001 46"): the label
+    # is the evidence, the checksum the shape. Unlabelled, only a single 11-digit token counts (`_bare_tckn_spans`).
+    if TCKN in types and tckn_ok(digits):
         return Span(start, end, TCKN, digits)
     if VKN in types and single and vkn_ok(digits):
         return Span(start, end, VKN, digits)

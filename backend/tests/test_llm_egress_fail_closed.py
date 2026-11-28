@@ -11,8 +11,9 @@ Consumers of model output as data (found by grepping json.loads / schema parses 
   nl_query_engine.generate_nl_insight_stream     text stream + follow-ups JSON: never crashes on a quoted name
   thp_classifier._llm_siniflandir                first token must be a known THP code: a placeholder never is
   llm_structured._structured / boardroom         pydantic narratives: restored field by field after parsing
-  reasoning_loop (_think/_plan)                  parses router text, but never reaches a model (TypeError on
-                                                 `max_tokens`, a separate product bug left as it is: reported)
+  reasoning_loop (_think/_plan)                  JSON object via `complete(json_reply="narrative")`: parsed, then
+                                                 restored (tests/test_reasoning_loop_llm.py; the old `max_tokens`
+                                                 TypeError that kept it from ever reaching a model is fixed)
 """
 from __future__ import annotations
 

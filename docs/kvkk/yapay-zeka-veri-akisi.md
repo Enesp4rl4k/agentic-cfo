@@ -7,9 +7,23 @@
 
 ## Tek geçit
 
-Dile model veya gömme (embedding) çağrısı yapan her kod iki dosyadan geçer; başka hiçbir modül istemci kuramaz, sağlayıcının
-adresini okuyamaz, sağlayıcı adresi yazamaz. Bunu `backend/tests/test_llm_egress_choke_point.py` AST ile kanıtlar
-(izin listesi satır satır gerekçelidir; liste yalnızca küçülebilir).
+Dile model veya gömme (embedding) çağrısı yapan her kod iki dosyadan geçer. Bunu iki test, kodun sözdizimi ağacı (AST) üzerinden
+denetler; yorum ve açıklama metni sayılmaz:
+
+* `backend/tests/test_llm_egress_choke_point.py`: başka hiçbir modül kendi istemcisini kuramaz, model kütüphanesini içe aktaramaz,
+  sağlayıcının adresini okuyamaz, sağlayıcı adresi yazamaz (izin listesi satır satır gerekçelidir; liste yalnızca küçülebilir).
+* `backend/tests/test_llm_egress_provider_helpers.py`: başka hiçbir modül **geçidin kendi istemcisini ödünç alamaz**. Geçidin içinde
+  istemci kuran ya da sağlayıcıya istek gönderen her işlev (bugün `_build_client`, `_raw_chat`, `_build_embeddings`, `_client_embed`)
+  elle yazılmış bir listeden değil, geçidin kendi kodundan türetilir; böylece yarın eklenecek bir yardımcı da ilk gününden kapsanır. Bu
+  işlevler kendi geçidi dışında hiçbir biçimde anılamaz: içe aktarma (başka adla, göreli yoldan, `*` ile), modül takma adı üzerinden
+  erişim, `getattr` / `vars` / `__dict__`, `importlib` ya da `sys.modules` ile adla erişim, başka bir modül üzerinden yeniden dışa aktarma.
+  Geçit de bunları dışarıya açamaz: sağlayıcıya ulaşan herkese açık bir işlev yalnızca belgelenmiş giriş noktalarından biri olabilir
+  (`complete`, `complete_text`, `complete_json`, `stream`, `embed_texts`; bunlar göndermeden önce maskeleme oturumunu açar). Tek
+  belgelenmiş istisna: `services/llm_router.py`, `_raw_chat`'i yalnızca `LLMTaskRouter._call_llm` içinde içe aktarır (`_raw_chat`
+  maskeleme oturumunu kendisi açar). Son bağımsız incelemenin denediği atlatma (bir ajana `model_gateway._build_client(...).ainvoke(...)`
+  ve `embedding_gateway._client_embed(...)` eklemek) önceki testlerden geçiyordu; şimdi bu ve 20 benzer değişiklik geçici dosyalarla
+  denenir ve her biri testi düşürür. Kapsamı: `backend/app/` ve `backend/scripts/`. Görmediği tek yol, adın çalışma anında parça parça
+  üretildiği ve geçit modülüne takma ad dışında bir yoldan ulaşıldığı yapay durumlardır (ör. bir sözlükte saklanmış modül nesnesi).
 
 | Geçit | Neyi taşır | Kod |
 |---|---|---|
@@ -32,7 +46,8 @@ işçi sarmalayıcıları `_records_run` / `run_ceo_analysis`, gerçek onay sonr
 **LangGraph durum kayıtları (checkpoint).** Ajan düğümlerinin durumu (rakamlar, geri çevrilmiş adlarla anlatılar) bizim
 veritabanımızda saklanabilir (PR #157 ile Postgres). Bu, sağlayıcıya giden bir yol değildir: kaldığı yerden devam eden bir
 düğüm modele yine yalnızca geçitten ulaşır, geçit her giden yükü o anda yeniden maskeler (ya da şirket bilinmiyorsa reddeder);
-durum kaydını bir istemciye veren başka kod yoktur (AST testi: istemciyi yalnızca iki geçit kurar) ve izleme açık olsa bile
+durum kaydını bir istemciye veren başka kod yoktur (AST testleri: istemciyi yalnızca iki geçit kurar ve geçidin istemciye dönük
+iç işlevlerini başka kod çağıramaz) ve izleme açık olsa bile
 düğüm girdisi/çıktısı izlere gitmez (aşağıda "İzleme").
 
 Yeni bir çağrı yeri sürücüsüz ve giriş noktası bildirilmeden eklenemez. İnceleme, onay sonrası devam yolunun (`devam_et`) şirket
@@ -58,7 +73,7 @@ sonucu "Yapay zekâ adımı atlandı" der (karar: kullanıcı boşluğu sessizce
 
 | Veri türü | `off` | `masked` | `raw` |
 |---|---|---|---|
-| Tutar, tarih, para birimi | gitmez | **olduğu gibi gider** (hiçbir zaman değiştirilmez; 200.000+ satırlık bulanık testte sıfır değişiklik) | olduğu gibi |
+| Tutar, tarih, para birimi | gitmez | **olduğu gibi gider**. Değiştirilmeme kuralının kapsamı aşağıda ("Önce sayılar korunur"): tutar olduğunu gösteren bir işareti olan her sayı (ayraç, ondalık, eksi işareti, para birimi, yüzde, tutar sözcüğü ya da tutar adlı bir JSON/sözlük alanı) ve her tarih; 200.000 satırlık bulanık testte (beşte biri JSON biçiminde) sıfır değişiklik. Hiçbir işareti olmayan 11 haneli bir tam sayı TCKN sağlamasını tutuyorsa kimlik sayılıp maskelenebilir (aşağıda "Etiketsiz TCKN") | olduğu gibi |
 | Karşı taraf, tedarikçi, müşteri adı (defterde olan) | gitmez | yer tutucu (`[[CP_7KQ_3]]`) | olduğu gibi |
 | Okunan belgede **ilk kez geçen** ad (henüz defterde yok) | gitmez | **olduğu gibi gider** | olduğu gibi |
 | Şirketin kendi adı ve unvanı | gitmez | yer tutucu (`[[CO_7KQ_1]]`) | olduğu gibi |
@@ -74,19 +89,30 @@ sonucu "Yapay zekâ adımı atlandı" der (karar: kullanıcı boşluğu sessizce
 ## Neyi, nasıl buluyor
 
 * **Önce sayılar korunur** (`figures.py`). Kimlik kalıpları çalışmadan önce metindeki her tutar (tr-TR `1.234.567,89`, en-US
-  `1,234,567.89`, `41176993.01`, işaret, para birimi, yüzde, tutar sözcüğü yanındaki tam sayı), tarih (ayraçlı, ISO, gerçek bir güne denk
-  gelen `20240315` / `15032024`), saat, THP hesap kodu (`120.01.001`) ve belge numarası (Fatura/Belge/Fiş No, Dekont, Ref, ETTN) **veri**
-  olarak işaretlenir; hiçbir kimlik kalıbı bu karakterlere dokunamaz. Çıplak bir rakam dizisi hiçbir zaman kimlik sayılmaz.
+  `1,234,567.89`, `41176993.01`, eksi işaretli tam sayı `-10000000146`, para birimi, yüzde, tutar sözcüğü yanındaki tam sayı, **tutar
+  adlı bir JSON / sözlük / `anahtar=değer` alanının değeri**), tarih (ayraçlı, ISO, gerçek bir güne denk gelen `20240315` / `15032024`),
+  saat, THP hesap kodu (`120.01.001`) ve belge numarası (Fatura/Belge/Fiş No, Dekont, Ref, ETTN) **veri** olarak işaretlenir; hiçbir
+  kimlik kalıbı bu karakterlere dokunamaz, etiketli olsa da. Tutar alanı sayılan anahtarlar, arka ucun modele gönderdiği alan adlarından
+  derlenmiştir: `amount`, `amount_cents`, `tutar`, `toplam`, `toplam_borc`, `borç`, `alacak`, `bakiye`, `balance_cents`, `total`, `revenue`,
+  `net_income`, `gelir_kurus`, `gider_kurus`, `fiyat`, `price`, `cost`, `kdv`, `vat`... (anahtar sözcüklerine bölünür: `amountCents`,
+  `toplam_borc`); bir sözcüğü kimlik adıysa (`card`, `iban`, `tckn`, `no`, `number`, `id`...) tutar sayılmaz (`credit_card_number` bir
+  karttır). **Güvencenin tam sınırı:** tutar olduğunu gösteren bu işaretlerden biri ya da tarih biçimi olan sayı hiçbir zaman
+  değiştirilmez. Bunların hiçbiri olmayan bir rakam dizisi (ör. `Açıklama: "10000000146"`, tutar adı taşımayan bir alan) yalnızca şu
+  biçimlerde kimlik sayılabilir: ülke harfli IBAN, basılı kart gruplaması, `+90`/boşluklu telefon, iki TCKN kontrol basamağını tutan tek
+  parça 11 hane ve defterin bildiği vergi numarası. 11 haneli bir tutar bu işaretlerin hiçbiri olmadan yazılırsa yüzde bir olasılıkla
+  TCKN sanılıp maskelenir (model o tutarı görmez; geri çevirmede baytı baytına geri gelir).
 * **Kimlikler yalnızca olumlu kanıtla** (`detectors.py`): kontrol basamağı olan türlerde sağlama **ve** biçim **ve** bağlam.
   IBAN: harf + kontrol basamağı + ülkenin tam uzunluğu + mod 97 (boşluk, tire, satır sonu, küçük harf tolere edilir); "TR"siz yazım
   yalnızca hemen önünde "IBAN" etiketiyle. Kart: Luhn + kart veren önek + ("Kart" etiketi ya da basılı 4-4-4-4 gruplama). TCKN/VKN:
-  sağlama + etiket (TCKN, T.C. Kimlik No, VKN, Vergi No, JSON alan adları). Telefon: hiçbir tutarın sahip olmadığı biçim (`+90`/`0` ile
+  sağlama + etiket (TCKN, T.C. Kimlik No, VKN, Vergi No, JSON alan adları); kimlik etiketli bir TCKN gruplar hâlinde yazılmışsa da
+  bulunur (`Kimlik: 100 000 001 46`; etiketsiz gruplu yazım bir sayı olarak kalır). Telefon: hiçbir tutarın sahip olmadığı biçim (`+90`/`0` ile
   başlayan, boşluk/tire/parantezli gruplar; **asla nokta**) ya da etiket (Tel, GSM, Cep). E-posta: Unicode yerel kısım ve alan adı (IDN).
   Plaka ve "Hesap No": kontrol basamağı olmadığı için yalnızca etiketle. Defterin bildiği vergi numarası, korunan bir sayı değilse etiketsiz de bulunur.
 * **Etiketsiz TCKN (karar verildi):** 11 haneli, iki TCKN kontrol basamağı tutan ve `figures.py` tarafından tutar, tarih, saat, THP
   kodu ya da bilinen bir alandaki belge numarası olarak sınıflanmamış bir sayı etiketsiz de maskelenir. Bedeli ölçüldü: 200.000 satırlık
-  bulanık testte hiçbir tutar ve tarih değişmedi; 5 satırda (%0,0025) etiketsiz 11 haneli bir **referans** numarası da maskelendi ve
-  geri çevirmede baytı baytına geri geldi (kullanıcıya gösterilen hiçbir rakam model metninden gelmez).
+  bulanık testte (40.000'i JSON / sözlük / `anahtar=değer` biçiminde, tutar alanlarında bilerek TCKN sağlamasını tutan 11 haneli değerlerle)
+  hiçbir tutar ve tarih değişmedi; 5 satırda (%0,0025) etiketsiz 11 haneli bir **referans** numarası da maskelendi ve geri çevirmede
+  baytı baytına geri geldi (kullanıcıya gösterilen hiçbir rakam model metninden gelmez).
 * **Kalıpla maskelenmeyenler (bilinçli olarak, doğruluk kapsama önce gelir):** etiketsiz VKN, etiketsiz 16 haneli kart
   numarası, `+90` ya da boşluk olmadan yazılmış cep numarası (`05321234567`), etiketsiz plaka. Aynı "orta kural" bunlara uygulansaydı,
   aynı 200.000 satırda korunmayan referans numaralarından şunlara dokunurdu: 10 haneli VKN sağlaması tutan **58**, Luhn ve kart öneki
@@ -96,13 +122,17 @@ sonucu "Yapay zekâ adımı atlandı" der (karar: kullanıcı boşluğu sessizce
 * **Defterin bildiği adlar** (`dictionary.py`, `names.py`): NER modeli yok. Şirketin kendi tablolarından kurulur: şirket adı ve
   unvanı, işlem tedarikçisi ve karşı tarafı, ana defter, açık kalemler, ilişkili taraflar, karşı taraf takma adları, kategori
   kuralı tedarikçileri, üyeler ve mali müşavir. Eşleşme **sözcük dizisi** üzerindendir: büyük/küçük harf ve aksan duyarsız (Türkçe
-  `İ/ı/I/i` önce katlanır), sözcükler arasında istenen kadar boşluk, satır sonu ya da sıfır genişlikli karakter, son sözcüğe kesme
+  `İ/ı/I/i` önce katlanır), sözcükler arasında istenen kadar boşluk, satır sonu ya da sıfır genişlikli karakter, satır sonunda tireyle
+  bölünmüş sözcük (`Iş-` / `ık Gıda`), Latin harfine benzeyen Kiril ya da Yunan harfi (`Аhmet`'teki Kiril `А`; yalnızca başka Latin dışı
+  harf taşımayan sözcükte, gerçek Rusça/Yunanca sözcük kendi harfleriyle kalır). Bu son ikisi **yalnızca eşleştirme içindir**: giden metin
+  yeniden yazılmaz, bulunan ad özgün karakterleri ve konumlarıyla yer tutucuya çevrilir, geri çevirmede baytı baytına geri gelir. Son sözcüğe kesme
   işaretli ya da işaretsiz Türkçe ek ("Yılmazın", "Işık Gıdaya", "Lojistiğe"; ek grameri `suffixes.py`'de sınırlı bir listedir, "her şey" değil),
   "A.Ş./Ltd. Şti./San. ve Tic." isteğe bağlı. Kişinin adı ya da soyadı **tek başına** da bulunur; şirketin ayırt edici ilk sözcüğü de.
   Aynı zamanda sıradan bir sözcük olan tek sözcük ("Güneş", "Deniz", "Demir": `common_words.py`) yalnızca ad gibi okunduğunda
   maskelenir: büyük harfle ve cümle başında değilken, ya da kesme işaretli ekle ("Güneş'e"). Çok sözcüklü ad her zaman maskelenir.
   **Ölçüm** (sentetik Türkçe finans metni, tohum 7, 5.000 sıradan + 5.000 adlı cümle): sıradan sözcüğün yanlışlıkla maskelenmesi
-  **%0,0**; adın kaçırılması **%8,7**. Kaçırılanların hepsi, sıradan sözcükle başlayan bir adın **ilk sözcüğünün tek başına**
+  **%0,0**; adın kaçırılması **%8,7** (tire ve benzer harf eklemelerinden sonra yeniden ölçüldü: değişmedi; bu sayıları
+  `test_llm_egress_doc_claims.py` her koşuda yeniden ölçer ve bu satırla karşılaştırır). Kaçırılanların hepsi, sıradan sözcükle başlayan bir adın **ilk sözcüğünün tek başına**
   (ya da banka alanında kesilmiş hâlinin) cümle/satır başında geçtiği durumlardır, ör. "Güneş ile toplantı yapıldı", "DENIZ HAVALE";
   adın tamamı satır başında da maskelenir (bağımsız inceleme: 378 satırın 0'ı kaçtı). Test sınırları: ≤%1 ve ≤%25.
   Sıradan sözcük listesi (`common_words.py`) elle derlenmiştir ve satır satır gözden geçirilebilir: hem TDK Güncel Türkçe Sözlük'te
@@ -121,6 +151,9 @@ sonucu "Yapay zekâ adımı atlandı" der (karar: kullanıcı boşluğu sessizce
   ayrıştırılmış metin değerleri geri çevrilir (tırnak ya da ters bölü içeren bir ad JSON'u bozamaz). Bu çağrıda verilmemiş (uydurulmuş,
   başka çağrıdan, bozulmuş) bir yer tutucu: anlatıda `[bilinmeyen taraf]` (`[bilinmeyen değer]`) olarak görünür; deftere gidecek veride
   (belge okuma, `data_ingestion`) o alan **boş** sayılır, satır "okunamadı" olarak incelemeye düşer; yer tutucu metni asla deftere yazılmaz.
+  Model köşeli parantezleri atarsa (`PER_7KQ_1`, `[PER_7KQ_1`) bu da yer tutucu sayılır: bu çağrınınsa geri çevrilir, değilse köşeli
+  parantezli bilinmeyen yer tutucuyla aynı biçimde işaretlenir (deftere gidecek alanda boş, anlatıda `[bilinmeyen ...]`). Biçimi
+  `TÜR_XXX_n` (alt çizgiyle) olmayan düz metin (`TEL-123-4567`, `ACCT_NUMBER`) dokunulmadan kalır.
 
 ### Gömme: neden kararlı takma adlar
 
@@ -162,7 +195,10 @@ dokunan kodu reddeder.
 
 Her mantıksal çağrı için `llm_call_logs` satırı: şirket, amaç (`task_type`: ajan/görev), kip, yer tutucu türü başına değiştirme
 sayısı (`replaced.counts`), uyarı bayrakları (`dictionary_truncated`, `unresolved_placeholder`, `system_call_patterns_only`),
-gönderilen bayt (tüm denemeler); reddedilen çağrılar için `error = egress_refused:<neden>` ve sıfır bayt. İstem, yanıt, ad ya da sayı **hiçbir yerde saklanmaz**. Ekran, son 30 günün çağrı ve bayt sayısını
+gönderilen bayt (tüm denemeler); reddedilen çağrılar için `error = egress_refused:<neden>` ve sıfır bayt. Başarısız bir çağrıda `error`
+yalnızca hatanın **türünü ve kısa bir kodu** taşır (`TimeoutError:timeout`, `APIStatusError:http_429`, `...:provider_rejected_400`,
+`RuntimeError:failed`); hata **iletisi saklanmaz**, çünkü sağlayıcının ya da doğrulayıcının iletisi model çıktısından veya bizim
+girdimizden alıntı yapabilir. Kayıt fonksiyonu da bu biçime uymayan bir metnin baştaki tür adı dışındaki kısmını atar. İstem, yanıt, ad ya da sayı **hiçbir yerde saklanmaz**. Ekran, son 30 günün çağrı ve bayt sayısını
 yalnızca sayı olarak gösterir. Geçiş: `079_llm_egress_audit` (3 sütun `llm_call_logs`'a, 1 sütun `organizations`'a).
 
 ## `off` kipinde ne kaybedilir
@@ -174,22 +210,54 @@ bekler), THP hesap tahmini (varsayılan hesap), anomali açıklaması, belge anl
 
 ## Kalan risk (düz sözle)
 
-* **Serbest metin açıklamalar ve belgeler hâlâ kişisel veri taşıyabilir.** Ne kalıplar ne de defterin bildiği adlar şunları bulamaz:
-  yalnızca bir notta geçen bir kişi, **okunan belgede ilk kez geçen ve henüz defterde olmayan adlar** (belge okumanın en büyük akışı ve
-  en az maskelenen kısmı), defterde farklı yazılmış bir ad, yazım hatası, takma ad, "Ahmet Bey", cümle başında sıradan sözcük olan bir ad
-  ("Güneş ile..."), pasaport veya başka bir kimlik numarası, adres, görseldeki metin.
-* **Kalıpla maskelenmeyen kimlik biçimleri** (yukarıda, ölçülerle): etiketsiz VKN, etiketsiz kart numarası, `+90` ya da boşluk
-  olmadan yazılmış cep numarası, etiketsiz plaka. Doğruluk için bilinçli bir seçimdir. Telefonda `+90(532)123-45-67` gibi parantez ve
-  tire biçimleri maskelenir; `0532.123.45.67` ve `532 123 4567` (önek ve etiket yok) gitmez.
-* **Reddedilen ya da `off` kipindeki anlatılar** şablon metne düşer ve metnin başında bunu söyler: "Yapay zekâ adımı atlandı
-  (maskeli modda veri gönderilmedi): şablon metin." / `off` için "(LLM_DATA_MODE=off)". Ajan özet düğümleri (`node_*_summary`) bu
-  notu henüz taşımaz.
-* JSON yanıtında yer tutucu bir **anahtar** da geri çevrilir; bilinmeyen bir anahtar alanı eksik sayar (satır bekletilir).
-* Belge okumada iki geçişli bir yol (aynı belgede deterministik ayrıştırıcıların bulduğu adları yapay zekâ adımından önce sözlüğe eklemek)
-  düşünüldü, yapılmadı: yapay zekâ adımı yalnızca hiçbir ayrıştırıcı belgeyi tanımadığında çalışır, o anda eklenecek ad yoktur.
-* **Tutarlar, tarihler ve para birimleri her zaman gider.** Defterin yapısı (kaç işlem, hangi aylar, hangi kategoriler) sağlayıcıya görünür.
-* Sağlayıcı tarafında tutulan veri (istek günlükleri, eğitim) bu çalışmanın dışındadır; yer tutucular bunu **azaltır**, silmez.
-* Bir yer tutucu, adın anlamına dayanan çıkarımlarda kaliteyi biraz değiştirebilir.
+Bu bölüm, maskeli kipte (`masked`) bile sağlayıcıya neyin gidebileceğini anlatır. Burada yazan her sayı ve her davranış testlerle
+ölçülmüştür (en altta hangi dosya). Ölçülmeyen bir konuda güvence verilmez.
+
+**1. Maskeleme bir güvence değildir, bir azaltmadır.** Sistem kişisel veriyi iki yolla bulur: biçimi belli kimlik numaraları (IBAN,
+TCKN, kart, telefon, e-posta...) ve şirketin kendi kayıtlarında zaten bulunan adlar. Bu ikisinin dışında kalan kişisel veri, metinde nasıl
+yazılmışsa öyle gider. Bir yapay zekâ ya da ad tanıma modeli kullanılmaz; "metindeki her adı bul" diye bir işlev yoktur.
+
+**2. Okunan belgede ilk kez geçen adlar olduğu gibi gider.** Bir fatura, ekstre ya da sözleşme okunurken, o belgede geçen ama şirketin
+kayıtlarında henüz bulunmayan bir kişi ya da firma adı **maskelenmez**. Belge okumanın en büyük veri akışı budur ve en az maskelenen kısmıdır.
+Aynı şekilde: yalnızca serbest bir notta geçen kişi, kayıtlarda farklı yazılmış bir ad, yazım hatası, takma ad, "Ahmet Bey" gibi
+hitaplar, adres, pasaport ya da başka ülkelerin kimlik numaraları, görüntüdeki metin.
+
+**3. Kayıtlarda bulunan adlar da bazen kaçar; ölçülen oran %8,7.** Sentetik Türkçe finans metninde (5.000 adlı cümle) kayıtlı bir adın
+gönderilen metinde kalma oranı %8,7'dir; sıradan bir sözcüğün yanlışlıkla maskelenme oranı %0,0'dır. Kaçanlar, sıradan bir sözcükle
+başlayan bir adın ilk sözcüğünün tek başına geçtiği durumlardır ("Güneş ile toplantı yapıldı", "DENIZ HAVALE"). Bu oran gerçek
+müşteri metninde ölçülmemiştir; gerçek metinde farklı olabilir.
+
+**4. Bilinçli olarak maskelenmeyen kimlik biçimleri.** Aşağıdakiler, tutar ve referans numaralarıyla çok sık karıştığı için kalıpla
+maskelenmez ve olduğu gibi gider (bir tutarı bozmak, onu maskelememekten kötü sayıldı; sayılar yukarıda "Kalıpla maskelenmeyenler"de):
+* etiketsiz vergi kimlik numarası (VKN): önünde "VKN" ya da "Vergi No" yazmayan 10 haneli sayı;
+* etiketsiz 16 haneli kart numarası: önünde "Kart" yazmayan ve basılı 4-4-4-4 gruplamasıyla yazılmamış;
+* araç plakası: önünde "Plaka" ya da "Araç" yazmıyorsa;
+* cep telefonu: `+90` öneki ya da gruplar arası boşluk/tire olmadan yazılmışsa (`05321234567`, `5321234567`) ve noktalı yazımlar
+  (`0532.123.45.67`), önünde "Tel/GSM/Cep" etiketi yoksa;
+* etiketsiz yazılmış bir TCKN ise maskelenir (11 hane, iki kontrol basamağı tutuyor); ama boşluklarla gruplara bölünmüşse yalnızca
+  önünde kimlik etiketi ("TC", "Kimlik", "TCKN") varken bulunur.
+
+**5. Her zaman gidenler.** Tutarlar, tarihler, para birimleri, oranlar ve **defterin yapısı** (kaç işlem, hangi aylar, hangi hesaplar ve
+kategoriler, hangi tutarın kime ait bir yer tutucuyla eşleştiği) maskeli kipte de olduğu gibi gider. Sağlayıcı bir şirketin adını
+görmeden de onun finansal resmini görür.
+
+**6. Gömmeler (embedding).** Maskeli kipte gömmeye giden metinde adlar, şirkete özgü ve **değişmeyen** belirteçlerle değiştirilir. Bu
+belirteç adı göstermez, ama aynı adın aynı şirketin farklı belgelerinde tekrar geçtiğini sağlayıcıya gösterir. Bu değişiklikten **önce**
+maskesiz gömülmüş metin, sağlayıcıya o zaman gönderilmiştir; bizim tarafta yeniden dizinlemek o kopyayı sağlayıcıdan geri almaz.
+
+**7. Sağlayıcının tuttuğu veri bu çalışmanın dışındadır.** Sağlayıcının istekleri ne kadar süre sakladığı, kendi eğitiminde kullanıp
+kullanmadığı ya da nerede işlediği sözleşme ve sağlayıcı seçimi konusudur; bu kod onu ne denetler ne de doğrular. Yer tutucular
+sağlayıcıya giden kişisel veriyi azaltır, sağlayıcının elindekini silmez.
+
+**8. Ham kip (`raw`) her şeyi gönderir.** Şirket ham kipi seçerse (yalnızca işletmeci izin verdiyse mümkündür) hiçbir maskeleme yapılmaz:
+adlar, IBAN'lar, kimlik numaraları, belge metni olduğu gibi gider. Bu bir geri düşme değil, açık ve kayda geçen bir seçimdir.
+
+**9. Diğer bilinen sınırlar.**
+* Reddedilen ya da `off` kipindeki anlatılar şablon metne düşer ve metnin başında bunu söyler ("Yapay zekâ adımı atlandı ..."); ajan
+  özet düğümleri (`node_*_summary`) bu notu henüz taşımaz.
+* Belge okumada iki geçişli bir yol (aynı belgede ayrıştırıcıların bulduğu adları yapay zekâ adımından önce listeye eklemek) düşünüldü,
+  yapılmadı: yapay zekâ adımı yalnızca hiçbir ayrıştırıcı belgeyi tanımadığında çalışır, o anda eklenecek ad yoktur.
+* Bir yer tutucu, adın anlamına dayanan çıkarımlarda yanıtın kalitesini biraz değiştirebilir.
 
 ## Hangi dosya neyi sınar
 
@@ -198,6 +266,8 @@ baytı baytına; incelemenin bulduğu bozuk biçimler sabit vaka olarak), `test_
 yazımlarının hepsi, sıradan sözcük ölçümü, büyük sözlükte süre), `test_llm_egress_pseudonymizer.py` (kanıt kuralları, Türkçe harfler, birebir geri
 çevirme, uydurma yer tutucu, akış, `repr`/pickle eşlemeyi göstermez), `test_llm_egress_gateway.py` (maskeli/kapalı/ham, JSON önce ayrıştırılır,
 yapılandırılmış çıktı, akış, gömme, ret, denetim satırı, ham = master ile baytı baytına aynı), `test_llm_egress_matrix.py` (49 çağrı yeri, gerçek
-giriş noktalarından; bağlamsız ve sözlük okunamaz durumları), `test_llm_egress_choke_point.py` (kimse geçidi atlayamaz: dinamik içe aktarma,
-istemci fabrikası, ortam değişkeni yazımı, izleme anahtarları dahil), `test_llm_egress_tracing.py` (izde yük yok), `test_llm_egress_api.py`
-(ekran ve karar kaydı).
+giriş noktalarından; bağlamsız ve sözlük okunamaz durumları), `test_llm_egress_choke_point.py` (kimse kendi istemcisini kuramaz: dinamik içe aktarma,
+istemci fabrikası, ortam değişkeni yazımı, izleme anahtarları dahil), `test_llm_egress_provider_helpers.py` (kimse geçidin istemcisini ödünç
+alamaz; inceleme mutasyonu ve 20 benzeri geçici dosyalarla), `test_llm_egress_doc_claims.py` (bu belgedeki ölçüm sayıları ve "maskelenmez"
+listesi kodla karşılaştırılır), `test_llm_audit_error.py` (denetim kaydında hata iletisi yok), `test_llm_egress_tracing.py` (izde yük yok),
+`test_llm_egress_api.py` (ekran ve karar kaydı).

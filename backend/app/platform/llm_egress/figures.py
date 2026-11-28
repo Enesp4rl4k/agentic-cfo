@@ -97,12 +97,13 @@ def protected_spans(text: str) -> list[tuple[int, int, bool]]:
     for rx in (_DECIMAL, _ACCOUNT_CODE, _TIME):
         spans += [(m.start(), m.end(), True) for m in rx.finditer(text)]
     for m in _GROUPED.finditer(text):
-        before, after = text[max(0, m.start() - 40):m.start()], text[m.end():m.end() + 12]
+        before, after = text[max(0, m.start() - 80):m.start()], text[m.end():m.end() + 12]
         strong = bool(re.search(r"[.,]\d{1,4}$", m.group(0)) and m.group("sep") not in m.group(0)[-5:]) or _cued(before, after)
         spans.append((m.start(), m.end(), strong))
     spans += [(m.start(), m.end(), True) for m in _COMPACT_DATE.finditer(text) if _real_compact_date(m.group(0))]
     for m in _INTEGER.finditer(text):
-        if _cued(text[max(0, m.start() - 40):m.start()], text[m.end():m.end() + 12]):
+        # a minus sign is an amount's own evidence ("-10000000146"); a plus is not ("+905321234567" is a phone)
+        if m.group(0)[0] in "-−" or _cued(text[max(0, m.start() - 80):m.start()], text[m.end():m.end() + 12]):
             spans.append((m.start(), m.end(), True))
     for m in _DOCUMENT_VALUE.finditer(text):
         if re.search(r"\d", m.group("value")):
@@ -110,8 +111,47 @@ def protected_spans(text: str) -> list[tuple[int, int, bool]]:
     return spans
 
 
+# A JSON / dict / key=value key right before the value: `{"amount": "10000000146"}`, `'tutar': 10000000146`,
+# `toplam_borc=...`. The key is split into words (snake_case, kebab-case, camelCase) and Turkish-folded; it is an
+# amount cue when one word is an amount word and no word names an identifier ("credit_card_number" is a card,
+# "vat_number" a tax number: those stay identifiers). The words are the field names the backend itself sends
+# to the model (amount_cents, balance_cents, revenue, net_income, gider_kurus, toplam_borc, alacak, ...).
+_KEY_BEFORE = re.compile(r"""["'`]?(?P<key>[^\W\d][\w\-]{0,63})["'`]?\s*[:=]\s*["'`]?\s{0,2}[+\-−]?\s{0,2}$""")
+AMOUNT_KEY_WORDS = frozenset({
+    "amount", "amounts", "amt", "tutar", "tutari", "tutarlar", "bakiye", "bakiyesi", "balance", "balances",
+    "toplam", "toplami", "total", "totals", "subtotal", "sum", "borc", "borcu", "alacak", "alacagi", "debit",
+    "credit", "fiyat", "fiyati", "price", "prices", "cost", "costs", "maliyet", "maliyeti", "revenue", "revenues",
+    "ciro", "cirosu", "gelir", "geliri", "gider", "gideri", "expense", "expenses", "income", "profit", "loss",
+    "kar", "zarar", "ebitda", "cash", "nakit", "cents", "kurus", "krs", "payment", "payments", "odeme", "tahsilat",
+    "salary", "maas", "ucret", "fee", "fees", "bedel", "budget", "budgeted", "butce", "spend", "spent", "net",
+    "gross", "brut", "kdv", "vat", "matrah", "stopaj", "receivable", "receivables", "payable", "payables",
+    "opening", "closing", "comp", "compensation", "kira", "rent", "tl", "try", "usd", "eur", "adet", "miktar",
+    "qty", "quantity", "count", "turnover", "margin",
+})
+IDENTITY_KEY_WORDS = frozenset({
+    "card", "kart", "iban", "tckn", "tc", "kimlik", "vkn", "phone", "tel", "gsm", "telefon", "cep", "mobile",
+    "plate", "plaka", "mail", "email", "eposta", "id", "no", "nr", "number", "numara", "numarasi", "identity",
+})
+_KEY_FOLD = str.maketrans("ıİIğĞşŞöÖüÜçÇâÂîÎûÛ", "iiiggssoouuccaaiiuu")
+
+
+def _key_words(key: str) -> list[str]:
+    spaced = re.sub(r"(?<=[a-zıüöçşğ])(?=[A-ZİÜÖÇŞĞ])", "_", key)
+    return [w for w in re.split(r"[_\-]+", spaced.translate(_KEY_FOLD).lower()) if w]
+
+
+def amount_key_before(before: str) -> bool:
+    """`before` ends with a key whose words say "amount" (and none says "identifier")."""
+    m = _KEY_BEFORE.search(before)
+    if m is None:
+        return False
+    words = _key_words(m.group("key"))
+    return bool(words) and not (set(words) & IDENTITY_KEY_WORDS) and bool(set(words) & AMOUNT_KEY_WORDS)
+
+
 def _cued(before: str, after: str) -> bool:
-    return bool(_SYMBOL_BEFORE.search(before) or _SYMBOL_AFTER.search(after) or _AMOUNT_WORD.search(before))
+    return bool(_SYMBOL_BEFORE.search(before) or _SYMBOL_AFTER.search(after) or _AMOUNT_WORD.search(before)
+                or amount_key_before(before))
 
 
 def overlaps(spans: list[tuple[int, int, bool]], start: int, end: int, *, labelled: bool = False) -> bool:

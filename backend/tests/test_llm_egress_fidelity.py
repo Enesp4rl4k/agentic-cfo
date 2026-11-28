@@ -7,8 +7,10 @@ assurance. So the rule is "a number is data unless there is positive evidence it
 * 200,000 realistic Turkish lines of amounts (tr-TR, en-US, plain dot or comma decimals, signs, currencies,
   percentages, bare integers of every length incl. 10/11 digits that pass the TCKN/VKN checksums), dates
   (separated, ISO, compact), times, THP account codes and document references (16-digit, 11-digit "05..."),
-  next to the label-like words of financial text (Telefon faturası, Kart ödemesi, TC Ziraat, Vergi, Net kâr):
-  ZERO lines changed;
+  next to the label-like words of financial text (Telefon faturası, Kart ödemesi, TC Ziraat, Vergi, Net kâr),
+  and one line in five JSON / dict / key=value shaped under the field names the backend sends (amount_cents,
+  tutar, toplam_borc, gider_kurus, ...), with 11-digit TCKN-checksum values on purpose: ZERO amounts or dates
+  changed (only an unlabelled 11-digit REFERENCE may be masked, by the bare-TCKN rule, and restores exactly);
 * 60,000 lines that mix the same figures with real identifiers and known names: every figure survives
   verbatim, and restoring gives back the line byte for byte;
 * every shape the review found broken, as fixed cases.
@@ -37,6 +39,10 @@ REVIEW_CASES = (
     "Telefon faturası 1.234,56 TL", "Kart ödemesi 4.111,11 TL", "TC Ziraat Bankası 12.500,00 TL", "Vergi 18.000 TL",
     "05.03.2024 tarihli 1.234.567,89 TL", "2024-03-05T14:05:33 1,234,567.89 USD", "%18 KDV 1.800,00",
     "120.01.001 Kasa hesabı 15.000,00", "Fatura No: GIB2024000000123 tutarı 3.450,00 TL", "−1.500,00 ₺",
+    # the final review: an 11-digit amount in JSON was masked as a TCKN (a JSON key was not an amount cue)
+    '{"amount": "10000000146"}', '{"tutar": 10000000146}', "{'toplam_borc': 10000000146}", "gider_kurus=10000000146",
+    '{"amount_cents": -10000000146, "tarih": "05.03.2024"}', '{"balanceCents": "10000000146"}',
+    "Düzeltme kaydı -10000000146", "| -10000000146 | 05.03.2024 |",  # a minus sign is an amount's own evidence
 )
 
 _LABELLISH = (
@@ -137,6 +143,68 @@ def _bare_numbers(rng: random.Random, figures: list[str] | None = None) -> str:
     return sep.join(cells)
 
 
+# JSON / dict-shaped lines: the field names the backend itself sends to the model (prompts are built from these
+# dicts), with values of every shape, including 11-digit integers that pass the TCKN checksum on purpose.
+_JSON_AMOUNT_KEYS = (
+    "amount", "amount_cents", "amount_kurus", "tutar", "tutarı", "toplam", "toplam_borc", "toplam_alacak", "borc",
+    "borç", "alacak", "bakiye", "balance", "balance_cents", "total", "total_spend_cents", "revenue", "revenue_cents",
+    "net_income", "gross_profit", "gider", "gider_kurus", "gelir", "gelir_kurus", "fiyat", "price", "cost_cents",
+    "kdv_cents", "vat_amount", "receivable_cents", "payable_cents", "opening_cash_cents", "closing_cents", "salary",
+    "budget", "spend_cents", "financial_impact_cents", "amountCents", "netIncome", "totalAmount",
+)
+_JSON_DATE_KEYS = ("date", "tarih", "islem_tarihi", "due_date", "period_start", "createdAt")
+
+
+def _tckn_shaped(rng: random.Random) -> str:
+    """An 11-digit integer that passes both TCKN check digits (the shape the bare-TCKN rule masks)."""
+    while True:
+        head = str(rng.randint(10**8, 10**9 - 1))
+        n = [int(c) for c in head]
+        d10 = (sum(n[0:9:2]) * 7 - sum(n[1:8:2])) % 10
+        d11 = (sum(n) + d10) % 10
+        value = f"{head}{d10}{d11}"
+        if d.tckn_ok(value):
+            return value
+
+
+def _json_value(rng: random.Random) -> str:
+    kind = rng.randrange(6)
+    if kind == 0:
+        return _tckn_shaped(rng)
+    if kind == 1:
+        return str(rng.randint(10**9, 10**12))
+    if kind == 2:
+        return str(rng.randint(0, 10**7))
+    if kind == 3:
+        return f"{rng.randint(0, 10**9)}.{rng.randint(0, 99):02d}"
+    if kind == 4:
+        return _grouped(rng.randint(10**3, 10**10), ".", ",", rng.randint(0, 99))
+    return f"-{_tckn_shaped(rng)}"
+
+
+def json_line(rng: random.Random, figures: list[str] | None = None) -> str:
+    """`{"tutar": 10000000146, "tarih": "05.03.2024", "ref": "..."}` in JSON, Python-dict or key=value form."""
+    figures = [] if figures is None else figures
+    pairs: list[tuple[str, str, bool]] = []  # key, value, quoted
+    for _ in range(rng.randint(1, 3)):
+        value = _json_value(rng)
+        figures.append(value)
+        pairs.append((rng.choice(_JSON_AMOUNT_KEYS), value, rng.random() < 0.4))
+    if rng.random() < 0.6:
+        date = _date(rng)
+        figures.append(date)
+        pairs.append((rng.choice(_JSON_DATE_KEYS), date, True))
+    if rng.random() < 0.3:  # a reference is not a figure: it may be masked by the bare-TCKN rule
+        pairs.append((rng.choice(("ref", "belge_no", "document_id")), _reference(rng), True))
+    rng.shuffle(pairs)
+    form = rng.randrange(3)
+    if form == 0:
+        return "{" + ", ".join(f'"{k}": ' + (f'"{v}"' if q else v) for k, v, q in pairs) + "}"
+    if form == 1:
+        return "{" + ", ".join(f"'{k}': " + (f"'{v}'" if q else v) for k, v, q in pairs) + "}"
+    return " ".join(f"{k}={v}" for k, v, _ in pairs)
+
+
 @pytest.fixture(scope="module")
 def pseudo() -> Pseudonymizer:
     nd = NameDictionary()
@@ -173,7 +241,8 @@ def test_200000_figure_lines_zero_altered_amounts_or_dates(pseudo: Pseudonymizer
     references_masked = 0
     for i in range(NUMBER_LINES):
         figures: list[str] = []
-        line = _bare_numbers(rng, figures) if i % 5 == 0 else number_line(rng, figures)
+        make = _bare_numbers if i % 5 == 0 else json_line if i % 5 == 1 else number_line
+        line = make(rng, figures)
         masked = pseudo.mask(line)
         if masked == line:
             continue

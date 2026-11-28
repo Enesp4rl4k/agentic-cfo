@@ -134,7 +134,12 @@ async def run_ceo_analysis(
     """
     logger.info("ARQ worker: starting CEO analysis for job=%s", job_id)
     owner = await get_ceo_job_owner(job_id)
-    set_current_tenant((owner or {}).get("org_id"))
+    # The job's company: the owner recorded when the job was enqueued (the authority the poll endpoint checks),
+    # else the org the enqueuing request passed. Used for the tenant context AND for everything keyed by company
+    # after the pipeline (the auto-chain below), never the job id.
+    job_org = (owner or {}).get("org_id") or org_id
+    job_org = str(job_org) if job_org else None
+    set_current_tenant(job_org)
 
     try:
         from app.agents.ceo.orchestrator import run_ceo_pipeline
@@ -151,7 +156,7 @@ async def run_ceo_analysis(
             sprint_csv=sprint_csv,
             company_name=company_name,
             period=period,
-            org_id=org_id,
+            org_id=job_org,
         )
 
         # Store result in Redis for polling — key: ceo:{job_id}
@@ -187,20 +192,23 @@ async def run_ceo_analysis(
 
         logger.info("ARQ worker: CEO job=%s completed", job_id)
 
-        # FAZ-4B: trigger cross-domain correlation for ceo agent
-        if result_data := result:
-            result_data.get("org_id") or result_data.get("job_id", "")[:8]
-            # CEO synthesis result → update CompanyContext + trigger feedback rules
+        # FAZ-4B: trigger cross-domain correlation for ceo agent. Keyed by the JOB'S COMPANY: this passed the job
+        # id as `org_id` until the follow-up to PR #159, so the CompanyContext, the semantic snapshot and the
+        # decision brief were read and written under a company that does not exist (orphan rows / Redis keys)
+        # and the real company's were never refreshed after a CEO run.
+        if result:
+            if job_org is None:
+                logger.warning("ARQ worker: CEO job=%s has no recorded company; auto-chain skipped", job_id)
+            else:
+                from app.agents.orchestration.auto_chain import on_agent_complete as _oac
+                from app.core.background import spawn
 
-            from app.agents.orchestration.auto_chain import on_agent_complete as _oac
-            from app.core.background import spawn
-
-            spawn(_oac(
-                agent="ceo",
-                org_id=job_id,  # use job_id as org proxy if org_id not in result
-                result={"job_id": job_id, "ceo_result": result},
-                db=None,
-            ), name=f"auto-chain-ceo-{job_id[:8]}")
+                spawn(_oac(
+                    agent="ceo",
+                    org_id=job_org,
+                    result={"job_id": job_id, "ceo_result": result},
+                    db=None,
+                ), name=f"auto-chain-ceo-{job_id[:8]}")
 
         return {"ok": True, "job_id": job_id}
 

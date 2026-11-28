@@ -206,6 +206,35 @@ def test_restore_strict_returns_none_for_anything_unresolved() -> None:
     assert p.restore_strict("düz metin") == "düz metin"
 
 
+def test_a_placeholder_with_its_brackets_dropped_is_still_a_placeholder() -> None:
+    """Final review: `PER_XXX_1` (brackets dropped by the model) carrying THIS call's nonce was neither restored nor
+    flagged, so strict mode could write it into the books as a vendor. Now it is ours (restored), and an unknown
+    bracketless one is flagged exactly like the bracketed unknown case."""
+    p = Pseudonymizer(names())
+    token = TOKEN.search(p.mask("Tarvelo Lojistik")).group(0)
+    bare = token.strip("[]")
+    for spelling in (bare, bare.lower(), f"[{bare}", f"{bare}]", f"[[{bare}"):
+        assert p.restore(f"Ödeme {spelling} yapıldı") == "Ödeme Tarvelo Lojistik yapıldı", spelling
+        assert p.restore_strict(spelling) == "Tarvelo Lojistik", spelling
+    unknowns = {f"CP_{p.nonce}_9": UNKNOWN_NAME, "PER_ZZZ_1": UNKNOWN_NAME, "per_zzz_1": UNKNOWN_NAME,
+                "TCKN_ZZZ_3": UNKNOWN_VALUE, "CP_a1b2c3d4": UNKNOWN_VALUE}  # the last: a stable (embedding) token
+    for unknown, shown in unknowns.items():
+        assert p.restore_strict(f"Tedarikçi {unknown}") is None, unknown          # held, never written as data
+        assert p.restore(unknown) == shown, unknown
+    for prose in ("ACCT_NUMBER alanı", "Ref TEL-123-4567", "CO_OP_1 kodu", "snake_case_name", "PERSONEL_ABC_1"):
+        assert p.restore(prose) == prose and p.restore_strict(prose) == prose, prose  # not placeholder-shaped
+
+
+def test_a_bracketless_placeholder_split_across_stream_chunks_is_restored() -> None:
+    p = Pseudonymizer(names())
+    bare = TOKEN.search(p.mask("Tarvelo Lojistik")).group(0).strip("[]")
+    text = f"Ödeme {bare} yapıldı ve {bare}"
+    for size in range(1, 12):
+        r = StreamRestorer(p)
+        out = "".join(r.feed(text[i:i + size]) for i in range(0, len(text), size)) + r.flush()
+        assert out == "Ödeme Tarvelo Lojistik yapıldı ve Tarvelo Lojistik", (size, out)
+
+
 def test_a_streamed_placeholder_split_across_chunks_is_restored_whole() -> None:
     p = Pseudonymizer(names())
     token = TOKEN.search(p.mask("Tarvelo Lojistik")).group(0)
