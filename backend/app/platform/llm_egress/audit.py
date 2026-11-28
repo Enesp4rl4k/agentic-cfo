@@ -65,9 +65,9 @@ def persist_call_log(
 ) -> None:
     """Best-effort write of one LLMCallLog row. Never raises into the caller.
 
-    `error` is reduced to the exception type and a safe code (`safe_error`): the message is never stored. A row written
-    for an organisation after its erasure committed is removed by the erasure's final sweep and by the retention job
-    (`privacy.tombstone.sweep_erased_org`; this platform layer may not import the services layer)."""
+    `error` is reduced to the exception type and a safe code (`safe_error`): the message is never stored. A row for an
+    organisation being erased is refused by the session guard every ORM write passes (`privacy.write_guard`, installed
+    by the API and the workers; this platform layer does not import it), and the final sweep removes any other."""
     try:
         asyncio.get_running_loop()
     except RuntimeError:

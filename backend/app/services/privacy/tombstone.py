@@ -30,10 +30,10 @@ Where it is applied:
 * Redis writes of company data (`redis_write_allowed`, a check right before the write: Redis has no transaction);
   `tests/test_write_guard.py` fails on a Redis write site that neither checks nor is exempt with a reason;
 * writers on connections of their own: the LangGraph saver checks without the lock; the agent memory insert carries
-  the predicate and takes the lock itself; the model-call log (platform layer, may not import this) does not check.
+  the predicate and takes the lock itself. (The model-call log, in the platform layer, does not import this module,
+  but its ORM insert into `llm_call_logs` passes the session guard like every other write.)
 
-What gets past (a write that cannot be resolved to its organisation, the model-call log, a Redis write racing the
-check) is removed by the final sweep at the end of the erasure and by every retention run (`sweep_erased_org`): the
+What gets past (a write that cannot be resolved to its organisation, a Redis write racing the check) is removed by the final sweep at the end of the erasure and by every retention run (`sweep_erased_org`): the
 erasure's own plan run again, every org-scoped table, checkpoints, agent memory, files and Redis keys, not gated by
 RETENTION_DRY_RUN.
 """
