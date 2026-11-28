@@ -55,6 +55,8 @@ def production_settings(**overrides: Any) -> Settings:
         "terms_url": "https://example.test/kosullar",
         "platform_operator_emails": "ops@example.test",
         "support_contact": "ops@example.test",
+        # A complete production configuration has read its first retention report and switched deletion on.
+        "retention_dry_run": False,
     }
     base.update(overrides)
     return Settings(_env_file=None, **base)
@@ -72,6 +74,20 @@ def codes(findings: list[preflight.Finding], severity: str | None = None) -> set
 
 def test_a_complete_production_configuration_has_no_findings() -> None:
     assert check_settings(production_settings(), CLEAN_ENV) == []
+
+
+def test_retention_in_dry_run_is_a_production_warning_never_fatal() -> None:
+    """The shipped default (dry run) is right for a first deploy, so it must not stop one; but production must say
+    loudly that the dry-run periods are not in effect."""
+    assert Settings.model_fields["retention_dry_run"].default is True
+    dry = production_settings(retention_dry_run=True)
+    findings = check_settings(dry, CLEAN_ENV)
+    assert "retention_dry_run" in codes(findings, WARN) and "retention_dry_run" not in codes(findings, FATAL)
+    assert enforce(dry, CLEAN_ENV)  # starts
+    message = next(f.message for f in findings if f.code == "retention_dry_run")
+    assert "first-deploy-checklist" in message and "Checkpoints" in message
+    sqlite = production_settings(use_sqlite=True, retention_dry_run=True)
+    assert "retention_dry_run" not in codes(check_settings(sqlite, {"APP_ENV": "development"}))  # a laptop: quiet
 
 
 @pytest.mark.parametrize(

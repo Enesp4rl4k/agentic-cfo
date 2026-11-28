@@ -87,6 +87,11 @@ async def devam_et(job_id: str) -> dict[str, Any]:
         job = await db.get(AnalysisJob, job_id)
         if job is None or job.status != JobStatus.COMPLETED or not job.org_id:
             return {"ok": False, "neden": "iş yok ya da tamamlanmamış"}
+        # The erasure tombstone (app/services/privacy/tombstone.py): nothing more is built for a company being erased.
+        from app.services.privacy.tombstone import is_erased
+
+        if await is_erased(db, str(job.org_id)):
+            return {"ok": False, "neden": "kuruluş siliniyor"}
         # queued work carries no request context: every AI step below is made for this company
         set_current_tenant(str(job.org_id))
         review = (job.result_metadata or {}).get("review") or {}

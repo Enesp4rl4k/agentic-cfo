@@ -23,7 +23,7 @@ PR #68 (`docs/kvkk-document-set`) sahibindir ve düzenlenmedi. Üretilmiş harit
 5. **"Silme/dışa aktarma işlevi yok" (acik-konular §4, aydınlatma taslağındaki mühendis notu):** bugün **şirketin tamamı**
    için iki adımlı silme var (`org_erasure`, PR'dan önce de) ve bu iş **kişi** silmeyi, soğuma süresini, iptali ve
    operatör yolunu ekledi. Kişi bazlı **dışa aktarma** (`GET /privacy/my-data`) ve şirket dışa aktarımı (owner, iş olarak, süreli indirme) eklendi. Karşı taraf adına göre arama/silme hâlâ yok (Q9).
-6. **Saklama:** #68 "hiçbir tabloda otomatik silme yok" diyor; saklama işi artık var ama varsayılan olarak yalnız rapor üretir (`RETENTION_DRY_RUN=true`). Kodda ise `RETENTION_POLICY`
+6. **Saklama:** #68 "hiçbir tabloda otomatik silme yok" diyor; saklama işi artık var ama varsayılan olarak çoğu kalem için yalnız sayar (`RETENTION_DRY_RUN=true`): bu kalemlerin süreleri operatör ilk raporu okuyup bayrağı kapatana kadar **yürürlükte değildir** (üretimde ön kontrol uyarısı `retention_dry_run`). LangGraph durum kayıtları ve silinmiş şirket artıkları bayraktan bağımsız silinir. Hangi kalemin hangisi olduğu üretilmiş haritada ("Retention: in effect or not"). Kodda ise `RETENTION_POLICY`
    (compliance_gdpr.py) farklı sayılar yazıyor (işlemler 2 yıl, denetim kaydı 5 yıl) ve `/compliance/retention-report`
    bunları "politika" diye gösteriyor; #68 ise denetim kaydı için 2 yıl öneriyor. Üç kaynak birbirinden farklı: hukukçu karar vermeden
    hiçbiri defter tablolarına uygulanmadı; sabit sayılar kaldırıldı, `/compliance/retention-report` artık gerçek değerleri söyler (Q2, Q5).

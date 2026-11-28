@@ -159,6 +159,47 @@ async def test_a_run_records_counts_only_and_skips_erased_and_guest_workspaces(m
         assert a["org"] not in blob and "ZZPII" not in blob
 
 
+async def test_the_report_says_per_store_what_was_counted_and_what_was_deleted(maker, tmp_path: Path, caplog) -> None:
+    """The dry-run report is observable: counts per store in the result and the run row, one log line per store, and
+    every key the job reports is declared in the registry (enforced or dry-run by default)."""
+    import logging
+
+    from app.services.privacy.registry_stores import PURGES
+
+    async with maker() as db:
+        await _company(db, "A", tmp_path)
+        with caplog.at_level(logging.INFO, logger="app.services.privacy.retention"):
+            report = await retention.run_retention(db, now=NOW)
+    assert report["dry_run"] is True and set(report["counts"]) <= set(PURGES)
+    assert report["enforced_always"] == sorted(retention.ENFORCED_ALWAYS)
+    assert report["actions"]["outbox_bodies"] == "counted" and report["actions"]["erasure_leftovers"] == "deleted"
+    lines = [r.getMessage() for r in caplog.records]
+    assert "retention report: store=outbox_bodies due=1 action=counted" in lines
+    assert any("RETENTION_DRY_RUN=true" in ln for ln in lines)
+    assert retention.action("notifications", False) == "deleted" and retention.action("checkpoints", True) == "deleted"
+
+
+async def test_rows_written_for_an_erased_organisation_after_its_erasure_are_swept_whatever_the_dry_run(
+    maker, tmp_path: Path
+) -> None:
+    """A run in flight wrote a run-ledger and a model-call row after the erasure committed (a writer on its own
+    connection): the retention run removes them with RETENTION_DRY_RUN on; another company's rows stay."""
+    async with maker() as db:
+        a, b = await _company(db, "A", tmp_path), await _company(db, "B", tmp_path)
+        await org_erasure.erase_org(db, a["org"], storage_root=tmp_path)
+        for org in (a["org"], b["org"]):
+            await _insert(db, T["agent_runs"], "A", org_id=org, pipeline="cfo", status="completed", attempt=1)
+            await _insert(db, T["llm_call_logs"], "A", org_id=org, task_type="t", model="m", ok=True,
+                          created_at=NOW - timedelta(days=1))
+        await db.commit()
+        report = await retention.run_retention(db, now=NOW)  # dry run
+        assert report["dry_run"] is True and report["counts"]["erasure_leftovers"] == 2
+        for table in ("agent_runs", "llm_call_logs"):
+            orgs = [r["org_id"] for r in await _rows(db, T[table])]
+            assert a["org"] not in orgs and b["org"] in orgs, table
+        assert (await retention.run_retention(db, now=NOW))["counts"]["erasure_leftovers"] == 0  # idempotent
+
+
 def test_company_choices_have_a_floor_and_only_known_keys() -> None:
     assert retention.validate_choice({"outbox_body_days": 30, "upload_days": 0}) == {"outbox_body_days": 30, "upload_days": 0}
     for bad in ({"outbox_body_days": 29}, {"notification_days": 0}, {"token_days": 90}, {"upload_days": "30"}, {"upload_days": True}):

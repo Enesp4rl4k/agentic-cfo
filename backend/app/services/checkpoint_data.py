@@ -110,6 +110,39 @@ async def purge_unscoped_checkpoints(db: Any, *, dry_run: bool) -> int:
     return len(ids)
 
 
+# A namespaced thread whose organisation no longer exists (hard-deleted, a removed guest workspace) or was erased
+# (anonymised: the row stays, its hash is on a proof record). `sha256` is built into PostgreSQL 11+.
+_ORPHANED = (
+    "thread_id ~ :ns AND ("
+    "NOT EXISTS (SELECT 1 FROM organizations o WHERE o.id = split_part(thread_id, ':', 1)) "
+    "OR EXISTS (SELECT 1 FROM org_erasure_records r WHERE r.mode IN ('anonymise', 'hard_delete') "
+    "AND r.org_hash = encode(sha256(convert_to('org:' || split_part(thread_id, ':', 1), 'UTF8')), 'hex')))"
+)
+
+
+async def purge_orphaned_checkpoints(db: Any) -> int:
+    """Retention, ALWAYS enforced: delete every thread whose organisation is erased or gone, whatever its age.
+
+    Erasure deletes the organisation's threads in its own transaction and refuses later writes (`privacy.tombstone`);
+    this removes anything that raced it, and threads of organisations deleted another way. Postgres only; returns
+    threads."""
+    from sqlalchemy import text
+
+    if db.bind is None or db.bind.dialect.name != "postgresql":
+        return 0
+    present = await _present(db)
+    if "checkpoints" not in present:
+        return 0
+    params = {"ns": NAMESPACED_RE}
+    threads = int((await db.execute(
+        text(f"SELECT count(DISTINCT thread_id) FROM checkpoints WHERE {_ORPHANED}"), params
+    )).scalar_one())
+    for name in CHECKPOINT_DATA_TABLES:
+        if name in present:
+            await db.execute(text(f"DELETE FROM {name} WHERE {_ORPHANED}"), params)
+    return threads
+
+
 async def purge_old_checkpoints(db: Any, *, days: int, dry_run: bool, now: Any) -> int:
     """Retention: delete the threads whose newest checkpoint is older than `days`. Postgres only; returns threads.
 

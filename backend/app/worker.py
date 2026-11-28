@@ -154,6 +154,13 @@ async def run_ceo_analysis(
             org_id=org_id,
         )
 
+        # The erasure tombstone: a company whose erasure was claimed while this ran gets no stored result.
+        from app.services.privacy.tombstone import org_erased_now
+
+        if await org_erased_now((owner or {}).get("org_id") or org_id):
+            logger.warning("ARQ worker: CEO job=%s stopped: its organisation is being erased; nothing stored", job_id)
+            return {"ok": False, "job_id": job_id, "erased": True}
+
         # Store result in Redis for polling — key: ceo:{job_id}
         pool = await get_arq_pool()
         import json
@@ -296,6 +303,7 @@ async def run_cfo_analysis(
         finish_job,
         purge_job_outputs,
     )
+    from app.services.privacy.tombstone import OrgErasedError
     from app.streaming.sse import publish_job_done, publish_job_error, publish_step_event
 
     # The id reaches here from an HTTP request. It is written into log lines
@@ -406,6 +414,13 @@ async def run_cfo_analysis(
                     detail=log.detail,
                     confidence=log.confidence,
                 )
+
+            # The erasure tombstone, first statement of the outputs' transaction: a company whose erasure was
+            # claimed while this ran gets nothing written (OrgErasedError, handled below), and an erasure that
+            # starts now waits for this commit and then deletes what it wrote (app/services/privacy/tombstone.py).
+            from app.services.privacy.tombstone import refuse_if_erased
+
+            await refuse_if_erased(db, org_id_str)
 
             # A re-run recomputes: whatever a previous (failed) attempt left
             # behind goes first, so the tables hold one run's output — never a
@@ -602,6 +617,7 @@ async def run_cfo_analysis(
             ):
                 from app.services.balance_reverify import reverify
 
+                await refuse_if_erased(db, org_id_str)
                 await db.refresh(job)
                 await reverify(db, org_id_str, {job_id: []})
                 await db.commit()
@@ -699,6 +715,13 @@ async def run_cfo_analysis(
 
             return {"ok": True, "job_id": job_id, "status": str(terminal)}
 
+        except OrgErasedError:
+            # The company is being erased or was erased while this ran (the checkpoint saver or the outputs'
+            # transaction refused): nothing is persisted, not even a failure on the job row, which the erasure
+            # deleted or scrubbed. Not retried.
+            await db.rollback()
+            logger.warning("ARQ worker: job=%s stopped: its organisation is being erased; nothing persisted", job_id)
+            return {"ok": False, "job_id": job_id, "erased": True, "retryable": False}
         except Exception as exc:
             logger.exception("ARQ worker: job=%s failed", job_id)
             transient = _is_transient_error(exc)

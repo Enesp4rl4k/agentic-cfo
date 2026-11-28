@@ -48,9 +48,17 @@ class Category(StrEnum):
 class Retention(StrEnum):
     BOOKS = "books"              # accounting record: statutory period, kept by default (lawyer question Q2)
     ACCOUNT = "account"          # lives while the account / organisation lives; erased on request
-    OPERATIONAL = "operational"  # operating record: a retention job purges it by age
+    OPERATIONAL = "operational"  # operating record: purged by age where `registry_stores.PURGES` names it, else kept until erasure
     EPHEMERAL = "ephemeral"      # lives in a cache with a time-to-live
     PROOF = "proof"              # evidence of an erasure or a purge; carries no personal data
+
+
+class Enforcement(StrEnum):
+    """Whether a retention period is a policy IN EFFECT or one that only counts (RETENTION_DRY_RUN)."""
+
+    ENFORCED = "enforced"                # deleted by the retention job whatever RETENTION_DRY_RUN says
+    DRY_RUN_DEFAULT = "dry_run_default"  # counted only while RETENTION_DRY_RUN=true (the default); deleted once false
+    NOT_APPLICABLE = "not_applicable"    # no retention job: kept on purpose, a cache time-to-live, or outside our reach
 
 
 class Flow(StrEnum):
@@ -148,6 +156,23 @@ class Store:
     ttl: str
     erased_by: str
     flows: tuple[Flow, ...] = ()
+    # Whether `ttl` is in effect today, and why (a test requires both on every store).
+    enforcement: Enforcement | None = None
+    enforcement_why: str = ""
+
+
+@dataclass(frozen=True)
+class Purge:
+    """One thing the retention job (`privacy.retention`) removes, keyed as in its counts and its report.
+
+    `enforcement` decides the job's behaviour: ENFORCED purges run whatever RETENTION_DRY_RUN says (the job reads
+    this registry, so the document and the code cannot disagree); DRY_RUN_DEFAULT purges only count until it is false."""
+
+    what: str
+    tables: tuple[str, ...]
+    period: str
+    enforcement: Enforcement
+    why: str
 
 
 # A column whose name looks personal but is not, with the reason. Every other personal-looking column is

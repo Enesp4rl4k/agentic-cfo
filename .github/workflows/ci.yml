@@ -222,6 +222,39 @@ jobs:
             exit 1
           fi
 
+      # Retention as the KVKK inventory states it: always-enforced stores deleted with dry-run ON, the others counted
+      # and kept; dry-run OFF deletes everything due; nothing younger; org isolation; erasure leftovers swept.
+      - name: Retention on Postgres (enforced vs dry-run, org isolation, erasure leftovers)
+        working-directory: backend
+        run: |
+          rc=0
+          out="$(python -m pytest tests/test_retention_postgres.py -q -p no:randomly -rs 2>&1)" || rc=$?
+          echo "$out"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::the Postgres retention test failed (exit $rc)"
+            exit "$rc"
+          fi
+          if echo "$out" | grep -Eqi "skipped|no tests ran" || ! echo "$out" | grep -Eq "[0-9]+ passed"; then
+            echo "::error::the Postgres retention test did not run (skipped or not collected)"
+            exit 1
+          fi
+
+      # A CFO run that completes after its organisation's erasure committed leaves zero rows (the erasure tombstone).
+      - name: Erasure against a run in flight on Postgres (tombstone, shared lock, zero rows after the commit)
+        working-directory: backend
+        run: |
+          rc=0
+          out="$(python -m pytest tests/test_erasure_tombstone_postgres.py -q -p no:randomly -rs 2>&1)" || rc=$?
+          echo "$out"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::the Postgres erasure-race test failed (exit $rc)"
+            exit "$rc"
+          fi
+          if echo "$out" | grep -Eqi "skipped|no tests ran" || ! echo "$out" | grep -Eq "[0-9]+ passed"; then
+            echo "::error::the Postgres erasure-race test did not run (skipped or not collected)"
+            exit 1
+          fi
+
       - name: Schema drift still clean with the library-managed checkpoint tables present
         working-directory: backend
         run: python ../scripts/schema_drift.py

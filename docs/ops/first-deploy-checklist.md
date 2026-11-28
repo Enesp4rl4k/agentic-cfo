@@ -80,5 +80,19 @@ Do not write `PILOT_*` variables; nothing reads them. Registration is invite-onl
 | 6.2 | Restore drill with your private key: `AGE_IDENTITY_FILE=/tmp/aicfo-backup.key ./scripts/restore-drill.sh` ends `RESULT: OK` ([runbook.md section 4](runbook.md#4-geri-yükleme-tatbikatı)). | The drill restores the stack's own archive into a fresh Postgres and the restored database holds the pilot company, its owner and the uploaded file: **verified in CI**. With your key and your remote: **cannot be verified in CI: verify by hand** |
 | 6.3 | Uptime monitor on `/api/v1/ready` and a backup heartbeat (the alert must reach you once on purpose). | **cannot be verified in CI: verify by hand** |
 
+## 7. Retention: switch deletion on after the first report
+
+The retention job ships in dry run (`RETENTION_DRY_RUN=true`, the default in `.env.example`, `docker-compose.prod.yml`
+and the Helm values): it only COUNTS outbox bodies, notifications, alert history, expired tokens and invitations,
+audit-log addresses (and raw uploads if `RETENTION_UPLOAD_DAYS` > 0). Until you switch it off, those retention periods
+are not in effect, and the preflight says so (`WARN [retention_dry_run]`, deliberately not fatal so this first deploy
+starts). LangGraph checkpoints, orphaned checkpoint threads and erasure leftovers are deleted from the first run
+whatever the flag says: nothing reads them ([configuration.md](configuration.md), `docs/kvkk/veri-envanteri-uretilen.md`).
+
+| # | Item | Status |
+|---|---|---|
+| 7.1 | After the first night (the job runs at 03:30 UTC in the worker): `dc logs worker \| grep "retention report:"` shows one line per store, `due=<n> action=counted` (dry run) or `action=deleted` (always enforced); the same counts are in the table `retention_runs` and, for an operator, under `retention.last_run` of `/api/v1/ready`. | Counted-but-kept versus deleted, per store, on Postgres: **verified in CI** (`tests/test_retention_postgres.py` in the job "Migrations on Postgres"). Your numbers: **cannot be verified in CI: verify by hand** |
+| 7.2 | Read the counts. Nothing surprising (a store you expected to keep, a number far larger than the company's history)? Then turn dry run off after reviewing the first dry-run report: `RETENTION_DRY_RUN=false` in `.env`, `./scripts/up-prod.sh`. The preflight no longer prints `retention_dry_run`, and the next night's report says `action=deleted` for every store. | **cannot be verified in CI: verify by hand** |
+
 When every line is ticked, continue with [pilot-acceptance-checklist.md](pilot-acceptance-checklist.md) and
 [runbooks/onboard-company.md](runbooks/onboard-company.md).

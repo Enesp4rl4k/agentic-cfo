@@ -226,16 +226,33 @@ class _PostgreSQLBackend:
         except Exception as exc:
             logger.warning("AgentMemory PostgreSQL save failed: %s", exc)
 
+    # The erasure tombstone (app/services/privacy/tombstone.py) as a condition of the insert itself: nothing is written
+    # for an organisation whose erasure is claimed or done. $11 is the organisation's hash.
+    _TOMBSTONE = (
+        "NOT EXISTS (SELECT 1 FROM org_erasure_records WHERE org_hash = $11 AND mode IN ('anonymise', 'hard_delete')) "
+        "AND NOT EXISTS (SELECT 1 FROM org_erasure_requests WHERE org_hash = $11 AND scope = 'org' "
+        "AND status IN ('executing', 'cleanup_pending', 'executed'))"
+    )
+
     async def _async_save(self, record: EpisodeRecord) -> None:
+        from app.services.org_erasure import org_lock_key
+        from app.services.privacy.tombstone import org_hash
+
         pool = await self._get_pool()
         d = record.to_dict()
-        async with pool.acquire() as conn:
+        org = str(d["org_id"] or "")
+        async with pool.acquire() as conn, conn.transaction():
+            # The organisation's erasure lock, shared: an erasure that starts now waits for this insert and then
+            # deletes it; one already running makes this wait and then find the tombstone.
+            await conn.execute("SELECT pg_advisory_xact_lock_shared($1)", org_lock_key(org))
             await conn.execute(
-                """
+                f"""
                 INSERT INTO agent_memory_episodes
                     (id, org_id, agent, period, summary, narrative,
                      confidence, job_id, tags, created_at)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+                SELECT $1::text, $2::text, $3::text, $4::text, $5::text, $6::text,
+                       $7::real, $8::text, $9::text, $10::real
+                WHERE {self._TOMBSTONE}
                 ON CONFLICT (id) DO UPDATE SET
                     summary   = EXCLUDED.summary,
                     narrative = EXCLUDED.narrative,
@@ -243,7 +260,7 @@ class _PostgreSQLBackend:
                 """,
                 d["id"], d["org_id"], d["agent"], d["period"],
                 d["summary"], d["narrative"], d["confidence"],
-                d["job_id"], d["tags"], d["created_at"],
+                d["job_id"], d["tags"], d["created_at"], org_hash(org),
             )
 
     def all(self) -> list[EpisodeRecord]:

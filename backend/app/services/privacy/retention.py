@@ -13,8 +13,17 @@ decisions are kept (Turkish commercial and tax law has long statutory periods: l
     tokens             password-reset / e-mail-verification tokens, spent or expired invitations    30 days after expiry
     audit_ip           audit-log IP address truncated (/24, /48), browser string removed; row stays 365 days
     checkpoints        LangGraph agent-run checkpoints (PostgreSQL), 3 days after the run's last step (nothing reads
-                       them back); threads not namespaced by an organisation at once, whatever their age; org
-                       erasure deletes the org's at once (privacy.ephemeral)
+                       them back); threads not namespaced by an organisation, and threads of an organisation that is
+                       erased or gone, at once, whatever their age; org erasure deletes the org's at once
+                       (privacy.ephemeral)
+    erasure_leftovers  what a run in flight wrote for an organisation erased in the last ERASURE_SWEEP_DAYS days
+                       (org_erasure.sweep_erased_org)
+
+Dry run, and what is enforced anyway: `registry_stores.PURGES` says, for every key above, whether the purge is
+ENFORCED (runs whatever RETENTION_DRY_RUN says: the checkpoints and the erasure leftovers, which nothing reads, so
+there is no report to review first) or DRY_RUN_DEFAULT (counted only until the operator sets RETENTION_DRY_RUN=false
+after reading the first report). This module reads that registry (`ENFORCED_ALWAYS`), so the KVKK inventory rendered
+from it and the behaviour cannot disagree. Every run logs one line per key: what was due and what was done.
   not here: expired export bundles (the 24-hour download lifetime, its own hourly job `export_expiry`, never gated
   by the dry-run flag), demo guest workspaces (their own hourly job, `DEMO_GUEST_TTL_HOURS`), chat history (Redis, 7 days),
   LLM prompts and responses (never stored by this product; the provider's own retention is Q1), soft-deleted rows
@@ -49,8 +58,15 @@ from app.models.rag_chunk import RagChunk
 from app.models.transaction import Transaction
 from app.services.org_erasure import ERASED, hash_id
 from app.services.outbox import SCRUBBED
+from app.services.privacy.registry import Enforcement
+from app.services.privacy.registry_stores import PURGES
 
 logger = logging.getLogger(__name__)
+
+# The purges that run whatever RETENTION_DRY_RUN says: read from the registry the KVKK inventory is rendered from.
+ENFORCED_ALWAYS = frozenset(k for k, p in PURGES.items() if p.enforcement == Enforcement.ENFORCED)
+# How far back the retention run sweeps erased organisations for what a run in flight wrote after the erasure.
+ERASURE_SWEEP_DAYS = 30
 
 FLOOR_DAYS = 30
 ORG_KEYS = ("upload_days", "outbox_body_days", "notification_days", "alert_history_days")
@@ -196,7 +212,8 @@ def _remove_raw_file(root: Path, recorded: str) -> None:
 
 
 async def purge_platform(db: AsyncSession, policy: dict[str, int], *, dry_run: bool, now: datetime) -> dict[str, int]:
-    """Platform-wide: tokens and invitations past their time, audit-log IP addresses past theirs."""
+    """Platform-wide: tokens and invitations past their time, audit-log IP addresses past theirs (these follow
+    `dry_run`), and the checkpoints (ENFORCED: deleted whatever `dry_run` says, see `ENFORCED_ALWAYS`)."""
     out = {"tokens": 0, "invitations": 0, "audit_ip": 0}
     days = policy["token_days"]
     if days > 0:
@@ -215,17 +232,52 @@ async def purge_platform(db: AsyncSession, policy: dict[str, int], *, dry_run: b
         out["audit_ip"] = await _audit_ip(db, now - timedelta(days=days), dry_run)
     days = policy.get("checkpoint_days", 0)
     if db.bind is not None and db.bind.dialect.name == "postgresql":
-        from app.services.checkpoint_data import purge_old_checkpoints, purge_unscoped_checkpoints
+        from app.services.checkpoint_data import (
+            purge_old_checkpoints,
+            purge_orphaned_checkpoints,
+            purge_unscoped_checkpoints,
+        )
 
+        # ENFORCED (registry_stores.PURGES): nothing reads a checkpoint back, so `dry_run` does not apply to them.
         if days > 0:
             # The langgraph library stamps a checkpoint's `ts` with the wall clock (third-party code is not on the
             # app clock, app/core/clock.py): its age is measured against the wall clock, never a pinned instant.
             from app.core.clock import wall_now
 
-            out["checkpoints"] = await purge_old_checkpoints(db, days=days, dry_run=dry_run, now=wall_now())
-        # Whatever the age and even with checkpoint_days = 0: a thread without its organisation is an orphan.
-        out["checkpoints_unscoped"] = await purge_unscoped_checkpoints(db, dry_run=dry_run)
+            out["checkpoints"] = await purge_old_checkpoints(
+                db, days=days, dry_run=_dry("checkpoints", dry_run), now=wall_now())
+        # Whatever the age and even with checkpoint_days = 0: a thread without its organisation is an orphan, and so
+        # is one whose organisation is erased or gone.
+        out["checkpoints_unscoped"] = await purge_unscoped_checkpoints(db, dry_run=_dry("checkpoints_unscoped", dry_run))
+        out["checkpoints_orphaned"] = await purge_orphaned_checkpoints(db)
     return out
+
+
+def _dry(key: str, dry_run: bool) -> bool:
+    """The dry-run flag as it applies to one purge: never to an ENFORCED one."""
+    return dry_run and key not in ENFORCED_ALWAYS
+
+
+async def sweep_erasure_leftovers(db: AsyncSession, now: datetime) -> int:
+    """ENFORCED: run the final sweep (`org_erasure.sweep_erased_org`) again for every organisation erased (anonymised,
+    so its row and id remain) in the last `ERASURE_SWEEP_DAYS` days. Matched by the proof record's hash, never by
+    the name `[erased]` a company could type. Returns the rows and threads removed. Commits per organisation."""
+    from app.models.erasure_record import OrgErasureRecord
+    from app.services.org_erasure import sweep_erased_org
+    from app.services.privacy.tombstone import ORG_MODES
+
+    since = now - timedelta(days=ERASURE_SWEEP_DAYS)
+    recent = set((await db.execute(select(OrgErasureRecord.org_hash).where(
+        OrgErasureRecord.mode.in_(ORG_MODES), OrgErasureRecord.executed_at >= since))).scalars().all())
+    if not recent:
+        return 0
+    inactive = (await db.execute(select(Organization.id).where(Organization.is_active.is_(False)))).scalars().all()
+    await db.commit()
+    removed = 0
+    for org_id in inactive:
+        if hash_id("org", str(org_id)) in recent:
+            removed += sum((await sweep_erased_org(db, str(org_id))).values())
+    return removed
 
 
 async def _audit_ip(db: AsyncSession, cutoff: datetime, dry_run: bool) -> int:
@@ -260,10 +312,20 @@ def _runnable(org: Organization) -> bool:
 async def run_retention(
     db: AsyncSession, *, dry_run: bool | None = None, org_id: str | None = None, now: datetime | None = None,
 ) -> dict[str, Any]:
-    """Run the policy over every active company (or the one given) and the platform tables; record counts."""
+    """Run the policy over every active company (or the one given) and the platform tables; record counts.
+
+    The ENFORCED purges (`ENFORCED_ALWAYS`) delete whatever `dry_run` says; the others only count while it is true.
+    One log line per key says what was due and what was done (the observable dry-run report)."""
     from app.config import get_settings
     now = now or datetime.now(UTC)
     dry = get_settings().retention_dry_run if dry_run is None else dry_run
+    leftovers: int | None = None
+    if org_id is None:
+        try:
+            leftovers = await sweep_erasure_leftovers(db, now)
+        except Exception:
+            logger.exception("retention: the erasure-leftovers sweep failed; it runs again tomorrow")
+            await db.rollback()
     stmt = select(Organization)
     if org_id is not None:
         stmt = stmt.where(Organization.id == org_id)
@@ -280,6 +342,8 @@ async def run_retention(
         if org_id is None:
             for key, n in (await purge_platform(db, platform_policy(), dry_run=dry, now=now)).items():
                 totals[key] = totals.get(key, 0) + n
+            if leftovers is not None:
+                totals["erasure_leftovers"] = leftovers
         run.counts, run.status = totals, "done"
     except Exception:
         logger.exception("retention run failed")
@@ -290,4 +354,25 @@ async def run_retention(
         await db.flush()
     run.finished_at = datetime.now(UTC)
     await db.commit()
-    return {"run_id": run.id, "dry_run": dry, "status": run.status, "organisations": len(orgs), "counts": totals, "policy": platform_policy()}
+    report = {"run_id": run.id, "dry_run": dry, "status": run.status, "organisations": len(orgs), "counts": totals,
+              "policy": platform_policy(), "enforced_always": sorted(ENFORCED_ALWAYS),
+              "actions": {key: action(key, dry) for key in totals}}
+    log_report(report)
+    return report
+
+
+def action(key: str, dry_run: bool) -> str:
+    """What the run did with the rows a key counted: `deleted` or `counted` (dry run, kept)."""
+    return "deleted" if key in ENFORCED_ALWAYS or not dry_run else "counted"
+
+
+def log_report(report: dict[str, Any]) -> None:
+    """The dry-run report in the log: one line for the run, one per key (counts and key names only, no content)."""
+    logger.info("retention run %s: dry_run=%s status=%s organisations=%d enforced_always=%s",
+                report["run_id"], report["dry_run"], report["status"], report["organisations"],
+                ",".join(report["enforced_always"]))
+    for key in sorted(report["counts"]):
+        logger.info("retention report: store=%s due=%d action=%s", key, report["counts"][key], report["actions"][key])
+    if report["dry_run"]:
+        logger.warning("retention: RETENTION_DRY_RUN=true, the stores marked `counted` were kept; review this report "
+                       "(table retention_runs) and set RETENTION_DRY_RUN=false (docs/ops/first-deploy-checklist.md)")

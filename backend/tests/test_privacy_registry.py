@@ -89,3 +89,42 @@ def test_the_generated_inventory_is_current() -> None:
     assert current == inventory_doc.render(), (
         "docs/kvkk/veri-envanteri-uretilen.md is stale: run `python -m app.services.privacy.inventory_doc` in backend/"
     )
+
+
+def test_every_store_and_every_purge_says_whether_its_retention_is_in_effect() -> None:
+    """The KVKK inventory may not call a period a policy when the job only counts it: each store and each retention
+    purge declares enforced / dry_run_default / not_applicable with a reason, the generated document shows it, and
+    the retention job's behaviour is read from the same registry."""
+    from app.services.privacy import retention
+    from app.services.privacy.registry import Enforcement
+    from app.services.privacy.registry_stores import PURGES
+
+    unstated = [s.key for s in STORES if s.enforcement is None or not s.enforcement_why.strip()]
+    assert not unstated, f"stores that do not say whether their retention is in effect: {unstated}"
+    vague = [k for k, p in PURGES.items() if not (p.why.strip() and p.tables and p.period.strip())]
+    assert not vague, f"purges without a reason, tables or period: {vague}"
+
+    stores = {s.key: s for s in STORES}
+    checkpoints = stores["agent_checkpoints"]
+    assert checkpoints.enforcement == Enforcement.ENFORCED and "RESTORED" in checkpoints.holds
+    assert "erase" in checkpoints.erased_by and "retention job" in checkpoints.erased_by
+
+    enforced = {k for k, p in PURGES.items() if p.enforcement == Enforcement.ENFORCED}
+    assert retention.ENFORCED_ALWAYS == enforced == {
+        "checkpoints", "checkpoints_unscoped", "checkpoints_orphaned", "erasure_leftovers"}
+    assert {k for k, p in PURGES.items() if p.enforcement == Enforcement.DRY_RUN_DEFAULT} == {
+        "uploads", "outbox_bodies", "notifications", "alert_history", "tokens", "invitations", "audit_ip"}
+    library = {"checkpoints", "checkpoint_blobs", "checkpoint_writes", "agent_memory_episodes"}
+    unknown = sorted({t for p in PURGES.values() for t in p.tables} - set(TABLE_META) - library)
+    assert not unknown, f"purges name tables that do not exist: {unknown}"
+
+    doc = inventory_doc.DOC_PATH.read_text(encoding="utf-8")
+    lines = doc.splitlines()
+    for key, purge in PURGES.items():
+        row = next((ln for ln in lines if ln.startswith(f"| `{key}` | {purge.what}")), None)
+        assert row is not None and f"| {purge.enforcement.value} |" in row, f"the inventory does not state purge {key}"
+    for store in STORES:
+        row = next(ln for ln in lines if ln.startswith(f"| `{store.key}` | {store.holds}"))
+        assert f"| {store.enforcement.value}: " in row, f"the inventory does not state store {store.key}"
+    llm_logs = next(ln for ln in lines if ln.startswith("| `llm_call_logs` |"))
+    assert "never its message" in llm_logs
