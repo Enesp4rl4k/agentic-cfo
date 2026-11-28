@@ -30,13 +30,38 @@ _REASON_RE = re.compile(r"[a-z0-9_]{1,40}")
 _HTTP_RE = re.compile(r"\b(?:error code|status(?: code)?|http)\W{0,3}([1-5][0-9]{2})\b", re.I)
 
 
+# The codes a caller may attach to an exception type (`<Type>:<code>`, built by `error_code` / `failure_code`): a
+# closed vocabulary, so nothing a provider or a model wrote can pass as a code.
+_CODE_RE = re.compile(r"timeout|failed|fallback|loop_timeout|provider_rejected(?:_[1-5][0-9]{2})?|http_[1-5][0-9]{2}")
+
+
+def error_code(exc: BaseException, code: str | None = None) -> str:
+    """What the audit row stores for a failure: `TimeoutError`, `RuntimeError:fallback`, ..."""
+    name = type(exc).__name__
+    return f"{name}:{code}" if code else name
+
+
+def failure_code(exc: BaseException, rejected: bool = False) -> str:
+    """A failed model call's `error`: `TimeoutError:timeout`, `<Type>:provider_rejected_<status>` (4xx, not
+    retried), `<Type>:http_<status>`, else `<Type>:failed`."""
+    from app.platform.model_catalog import http_status
+
+    status = http_status(exc)
+    if isinstance(exc, TimeoutError):
+        return error_code(exc, "timeout")
+    if rejected:
+        return error_code(exc, f"provider_rejected_{status}" if status else "provider_rejected")
+    return error_code(exc, f"http_{status}" if status else "failed")
+
+
 def safe_error(error: str | None) -> str | None:
     """What `llm_call_logs.error` may hold: the exception TYPE and a fixed code, never the message.
 
     A provider's or a validator's message can quote the prompt or the model's output (a counterparty's name, an
-    IBAN). Callers pass `"{type}: {message}"` (model_gateway) or the type alone (embedding_gateway); either way only
-    the leading type name survives, plus `:http_<status>` when the message carried an HTTP status, and the masked
-    mode's refusals keep their fixed reason (`egress_refused:<reason>`). Anything else becomes `error`."""
+    IBAN). Kept as written: `<Type>:<code>` with a code of the closed vocabulary (`failure_code`, `error_code`), and
+    the masked mode's refusals with their fixed reason (`egress_refused:<reason>`). Otherwise (a caller that passed
+    `"{type}: {message}"`, or the type alone) only the leading type name survives, plus `:http_<status>` when the
+    message carried an HTTP status. Anything else becomes `error`."""
     if not error:
         return None
     text = str(error).strip()
@@ -47,6 +72,8 @@ def safe_error(error: str | None) -> str | None:
     kind = head.strip()
     if not _TYPE_RE.fullmatch(kind):
         return "error"
+    if _CODE_RE.fullmatch(message):
+        return f"{kind}:{message}"[:_ERROR_MAX]
     status = _HTTP_RE.search(message)
     return (f"{kind}:http_{status.group(1)}" if status else kind)[:_ERROR_MAX]
 

@@ -43,7 +43,31 @@ NAME_VARIANTS = (
     ("Işık Gıda'nın borcu", "Işık Gıda"), ("Yıldız Holding'e", "Yıldız Holding"), ("Ahmet\nYılmaz imzaladı", "Ahmet\nYılmaz"),
     ("AHMET YILMAZ imzaladı", "AHMET YILMAZ"), ("ahmet yılmaz imzaladı", "ahmet yılmaz"), ("Selin Aksoyun onayı", "Selin Aksoy"),
     ("Toplantıya Deniz Demir katıldı.", "Deniz Demir"), ("Usta \"Gıda\" Ltd. Şti. faturası", "Usta \"Gıda\""),
+    # the final review's leaks: hyphenation across a line break, a Cyrillic / Greek look-alike letter in a first name
+    ("Ödeme Iş-\nık Gıda hesabına", "Iş-\nık Gıda"), ("Ödeme Işık Gı-\r\nda Ltd. Şti. adına", "Işık Gı-\r\nda"),
+    ("Sözleşmeyi Ah-\nmet Yılmaz imzaladı", "Ah-\nmet"), ("Onay Аhmet Yılmaz verdi", "Аhmet"),
+    ("Onay Аhmet verdi", "Аhmet"), ("Rapor Sеlin Aksoy'a gitti", "Sеlin"),
+    ("Onay Αhmet Yılmaz verdi", "Αhmet"), ("Ödeme Işık-\nGıda hesabına", "Işık-\nGıda"),
 )
+
+# Must NOT be masked: the folding is for matching only, and never invents a match.
+NOT_NAMES = (
+    "iş-\nlem tamamlandı", "Москва ofisi kapandı", "Дмитрий aradı", "Ахмет",  # real Cyrillic words stay
+    "gı-\nda fiyatları arttı",  # a hyphenated ordinary word that is not a known name
+)
+
+
+@pytest.mark.parametrize("text", NOT_NAMES)
+def test_folding_does_not_invent_a_name(text: str) -> None:
+    assert Pseudonymizer(_dictionary()).mask(text) == text
+
+
+def test_a_labelled_tckn_in_groups_is_masked_and_an_unlabelled_one_is_not() -> None:
+    for text in ("Kimlik: 100 000 001 46", "T.C. Kimlik No: 100-000-001-46", "TCKN 100 000 00146", "tc_kimlik_no: 100 000 001 46"):
+        masked = Pseudonymizer().mask(f"{text} ile kayıt")
+        assert "[[TCKN_" in masked and "001" not in masked, masked
+    for text in ("Tutar 100 000 001 46", "Ref 100 000 001 46", "100 000 001 46", "Kimlik: 100 000 001,46"):
+        assert Pseudonymizer().mask(text) == text, text  # no label, or not a TCKN shape: a number stays a number
 
 IBAN = "TR330006100519786457841326"
 IBAN_VARIANTS = (

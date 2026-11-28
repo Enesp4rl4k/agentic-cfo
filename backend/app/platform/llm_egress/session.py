@@ -61,6 +61,13 @@ _TALLY: contextvars.ContextVar[CallTally | None] = contextvars.ContextVar("llm_c
 # Set (to a list) by a narrative function that labels its template: the gateway appends "off" / "refused" when it
 # did not send (agents.narrative_guard.labels_skipped_ai_step).
 skipped_steps: contextvars.ContextVar[list[str] | None] = contextvars.ContextVar("llm_skipped_steps", default=None)
+# The note a template carries when the AI step did not run for that reason (tr / en). Lives here, below every layer
+# that labels a template (agents.narrative_guard, services.reasoning_loop).
+AI_STEP_SKIPPED = {
+    "off": "Yapay zekâ adımı atlandı (LLM_DATA_MODE=off): şablon metin. / AI step skipped (data mode off): template text.",
+    "refused": "Yapay zekâ adımı atlandı (maskeli modda veri gönderilmedi): şablon metin. / "
+               "AI step skipped (nothing sent in masked mode): template text.",
+}
 
 
 def begin_call(org_id: str | None = None, task: str | None = None) -> tuple[CallTally, contextvars.Token]:

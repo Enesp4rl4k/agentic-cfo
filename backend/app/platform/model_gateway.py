@@ -34,6 +34,7 @@ from app.core.llm_key import (
     is_placeholder_key,  # one shared predicate (re-exported: chat.py imports it from here)
 )
 from app.platform import llm_egress as egress
+from app.platform.llm_egress.audit import failure_code as _failure_code
 from app.platform.llm_egress.audit import persist_call_log as _persist_call_log
 from app.platform.model_catalog import (
     ModelConfig,
@@ -299,6 +300,7 @@ async def _raw_chat(
     tally = outer or egress.CallTally(task="llm_router")  # a direct caller (llm_router) has no `complete` around it
     sess = await _open_egress(tally.org_id, tally.task)
     ok = False
+    failure: str | None = None
     try:
         out_system, out_prompt, out_history = sess.outbound(system_prompt, prompt, history)
         messages = _build_messages(out_system, out_prompt, out_history)
@@ -328,10 +330,13 @@ async def _raw_chat(
         out_tok = int(usage.get("output_tokens", len(text.split()) * 1.3))
         ok = True
         return text, parsed_json, in_tok, out_tok
+    except BaseException as exc:
+        failure = _failure_code(exc, is_provider_rejection(exc))
+        raise
     finally:
         if outer is None:
             _persist_call_log(org_id=sess.org_id, job_id=None, task=tally.task or "llm_router", model=cfg.model_id,
-                              res=None, ok=ok, error=None, tally=tally)
+                              res=None, ok=ok, error=failure, tally=tally)
 
 
 # ── Public entry point ─────────────────────────────────────────────────────
@@ -435,15 +440,16 @@ async def complete(
                     org_id=org_id, job_id=job_id, task=task, model=cfg.model_id,
                     res=GatewayResult(text="", model=cfg.model_id, task=task,
                                       latency_ms=latency_ms, attempts=attempts),
-                    ok=False, error=f"{type(exc).__name__}: {exc}", tally=egress.current_tally(),
+                    ok=False, error=_failure_code(exc, rejected), tally=egress.current_tally(),
                 )
                 try:
                     span.set_attribute("llm.ok", False)
                 except Exception:
                     pass
-                if rejected:
-                    raise LLMUnavailable(f"LLM provider rejected model {cfg.model_id}: {exc}") from exc
-                raise RuntimeError(f"LLM call failed after {attempts} attempts: {exc}") from exc
+                failed: Exception = (LLMUnavailable(f"LLM provider rejected model {cfg.model_id}: {exc}") if rejected
+                                     else RuntimeError(f"LLM call failed after {attempts} attempts: {exc}"))
+                failed.llm_audited = True  # type: ignore[attr-defined]  # its row is written: callers write none
+                raise failed from exc
 
     latency_ms = round((time.time() - start) * 1000, 1)
     cost = cost_usd(cfg, in_tok, out_tok)

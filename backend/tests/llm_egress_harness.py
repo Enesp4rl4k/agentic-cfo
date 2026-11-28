@@ -66,7 +66,11 @@ VARIANTS = (
     f"VELORİN   TEKSTİLİN payı; {CANARY.surname}'un ve {CANARY.surname}un onayı, dün {CANARY.first_name} aradı; "
     f"Murat\nDemirtaş notu; IBAN: {' '.join(CANARY.iban[2:][i:i + 4] for i in range(0, 24, 4))}; "
     f"iban {CANARY.iban.lower()}; IBAN {'-'.join(CANARY.iban[i:i + 4] for i in range(0, 26, 4))}; "
-    f"{CANARY.iban[:12]}\n{CANARY.iban[12:]}; {CANARY.email_idn}; Tel: 0532-987-65-43"
+    f"{CANARY.iban[:12]}\n{CANARY.iban[12:]}; {CANARY.email_idn}; Tel: 0532-987-65-43; "
+    # the final review's three leaks: a name hyphenated across a line break, a labelled TCKN written in groups,
+    # a first name with a Cyrillic look-alike letter (е, U+0435)
+    f"Karv-\nesta Yapı Malzemeleri hesabı; Kimlik: {CANARY.tckn[:3]} {CANARY.tckn[3:6]} {CANARY.tckn[6:9]} "
+    f"{CANARY.tckn[9:]}; onaylayan Sеlin {CANARY.surname} imzası; "  # (repeated texts must not glue words)
 )
 # A free-text description that carries identifiers and names: what a bank statement line really looks like.
 DESCRIPTION = (
@@ -76,9 +80,14 @@ DESCRIPTION = (
 
 
 def normalise(text: str) -> str:
-    from app.platform.llm_egress.names import fold
+    """Folded for comparison the way a reader sees it: a hyphen at a line break joins the word, and a Cyrillic or
+    Greek look-alike letter reads as its Latin twin (so a leak spelled that way is still caught as a leak)."""
+    import re
 
-    return " ".join(fold(text).split())
+    from app.platform.llm_egress.names import _CONFUSABLE, fold
+
+    joined = re.sub(r"[-‐‑][ \t]*\r?\n[ \t]*", "", text)
+    return " ".join(fold("".join(_CONFUSABLE.get(c, c) for c in joined)).split())
 
 
 def leaked_in(text: str) -> list[str]:

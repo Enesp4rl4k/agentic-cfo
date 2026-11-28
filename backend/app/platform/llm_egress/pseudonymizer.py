@@ -40,14 +40,43 @@ UNKNOWN_VALUE = "[bilinmeyen değer]"
 
 _NONCE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/O, 1/I
 _LABEL_ALT = "|".join(sorted(ALL_LABELS, key=len, reverse=True))
-# What the model may give back for one of our placeholders, brackets or case mangled included.
+# What the model may give back for one of our placeholders, brackets or case mangled included, and with its
+# brackets DROPPED ("PER_7KQ_1", "[PER_7KQ_1") when it carries THIS call's nonce: restored when issued, unknown
+# otherwise, so it can never be written into a field as if it were a vendor or a description. A bracketless token
+# with any other nonce is ordinary text and stays as written: a real code such as `CO_A12_3`, `ACCT_TRY_100` or
+# `PLATE_34A_1234` is not ours and carries nothing of ours (PR #165 review, follow-up 1).
 _SHAPED = re.compile(
-    r"\[{1,2}\s*(" + _LABEL_ALT + r")\s*[_\-]\s*([A-Za-z0-9]{3})\s*[_\-]\s*(\d{1,4})([a-z]?)\s*\]{1,2}",
+    r"\[{1,2}\s*(" + _LABEL_ALT + r")\s*[_\-]\s*([A-Za-z0-9]{3})\s*[_\-]\s*(\d{1,4})([a-z]?)\s*\]{1,2}"
+    r"|(?<![\w\[])\[{0,2}(" + _LABEL_ALT + r")_([A-Za-z0-9]{3})_(\d{1,4})([a-z]?)(?![\w])\]{0,2}",
     re.IGNORECASE,
 )
-# Anything that still looks like a placeholder after restoring (stable tokens and foreign nonces included).
+# Anything BRACKETED that still looks like a placeholder after restoring (stable tokens and foreign nonces included).
 RESIDUE = re.compile(r"\[{1,2}\s*(?:" + _LABEL_ALT + r")\s*[_\-]\s*[A-Za-z0-9]{3,8}(?:\s*[_\-]\s*\d{1,4}[a-z]?)?\s*\]{1,2}",
                      re.IGNORECASE)
+
+
+def _parts(m: re.Match[str]) -> tuple[str, str, str, str]:
+    """(label, nonce, number, variant) of a `_SHAPED` match, bracketed or bare."""
+    g = m.groups()
+    return (g[0], g[1], g[2], g[3]) if g[0] is not None else (g[4], g[5], g[6], g[7])
+
+
+def might_hold_placeholder(text: str) -> bool:
+    return "[" in text or "_" in text
+
+
+# The end of a stream chunk that may still grow into a BRACKETLESS placeholder ("PE", "PER_7K", "PER_7KQ_1").
+_BARE_TAIL = re.compile(r"(?<![\w\[])([A-Za-z]{1,5})(_[A-Za-z0-9]{0,3}(?:_\d{0,4}[a-z]?)?)?$")
+
+
+def _bare_tail_start(text: str) -> int | None:
+    m = _BARE_TAIL.search(text)
+    if m is None:
+        return None
+    letters = m.group(1).upper()
+    if m.group(2) is None:
+        return m.start() if any(label.startswith(letters) for label in ALL_LABELS) else None
+    return m.start() if letters in ALL_LABELS else None
 
 # A stream chunk that may still grow into a placeholder (held back until it is complete or clearly is not).
 _PREFIX = re.compile(r"^\[{1,2}\s*[A-Za-z]{0,5}(?:\s*[_\-]\s*[A-Za-z0-9]{0,8}(?:\s*[_\-]\s*\d{0,4}[a-z]?)?)?\s*\]?$")
@@ -136,32 +165,41 @@ class Pseudonymizer:
         out.append(text[last:])
         return "".join(out)
 
+    def _foreign_bare(self, m: re.Match[str]) -> bool:
+        """A bracketless placeholder-shaped token without this call's nonce: ordinary text, left as written."""
+        return m.group(1) is None and m.group(6).upper() != self.nonce
+
     def _lookup(self, m: re.Match[str]) -> str | None:
-        label, nonce, number, variant = m.group(1).upper(), m.group(2).upper(), m.group(3), m.group(4).lower()
+        label, nonce, number, variant = _parts(m)
+        label, nonce, variant = label.upper(), nonce.upper(), variant.lower()
         return self._original.get(f"{label}_{nonce}_{number}{variant}".upper())
 
     def restore(self, text: str) -> str:
         """Free text: issued placeholders back byte-exact; anything else placeholder-shaped -> unknown."""
-        if not text or "[" not in text:
+        if not text or not might_hold_placeholder(text):
             return text
 
         def sub(m: re.Match[str]) -> str:
+            if self._foreign_bare(m):
+                return m.group(0)
             hit = self._lookup(m)
             if hit is not None:
                 return hit
-            return UNKNOWN_NAME if m.group(1).upper() in NAME_LABELS else UNKNOWN_VALUE
+            return UNKNOWN_NAME if _parts(m)[0].upper() in NAME_LABELS else UNKNOWN_VALUE
 
         restored = _SHAPED.sub(sub, text)
         return RESIDUE.sub(lambda m: UNKNOWN_VALUE, restored)
 
     def restore_strict(self, text: str) -> str | None:
         """Structured data: the restored string, or None when any placeholder was unknown or mangled."""
-        if not text or "[" not in text:
+        if not text or not might_hold_placeholder(text):
             return text
         unknown = False
 
         def sub(m: re.Match[str]) -> str:
             nonlocal unknown
+            if self._foreign_bare(m):
+                return m.group(0)
             hit = self._lookup(m)
             if hit is None:
                 unknown = True
@@ -194,6 +232,9 @@ class StreamRestorer:
         if cut != -1 and len(text) - cut <= self._HOLD and _PREFIX.match(text[cut:]):
             self._pending = text[cut:]
             text = text[:cut]
+        elif (bare := _bare_tail_start(text)) is not None:  # a placeholder whose brackets were dropped, cut short
+            self._pending = text[bare:]
+            text = text[:bare]
         else:
             self._pending = ""
         return self._p.restore(text)

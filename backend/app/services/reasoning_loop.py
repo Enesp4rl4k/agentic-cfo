@@ -53,9 +53,12 @@ Usage
 """
 from __future__ import annotations
 
+import asyncio
+import contextvars
 import json
 import logging
 import time
+from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -63,6 +66,85 @@ from app.core.currency_totals import fmt_amount
 from app.services.runway_display import runway_for_display
 
 logger = logging.getLogger(__name__)
+
+# ── How the model is reached, and what happens when it is not ─────────────────
+# Every phase calls the Model Gateway's public API (`model_gateway.complete` / `complete_text`, which take
+# `max_tokens`; the egress session masks or refuses there). Until this change the loop called
+# `LLMTaskRouter.complete(..., max_tokens=...)`, a signature that has no `max_tokens`: every phase raised
+# TypeError, a bare `except` swallowed it at debug level, and the loop ALWAYS answered from its template.
+#
+# So a fallback now says why it happened:
+#   unavailable  the gateway said no on purpose: no key, data mode `off`, masked mode refused (fail closed),
+#                the org's budget. The template is used; when `off` / refused applied, the answer starts with
+#                the product's "Yapay zekâ adımı atlandı" note (`llm_egress.session.AI_STEP_SKIPPED`).
+#   failure      anything else (a TypeError, a provider error after the gateway's retries, ...). The template
+#                is still used so the user gets an answer, but it is NOT treated as "LLM unavailable": it is
+#                logged at ERROR with the exception type, counted (`fallback_counts()`), written as an
+#                `llm_call_logs` row (`task_type = reasoning_loop.<phase>`, `error = <Type>:fallback`) unless the
+#                gateway already wrote that failure's row (one row per failure), and
+#                listed in the result's trace. A permanently failing path is visible, not silent.
+#
+# Product limits (PR #165 review, follow-up 2): the loop is OFF unless REASONING_LOOP_ENABLED=true (the chat then
+# ignores `use_reasoning` and says so); at most MAX_LLM_CALLS model calls per question (think, plan, MAX_ACT_STEPS
+# act steps, synthesize); the whole loop runs inside REASONING_LOOP_TIMEOUT_SECONDS. Past the limit the answer is the
+# labelled template (LOOP_TIMEOUT_NOTE) and an `llm_call_logs` row says so (`reasoning_loop.loop`,
+# `TimeoutError:loop_timeout`).
+MAX_ACT_STEPS = 3
+MAX_LLM_CALLS = 1 + 1 + MAX_ACT_STEPS + 1
+LOOP_TIMEOUT_NOTE = ("Yapay zekâ adımı süre sınırını aştı: şablon metin. / "
+                     "AI step exceeded its time limit: template text.")
+LOOP_DISABLED_NOTE = ("Çok adımlı akıl yürütme bu sunucuda kapalı (REASONING_LOOP_ENABLED=false); doğrudan yanıt "
+                      "verildi. / Multi-step reasoning is off on this server; answered directly.")
+FALLBACKS: Counter = Counter()  # (phase, "unavailable" | "failure", exception type) -> count, this process
+
+
+@dataclass
+class _RunState:
+    used_llm: int = 0
+    unavailable: list[str] = field(default_factory=list)
+    failures: list[str] = field(default_factory=list)
+
+
+_RUN: contextvars.ContextVar[_RunState | None] = contextvars.ContextVar("reasoning_loop_run", default=None)
+
+
+def fallback_counts() -> dict[str, int]:
+    """In-process count of the fallbacks taken, by phase, kind and exception type (for ops and tests)."""
+    return {f"{phase}:{kind}:{exc}": n for (phase, kind, exc), n in sorted(FALLBACKS.items())}
+
+
+def _used_llm() -> None:
+    state = _RUN.get()
+    if state is not None:
+        state.used_llm += 1
+
+
+def _fallback(phase: str, exc: BaseException) -> str:
+    """Record why `phase` answers from its template; returns the kind ("unavailable" or "failure")."""
+    from app.platform.model_gateway import LLMBudgetExceeded, LLMUnavailable
+
+    name = type(exc).__name__
+    state = _RUN.get()
+    if isinstance(exc, LLMUnavailable | LLMBudgetExceeded):
+        kind = "unavailable"
+        logger.info("ReasoningLoop %s: LLM unavailable (%s), template used", phase, name)
+        if state is not None:
+            state.unavailable.append(f"{phase}:{name}")
+    else:
+        kind = "failure"
+        logger.error("ReasoningLoop %s: the LLM call FAILED (%s); template used. If this repeats, the AI path of "
+                     "the reasoning loop is not running at all.", phase, name)
+        if state is not None:
+            state.failures.append(f"{phase}:{name}")
+        if not getattr(exc, "llm_audited", False):  # the gateway already wrote this failure's row: one row per failure
+            from app.platform.llm_egress.audit import error_code, persist_call_log
+            from app.platform.llm_egress.policy import active_org
+
+            persist_call_log(org_id=active_org(None), job_id=None, task=f"reasoning_loop.{phase}", model="-",
+                             res=None, ok=False, error=error_code(exc, "fallback"))
+    FALLBACKS[(phase, kind, name)] += 1
+    return kind
+
 
 # ── Result dataclasses ────────────────────────────────────────────────────────
 
@@ -142,6 +224,8 @@ class ReasoningResult:
     total_duration_ms: int
     domain: str
     confidence: float = 0.8
+    # how the model was reached: {"calls": n, "unavailable": ["think:LLMDisabled", ...], "failures": [...]}
+    llm: dict[str, Any] = field(default_factory=dict)
 
     def to_trace(self) -> dict[str, Any]:
         """Serializable trace for debugging/audit."""
@@ -165,6 +249,7 @@ class ReasoningResult:
             "answer_preview": self.answer[:200],
             "total_duration_ms": self.total_duration_ms,
             "confidence": self.confidence,
+            "llm": self.llm,
         }
 
 
@@ -180,16 +265,6 @@ class ReasoningLoop:
 
     def __init__(self, settings: Any = None) -> None:
         self._settings = settings
-        self._llm: Any = None  # lazy-initialised
-
-    def _get_llm(self) -> Any:
-        if self._llm is None:
-            try:
-                from app.services.llm_router import get_llm_router
-                self._llm = get_llm_router()
-            except Exception:
-                pass
-        return self._llm
 
     async def run(
         self,
@@ -215,24 +290,36 @@ class ReasoningLoop:
         min_confidence : float
             If think-phase confidence < this, add a disclaimer to the answer.
         """
+        from app.config import get_settings
+        from app.platform.llm_egress.session import AI_STEP_SKIPPED, skipped_steps
+
         start_ms = int(time.time() * 1000)
-
-        # Phase 1: THINK
-        think = await self._think(question, context, domain)
-
-        # Phase 2: PLAN
-        plan = await self._plan(question, think)
-
-        # Phase 3: ACT
-        actions: list[ActionResult] = []
-        for step in plan.steps[:max_act_steps]:
-            action = await self._act(step, question, context, think, actions)
-            actions.append(action)
-            if not action.ok:
-                break  # stop on critical failure
-
-        # Phase 4: SYNTHESIZE
-        answer = await self._synthesize(question, think, plan, actions, domain)
+        settings = get_settings()
+        if not settings.reasoning_loop_enabled:  # the caller should not have come here: no model call, say why
+            think = ThinkResult(_fallback_observations(_extract_relevant_data(context, domain), question), [], {}, domain)
+            return ReasoningResult(question, LOOP_DISABLED_NOTE, think, PlanResult([], "kapalı"), [], 0, domain,
+                                   llm={"calls": 0, "unavailable": [], "failures": [], "disabled": True})
+        state = _RunState()
+        run_token = _RUN.set(state)
+        skip_token = skipped_steps.set([])  # the gateway appends "off" / "refused" when it did not send
+        timed_out = False
+        try:
+            think, plan, actions, answer = await asyncio.wait_for(
+                self._phases(question, context, domain, min(max_act_steps, MAX_ACT_STEPS)),
+                timeout=float(settings.reasoning_loop_timeout_seconds),
+            )
+        except TimeoutError:
+            timed_out = True
+            think, plan, actions, answer = self._timed_out(question, context, domain)
+        finally:
+            skipped = list(skipped_steps.get() or [])
+            skipped_steps.reset(skip_token)
+            _RUN.reset(run_token)
+        if timed_out:
+            answer = f"{LOOP_TIMEOUT_NOTE}\n{answer}"
+        elif skipped and not state.used_llm:  # the template answered because the data mode said so: say it
+            note = AI_STEP_SKIPPED["refused" if "refused" in skipped else "off"]
+            answer = f"{note}\n{answer}"
 
         total_ms = int(time.time() * 1000) - start_ms
 
@@ -255,7 +342,47 @@ class ReasoningLoop:
             total_duration_ms=total_ms,
             domain=domain,
             confidence=confidence,
+            llm={"calls": state.used_llm, "unavailable": state.unavailable, "failures": state.failures,
+                 "timed_out": timed_out},
         )
+
+    def _timed_out(
+        self, question: str, context: dict[str, Any], domain: str,
+    ) -> tuple[ThinkResult, PlanResult, list[ActionResult], str]:
+        """The whole loop ran past its time limit: the deterministic template, and one audit row saying so."""
+        from app.platform.llm_egress.audit import persist_call_log
+        from app.platform.llm_egress.policy import active_org
+
+        logger.warning("ReasoningLoop: the loop exceeded its time limit; template used")
+        FALLBACKS[("loop", "timeout", "TimeoutError")] += 1
+        persist_call_log(org_id=active_org(None), job_id=None, task="reasoning_loop.loop", model="-", res=None,
+                         ok=False, error="TimeoutError:loop_timeout")
+        data = _extract_relevant_data(context, domain)
+        think = ThinkResult(_fallback_observations(data, question), [], data, domain)
+        plan = PlanResult(_fallback_plan(question, think), "Doğrudan analiz")
+        answer = "\n".join(f"- {o}" for o in think.observations) or "Analiz süre sınırında tamamlanamadı."
+        return think, plan, [], answer
+
+    async def _phases(
+        self, question: str, context: dict[str, Any], domain: str, max_act_steps: int,
+    ) -> tuple[ThinkResult, PlanResult, list[ActionResult], str]:
+        # Phase 1: THINK
+        think = await self._think(question, context, domain)
+
+        # Phase 2: PLAN
+        plan = await self._plan(question, think)
+
+        # Phase 3: ACT
+        actions: list[ActionResult] = []
+        for step in plan.steps[:max_act_steps]:
+            action = await self._act(step, question, context, think, actions)
+            actions.append(action)
+            if not action.ok:
+                break  # stop on critical failure
+
+        # Phase 4: SYNTHESIZE
+        answer = await self._synthesize(question, think, plan, actions, domain)
+        return think, plan, actions, answer
 
     async def _think(
         self,
@@ -284,13 +411,16 @@ MEVCUT VERİLER:
   "key_numbers": {{"metrik_adı": değer}}           // hesaplama için gerekli sayılar
 }}"""
 
-        llm = self._get_llm()
-        raw = ""
-        if llm:
-            try:
-                raw = await llm.complete(task="think", prompt=prompt, max_tokens=400)
-            except Exception as e:
-                logger.debug("Think phase LLM call failed: %s", e)
+        from app.platform import model_gateway
+
+        parsed: Any = None
+        try:
+            # JSON reply: parsed BEFORE restoring (a restored name with a quote cannot break it)
+            result = await model_gateway.complete(task="think", prompt=prompt, max_tokens=400, json_reply="narrative")
+            _used_llm()
+            parsed = result.parsed
+        except Exception as exc:
+            _fallback("think", exc)
 
         # Parse response
         observations: list[str] = []
@@ -298,19 +428,12 @@ MEVCUT VERİLER:
         key_numbers: dict[str, Any] = {}
         parsed_domain = domain
 
-        if raw:
-            try:
-                # Extract JSON block from response
-                json_start = raw.find("{")
-                json_end = raw.rfind("}") + 1
-                if json_start >= 0 and json_end > json_start:
-                    parsed = json.loads(raw[json_start:json_end])
-                    observations = parsed.get("observations", [])
-                    uncertainties = parsed.get("uncertainties", [])
-                    key_numbers = parsed.get("key_numbers", {})
-                    parsed_domain = parsed.get("domain_focus", domain)
-            except Exception:
-                pass
+        if isinstance(parsed, dict):  # NOT_JSON or anything else: the deterministic observations below
+            observations = [str(o) for o in parsed.get("observations") or [] if o]
+            uncertainties = [str(u) for u in parsed.get("uncertainties") or [] if u]
+            numbers = parsed.get("key_numbers")
+            key_numbers = numbers if isinstance(numbers, dict) else {}
+            parsed_domain = str(parsed.get("domain_focus") or domain)
 
         # Fallback: generate observations from data
         if not observations:
@@ -347,32 +470,28 @@ JSON formatında 2-4 adımlık plan:
   ]
 }}"""
 
-        llm = self._get_llm()
-        raw = ""
-        if llm:
-            try:
-                raw = await llm.complete(task="plan", prompt=prompt, max_tokens=300)
-            except Exception as e:
-                logger.debug("Plan phase LLM call failed: %s", e)
+        from app.platform import model_gateway
+
+        parsed: Any = None
+        try:
+            result = await model_gateway.complete(task="plan", prompt=prompt, max_tokens=300, json_reply="narrative")
+            _used_llm()
+            parsed = result.parsed
+        except Exception as exc:
+            _fallback("plan", exc)
 
         steps: list[PlanStep] = []
         approach = "Doğrudan analiz"
 
-        if raw:
-            try:
-                json_start = raw.find("{")
-                json_end = raw.rfind("}") + 1
-                if json_start >= 0:
-                    parsed = json.loads(raw[json_start:json_end])
-                    approach = parsed.get("reasoning_approach", approach)
-                    for s in parsed.get("steps", []):
-                        steps.append(PlanStep(
-                            step_id=s.get("step_id", len(steps) + 1),
-                            description=s.get("description", ""),
-                            tool=s.get("tool"),
-                        ))
-            except Exception:
-                pass
+        if isinstance(parsed, dict):
+            approach = str(parsed.get("reasoning_approach") or approach)
+            for s in parsed.get("steps") or []:
+                if isinstance(s, dict):
+                    steps.append(PlanStep(
+                        step_id=s.get("step_id", len(steps) + 1),
+                        description=str(s.get("description", "")),
+                        tool=s.get("tool"),
+                    ))
 
         # Fallback plan
         if not steps:
@@ -417,14 +536,14 @@ SORU: {question}
 
 Kısa ve somut yanıt ver (max 3 cümle):"""
 
-                llm = self._get_llm()
+                from app.platform import model_gateway
+
                 output = ""
-                if llm:
-                    output = await llm.complete(
-                        task="act_step",
-                        prompt=prompt,
-                        max_tokens=400,
-                    )
+                try:
+                    output = await model_gateway.complete_text(task="act_step", prompt=prompt, max_tokens=400)
+                    _used_llm()
+                except Exception as exc:
+                    _fallback("act", exc)
                 output = output or f"{step.description} tamamlandı."
 
             return ActionResult(
@@ -478,24 +597,20 @@ Yanıt kriterleri:
 - 1-3 somut öneri ekle
 - Maksimum 4 paragraf"""
 
-        llm = self._get_llm()
-        if not llm:
-            # Fallback: concatenate action outputs
-            outputs = [a.output for a in actions if a.ok and a.output]
-            return "\n\n".join(outputs) if outputs else "Analiz tamamlandı, ancak LLM yanıt üretemedi."
+        from app.platform import model_gateway
 
         try:
-            answer = await llm.complete(
-                task="synthesize",
-                prompt=prompt,
-                max_tokens=800,
-            )
+            answer = await model_gateway.complete_text(task="synthesize", prompt=prompt, max_tokens=800)
+            _used_llm()
             return answer or "Yanıt üretilemedi."
-        except Exception as e:
-            logger.warning("Synthesize phase failed: %s", e)
+        except Exception as exc:
+            kind = _fallback("synthesize", exc)
             # Fallback: join action outputs
             outputs = [a.output for a in actions if a.ok and a.output]
-            return "\n\n".join(outputs) if outputs else "Analiz yürütüldü ancak sonuç sentezlenemedi."
+            if outputs:
+                return "\n\n".join(outputs)
+            return ("Analiz tamamlandı, ancak yapay zekâ yanıtı üretilemedi." if kind == "unavailable"
+                    else "Analiz yürütüldü ancak sonuç sentezlenemedi.")
 
 
 # ── Helper functions ──────────────────────────────────────────────────────────

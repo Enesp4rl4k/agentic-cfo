@@ -45,11 +45,9 @@ def narrative_guard(fn: Callable[P, Awaitable[str]]) -> Callable[P, Awaitable[st
 # When the data mode is `off`, or masked mode refused the call (fail closed), the narrative functions answer
 # from their template. The template then says so in the product's own words for that case (tr / en), so a
 # person never mistakes it for an AI-written text. `model_gateway._open_egress` records the skip.
-AI_STEP_SKIPPED = {
-    "off": "Yapay zekâ adımı atlandı (LLM_DATA_MODE=off): şablon metin. / AI step skipped (data mode off): template text.",
-    "refused": "Yapay zekâ adımı atlandı (maskeli modda veri gönderilmedi): şablon metin. / "
-               "AI step skipped (nothing sent in masked mode): template text.",
-}
+from app.platform.llm_egress.session import (
+    AI_STEP_SKIPPED,  # re-exported: defined below the services layer
+)
 
 
 def labels_skipped_ai_step(fn: Callable[P, Awaitable[str]]) -> Callable[P, Awaitable[str]]:

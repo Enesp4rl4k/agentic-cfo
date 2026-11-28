@@ -2,14 +2,17 @@
 
 Order of work (the fidelity rule, see `figures`): first every amount, date, time, account code and document
 number is classified as data and protected; only then do identifier patterns run, and a candidate that touches
-protected data is dropped. A bare digit run is never an identifier.
+protected data is dropped. A digit run with no label is an identifier only in the shapes below that need none
+(an IBAN with its country letters, a printed card grouping, a +90 / spaced phone, a single 11-digit token with
+both TCKN check digits, a tax number the books hold), and never when it is protected data.
 
 What counts as evidence, per type (checksum where the type has one, AND shape, AND context):
   IBAN   letters + check digits + the country's exact length + mod 97 (spaces, dashes, line breaks, lower case
          tolerated); digits only (no "TR") need the label IBAN right before them: 24 digits with mod 97, or
          the 22-digit Turkish BBAN (no checksum exists for it: label + exact length + reserved digit 0)
   CARD   Luhn + issuer prefix + (a card label right before it, or the printed 4-4-4-4 / 4-6-5 grouping)
-  TCKN   11 digits + both check digits + a label (TC, TCKN, T.C. Kimlik No, kimlik, tc_kimlik_no ...); also a
+  TCKN   11 digits + both check digits + a label (TC, TCKN, T.C. Kimlik No, kimlik, tc_kimlik_no ...), written
+         as one token or, with the label, in groups ("Kimlik: 100 000 001 46"); also a
          BARE 11-digit token with both check digits when `figures` has not classified it as data (decided owner
          trade-off: about 1 in 100 unlabelled 11-digit references is masked too, restored byte-exact; no amount
          or date can be, they are protected first)
@@ -99,7 +102,9 @@ def vkn_ok(d: str) -> bool:
 
 # ── labels: the word right before a value (prose, a table header, or a JSON / dict key) ─────────────────
 
-_GAP = r"""(?:['"’]?\s*(?:[:=#\-]|no\b|nr\b|numaras[ıi]\b|numara\b)?\s*['"’]?\s*[:=#\-]?\s*['"’]?\s*)"""
+# Between a label and its value: quotes, "no" / "numarası", and up to three separators of `: = # - –` ("Kimlik No:-",
+# "Vergi No: –"), so a dash before the value never hides it.
+_GAP = r"""(?:['"’]?\s*(?:[:=#\-–]|no\b|nr\b|numaras[ıi]\b|numara\b)?\s*['"’]?\s*(?:[:=#\-–]\s*){0,3}['"’]?\s*)"""
 
 
 def _label(words: str) -> re.Pattern[str]:
@@ -149,12 +154,17 @@ def _compact(raw: str) -> str:
 
 def _iban_spans(text: str, protected: list) -> list[Span]:
     out: list[Span] = []
-    for m in _IBAN_CAND.finditer(text):
+    pos = 0
+    # A candidate may run on into the next word ("<IBAN> IBAN TR33..."): take the valid IBAN at its start and search
+    # again right after it, so a second IBAN swallowed by the first candidate is still found.
+    while (m := _IBAN_CAND.search(text, pos)) is not None:
+        pos = m.start() + 1
         positions = [i for i in range(m.start(), m.end()) if not (text[i].isspace() or text[i] in "- ")]
         chars = "".join(text[i] for i in positions).upper()
         length = _IBAN_LENGTHS.get(chars[:2])
         if length and len(chars) >= length and iban_ok(chars[:length]):
             out.append(Span(positions[0], positions[length - 1] + 1, IBAN, chars[:length]))
+            pos = positions[length - 1] + 1
     for m in _DIGITS_CAND.finditer(text):  # digits only: the label IBAN is the evidence
         digits = _compact(m.group(0))
         if not _labelled(_IBAN_LABEL, text, m.start()) or overlaps(protected, m.start(), m.end(), labelled=True):
@@ -194,7 +204,9 @@ def _classify(raw: str, types: list[str], start: int, end: int) -> Span | None:
     single = raw == digits
     if PAN in types and 13 <= len(digits) <= 19 and luhn_ok(digits) and _IIN.match(digits):
         return Span(start, end, PAN, digits)
-    if TCKN in types and single and tckn_ok(digits):
+    # A TCKN with its identity label right before it may be written in groups ("Kimlik: 100 000 001 46"): the label
+    # is the evidence, the checksum the shape. Unlabelled, only a single 11-digit token counts (`_bare_tckn_spans`).
+    if TCKN in types and tckn_ok(digits):
         return Span(start, end, TCKN, digits)
     if VKN in types and single and vkn_ok(digits):
         return Span(start, end, VKN, digits)
