@@ -74,7 +74,9 @@ async def run_export_expiry() -> None:
 
 
 async def run_retention_job() -> None:
-    """Daily: the retention purge. With RETENTION_DRY_RUN (the default) it only counts and records the report."""
+    """Daily: the retention purge. With RETENTION_DRY_RUN (the default) the DRY_RUN_DEFAULT purges only count and
+    record the report; the ENFORCED ones (checkpoints, erasure leftovers: registry_stores.PURGES) delete anyway.
+    `run_retention` logs the report, one line per store."""
     try:
         from app.database import engine, get_session_factory
         from app.services.privacy.retention import run_retention

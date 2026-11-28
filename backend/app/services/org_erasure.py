@@ -48,7 +48,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import JSON, ColumnElement, MetaData, Table, delete, func, or_, select, update
+from sqlalchemy import JSON, ColumnElement, MetaData, Table, delete, func, null, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.email_address import normalize_email
@@ -62,6 +62,7 @@ from app.services.privacy.erasure_cleanup import (
     build_plan,
     delete_paths,
     is_incomplete,
+    not_scrubbed,
     org_file_paths,
     require_ids,
     run_cleanup,
@@ -258,7 +259,9 @@ def _clause(
 
 def _erased_value(column: Any, org_hash: str) -> Any:
     if column.nullable:
-        return None
+        # SQL NULL, also in a JSON column (a bare None there is stored as the JSON value `null`, which a second run
+        # of this plan, the final sweep, could not tell from data).
+        return null() if isinstance(column.type, JSON) else None
     if isinstance(column.type, JSON):
         return {}
     if column.unique:
@@ -379,21 +382,24 @@ async def erase_org(
         from app.config import get_settings
 
         root = Path(get_settings().storage_local_path)
+    from app.services.privacy.write_guard import exempt
+
     try:
-        await _lock_org(db, org_id)
-        prior = (await db.execute(
-            select(OrgErasureRecord).where(OrgErasureRecord.org_hash == org_hash)
-            .order_by(OrgErasureRecord.seq.desc())
-        )).scalars().all()
-        if any(r.mode == HARD_DELETE or r.mode == mode for r in prior):
-            await db.commit()  # nothing was written; ends the transaction and releases the lock
-            return ErasureResult(record=prior[0], already_erased=True, counts=prior[0].counts)
-        counts, plan = await _erase(db, org_id, org_hash, mode, root)
-        record = await _write_record(db, org_hash, mode, counts, requested_by_hash, confirmed_by_hash)
-        if request_id is not None:
-            await _hand_over(db, request_id, record.id, plan)
-        await db.commit()
-        await db.refresh(record)
+        with exempt(db):  # its own scrubbed values are not refused by the tombstone it creates
+            await _lock_org(db, org_id)
+            prior = (await db.execute(
+                select(OrgErasureRecord).where(OrgErasureRecord.org_hash == org_hash)
+                .order_by(OrgErasureRecord.seq.desc())
+            )).scalars().all()
+            if any(r.mode == HARD_DELETE or r.mode == mode for r in prior):
+                await db.commit()  # nothing was written; ends the transaction and releases the lock
+                return ErasureResult(record=prior[0], already_erased=True, counts=prior[0].counts)
+            counts, plan = await _erase(db, org_id, org_hash, mode, root)
+            record = await _write_record(db, org_hash, mode, counts, requested_by_hash, confirmed_by_hash)
+            if request_id is not None:
+                await _hand_over(db, request_id, record.id, plan)
+            await db.commit()
+            await db.refresh(record)
     except BaseException:
         await db.rollback()
         raise
@@ -428,7 +434,7 @@ async def _erase(
     async def scrub(name: str, where: ColumnElement[bool]) -> None:
         table, rule = tables[name], RETAINED[name]
         values = {c: _erased_value(table.c[c], org_hash) for c in rule.scrub}
-        tally(name, "anonymised", await db.execute(update(table).where(where).values(**values)))
+        tally(name, "anonymised", await db.execute(update(table).where(where, not_scrubbed(table, values)).values(**values)))
 
     erase_users, erase_emails, kept_users = await _user_ids(db, org_id, tables)
 
@@ -511,7 +517,7 @@ async def _erase(
         values = {c: _erased_value(orgs.c[c], org_hash) for c in RETAINED["organizations"].scrub}
         values["is_active"] = False
         tally("organizations", "anonymised",
-              await db.execute(update(orgs).where(orgs.c.id == org_id).values(**values)))
+              await db.execute(update(orgs).where(orgs.c.id == org_id, not_scrubbed(orgs, values)).values(**values)))
     else:
         await drop("organizations", orgs.c.id == org_id)
 

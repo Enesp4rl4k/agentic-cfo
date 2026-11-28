@@ -83,30 +83,74 @@ async def erase_org_checkpoints(db: Any, org_id: str, job_ids: Any = ()) -> int:
     return deleted
 
 
+# Threads deleted per statement by the retention purges: a statement stays short however large the tables grow.
+CHECKPOINT_DELETE_BATCH = 500
+
+
+async def _threads_where(db: Any, present: set[str], where: str, params: dict[str, Any]) -> list[str]:
+    """Distinct thread ids matching `where` (a constant predicate) in every checkpoint table present."""
+    from sqlalchemy import text
+
+    found: dict[str, None] = {}
+    for name in CHECKPOINT_DATA_TABLES:
+        if name in present:
+            rows = await db.execute(text(f"SELECT DISTINCT thread_id FROM {name} WHERE {where}"), params)
+            found.update(dict.fromkeys(r[0] for r in rows.all()))
+    return list(found)
+
+
+async def delete_threads(db: Any, present: set[str], ids: list[str]) -> None:
+    """Delete these threads from every checkpoint table, `CHECKPOINT_DELETE_BATCH` threads per statement."""
+    from sqlalchemy import text
+
+    for start in range(0, len(ids), CHECKPOINT_DELETE_BATCH):
+        chunk = ids[start:start + CHECKPOINT_DELETE_BATCH]
+        for name in CHECKPOINT_DATA_TABLES:
+            if name in present:
+                await db.execute(text(f"DELETE FROM {name} WHERE thread_id = ANY(:ids)"), {"ids": chunk})
+
+
 async def purge_unscoped_checkpoints(db: Any, *, dry_run: bool) -> int:
     """Retention: delete every thread whose id does not start with an organisation, whatever its age. Postgres only.
 
     Since 2026-11-27 no such row can be written (`thread_key` refuses a run without an organisation); any that exist
     are older orphans that no organisation's erasure would match. Returns threads."""
-    from sqlalchemy import text
 
     if db.bind is None or db.bind.dialect.name != "postgresql":
         return 0
     present = await _present(db)
     if "checkpoints" not in present:
         return 0
-    ids = [
-        r[0]
-        for r in (
-            await db.execute(
-                text("SELECT DISTINCT thread_id FROM checkpoints WHERE thread_id !~ :ns"), {"ns": NAMESPACED_RE}
-            )
-        ).all()
-    ]
+    ids = await _threads_where(db, present, "thread_id !~ :ns", {"ns": NAMESPACED_RE})
     if not dry_run:
-        for name in CHECKPOINT_DATA_TABLES:
-            if name in present:
-                await db.execute(text(f"DELETE FROM {name} WHERE thread_id !~ :ns"), {"ns": NAMESPACED_RE})
+        await delete_threads(db, present, ids)
+    return len(ids)
+
+
+# A namespaced thread whose organisation no longer exists (hard-deleted, a removed guest workspace) or was erased
+# (anonymised: the row stays, its hash is on a proof record). `sha256` is built into PostgreSQL 11+.
+_ORPHANED = (
+    "thread_id ~ :ns AND ("
+    "NOT EXISTS (SELECT 1 FROM organizations o WHERE o.id = split_part(thread_id, ':', 1)) "
+    "OR EXISTS (SELECT 1 FROM org_erasure_records r WHERE r.mode IN ('anonymise', 'hard_delete') "
+    "AND r.org_hash = encode(sha256(convert_to('org:' || split_part(thread_id, ':', 1), 'UTF8')), 'hex')))"
+)
+
+
+async def purge_orphaned_checkpoints(db: Any) -> int:
+    """Retention, ALWAYS enforced: delete every thread whose organisation is erased or gone, whatever its age.
+
+    Erasure deletes the organisation's threads in its own transaction and refuses later writes (`privacy.tombstone`);
+    this removes anything that raced it, and threads of organisations deleted another way. Postgres only; returns
+    threads."""
+
+    if db.bind is None or db.bind.dialect.name != "postgresql":
+        return 0
+    present = await _present(db)
+    if "checkpoints" not in present:
+        return 0
+    ids = await _threads_where(db, present, _ORPHANED, {"ns": NAMESPACED_RE})
+    await delete_threads(db, present, ids)
     return len(ids)
 
 
@@ -141,6 +185,5 @@ async def purge_old_checkpoints(db: Any, *, days: int, dry_run: bool, now: Any) 
         ).all()
     ]
     if ids and not dry_run:
-        for name in CHECKPOINT_DATA_TABLES:
-            await db.execute(text(f"DELETE FROM {name} WHERE thread_id = ANY(:ids)"), {"ids": ids})
+        await delete_threads(db, set(CHECKPOINT_DATA_TABLES), ids)
     return len(ids)

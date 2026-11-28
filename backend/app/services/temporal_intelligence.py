@@ -274,6 +274,10 @@ class TemporalIntelligenceEngine:
 
     async def _cache_in_redis(self, event: AnalysisEvent) -> None:
         """Redis sorted set'e kaydet (timestamp score ile)."""
+        from app.services.privacy.tombstone import redis_write_allowed
+
+        if not await redis_write_allowed(event.org_id):  # a company being erased (privacy.tombstone)
+            return
         try:
             key  = f"temporal:{event.org_id}:{event.agent}"
             data = json.dumps(event.to_dict())

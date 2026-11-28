@@ -10,7 +10,7 @@ from pathlib import Path
 from app.database import Base
 from app.services import org_erasure
 from app.services.privacy.registry import THIRD_PARTIES, Flow
-from app.services.privacy.registry_stores import STORES
+from app.services.privacy.registry_stores import PURGES, STORES
 from app.services.privacy.registry_tables import TABLES
 
 DOC_PATH = Path(__file__).resolve().parents[4] / "docs" / "kvkk" / "veri-envanteri-uretilen.md"
@@ -36,20 +36,44 @@ def _flows(flows: tuple[Flow, ...]) -> str:
     return ", ".join(f.value for f in flows) or "-"
 
 
+def _retention_job(table: str) -> str:
+    """Which retention purges touch this table and whether each is in effect; `-` when none does."""
+    keys = [f"`{k}` ({p.enforcement.value})" for k, p in PURGES.items() if table in p.tables]
+    if table in org_erasure.derive_scope():  # the final sweep re-runs the erasure's own plan over these
+        keys.append(f"`erasure_leftovers` ({PURGES['erasure_leftovers'].enforcement.value})")
+    return ", ".join(keys) or "- (no retention job: kept until erasure)"
+
+
+ENFORCEMENT_NOTE = """## Retention: in effect or not
+
+`enforced`: the retention job deletes it whatever `RETENTION_DRY_RUN` says (nothing reads it, or it is erasure rather
+than retention). `dry_run_default`: counted only while `RETENTION_DRY_RUN=true`, the default; deleted once the operator
+sets it to false after reviewing the first report (docs/ops/first-deploy-checklist.md). Until then that period is NOT
+in effect. `not_applicable`: no retention job (kept until erasure, a cache time-to-live, or outside our reach).
+The job reads this table (`retention.ENFORCED_ALWAYS`); `tests/test_privacy_registry.py` ties both to the code.
+"""
+
+
 def render() -> str:
     out = [HEADER, "## Tables\n",
            f"{len(TABLES)} tables hold or may hold personal data ({len(Base.metadata.tables)} tables exist).\n",
-           "| Table | Whose | Purpose | Columns (category) | Retention class | On organisation erasure | Third parties |",
-           "|---|---|---|---|---|---|---|"]
+           "| Table | Whose | Purpose | Columns (category) | Retention class | Retention job | On organisation erasure "
+           "| Third parties |",
+           "|---|---|---|---|---|---|---|---|"]
     for name in sorted(TABLES):
         t = TABLES[name]
         cols = ", ".join(f"`{c}` ({cat.value})" for c, cat in sorted(t.columns.items())) or "-"
         out.append(f"| `{name}` | {t.subject.value} | {t.purpose} | {cols} | {t.retention.value} | "
-                   f"{_erasure(name)} | {_flows(t.flows)} |")
+                   f"{_retention_job(name)} | {_erasure(name)} | {_flows(t.flows)} |")
     out += ["", "## Stores outside the tables\n",
-            "| Store | Holds | Where | Retention class | Lifetime | Erased by |", "|---|---|---|---|---|---|"]
+            "| Store | Holds | Where | Retention class | Lifetime | In effect | Erased by |", "|---|---|---|---|---|---|---|"]
     for s in STORES:
-        out.append(f"| `{s.key}` | {s.holds} | {s.where} | {s.retention.value} | {s.ttl} | {s.erased_by} |")
+        effect = f"{s.enforcement.value if s.enforcement else '?'}: {s.enforcement_why}"
+        out.append(f"| `{s.key}` | {s.holds} | {s.where} | {s.retention.value} | {s.ttl} | {effect} | {s.erased_by} |")
+    out += ["", ENFORCEMENT_NOTE, "| Purge | What | Tables | Period | In effect | Why |", "|---|---|---|---|---|---|"]
+    for key, p in PURGES.items():
+        tables = ", ".join(f"`{t}`" for t in p.tables)
+        out.append(f"| `{key}` | {p.what} | {tables} | {p.period} | {p.enforcement.value} | {p.why} |")
     out += ["", "## Third parties\n"]
     for flow, tp in THIRD_PARTIES.items():
         users = sorted([n for n, t in TABLES.items() if flow in t.flows] + [s.key for s in STORES if flow in s.flows])

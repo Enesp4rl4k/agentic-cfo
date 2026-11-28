@@ -124,8 +124,10 @@ TABLES: dict[str, Table] = {
     "audit_logs": Table("who did what, when, from where", S.MEMBER, R.OPERATIONAL,
                         {"user_id": _PSE, "user_email": _CT, "request_body": _TXT, "ip_address": _NET, "user_agent": _NET, "reason": _TXT},
                         note="no organisation column: rows are linked to a company through the member"),
-    "llm_call_logs": Table("one row per model call: task, model, tokens, cost, data mode, bytes sent, placeholder counts, error (never the prompt)", S.ANYONE,
-                           R.OPERATIONAL, {"error": _TXT}),
+    "llm_call_logs": Table("one row per model call: task, model, tokens, cost, data mode, bytes sent, placeholder counts, error "
+                           "(the exception type and a fixed code only, never its message, never the prompt)", S.ANYONE,
+                           R.OPERATIONAL, {"error": _TXT},
+                           note="rows written before 2026-11-28 may hold the provider's message after the type; none in production"),
     "password_reset_tokens": Table("single-use reset links", S.MEMBER, R.OPERATIONAL, {"user_id": _PSE, "token_hash": _CRED}),
     "email_verification_tokens": Table("single-use verification links", S.MEMBER, R.OPERATIONAL, {"user_id": _PSE, "token_hash": _CRED}),
     "org_erasure_requests": Table("the erasure handshake", S.MEMBER, R.PROOF, {"requested_by_user_id": _PSE},

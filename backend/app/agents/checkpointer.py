@@ -35,7 +35,9 @@ workers). Development and tests fall back to memory with a DURABILITY LOST warni
 Tables (Postgres): `checkpoints`, `checkpoint_blobs`, `checkpoint_writes` and `checkpoint_migrations` belong to the
 langgraph library, not to Alembic. `_postgres_saver` creates them (idempotent `setup()` under an advisory lock, so
 two processes starting together do not race). They hold agent state, which can contain company data: see
-`erase_org_checkpoints` and `purge_old_checkpoints`.
+`erase_org_checkpoints` and `purge_old_checkpoints`. The Postgres saver refuses every write for an organisation that
+is being erased or was erased (`_erasure_guard`, `privacy.tombstone`): a run in flight when its company's erasure is
+claimed stops at its next step with `OrgErasedError` and persists nothing more.
 """
 from __future__ import annotations
 
@@ -94,7 +96,23 @@ def _takes(method: Any, name: str) -> bool:
         return False
 
 
-def _compatify(saver: Any, *, async_via_thread: bool = False) -> Any:
+def _erasure_guard(pool: Any) -> Any:
+    """The erasure tombstone for the Postgres saver (`privacy.tombstone`): a write for a thread whose organisation
+    is being erased or was erased raises `OrgErasedError` before anything reaches the tables, so an in-flight run of
+    that company stops at its next step and persists nothing more. Read without the advisory lock (the saver writes
+    on its own autocommit pool); the erasure's final sweep removes what a write racing the claim could leave."""
+    from app.services.privacy.tombstone import OrgErasedError, thread_refused
+
+    def guard(config: Any) -> None:
+        cfg = config.get("configurable") if isinstance(config, dict) else None
+        tid = cfg.get("thread_id") if isinstance(cfg, dict) else None
+        if tid and thread_refused(pool, str(tid)):
+            raise OrgErasedError()
+
+    return guard
+
+
+def _compatify(saver: Any, *, async_via_thread: bool = False, guard: Any = None) -> Any:
     """Wrap any saver in the signature-tolerant shims the memory backend
     needed (missing `checkpoint_ns` / `checkpoint_id`, optional
     `new_versions` / `task_path` arguments, KeyErrors on writes for threads
@@ -143,6 +161,8 @@ def _compatify(saver: Any, *, async_via_thread: bool = False) -> Any:
             self, config: Any, writes: Any, task_id: Any, task_path: Any = "", *args: Any, **kwargs: Any
         ) -> Any:
             self._normalize_config(config)
+            if guard is not None:
+                guard(config)
             if isinstance(config, dict):
                 config.setdefault("configurable", {}).setdefault("checkpoint_id", "")
             rest = (task_path, *args) if _takes(base.put_writes, "task_path") else args
@@ -172,6 +192,8 @@ def _compatify(saver: Any, *, async_via_thread: bool = False) -> Any:
             *args: Any,
             **kwargs: Any,
         ) -> Any:
+            if guard is not None:
+                guard(config)
             rest = (
                 ({} if new_versions is None else new_versions,)
                 if _takes(base.put, "new_versions")
@@ -381,7 +403,7 @@ def _postgres_saver(dsn: str) -> Any:
     except Exception:
         pool.close()
         raise
-    return _compatify(saver, async_via_thread=True)
+    return _compatify(saver, async_via_thread=True, guard=_erasure_guard(pool))
 
 
 def resolve_checkpoint_backend() -> str:

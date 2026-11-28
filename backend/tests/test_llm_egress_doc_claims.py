@@ -115,7 +115,7 @@ def test_the_audit_error_format_in_the_document_is_the_stored_one() -> None:
     for code in ("TimeoutError:timeout", "APIStatusError:http_429", "RuntimeError:failed"):
         assert f"`{code}`" in doc and safe_error(code) == code
     assert "hata **iletisi saklanmaz**" in doc
-    assert safe_error("ValueError: Selin Aksoy 1.234,56 TL") == "ValueError:detail_dropped"
+    assert safe_error("ValueError: Selin Aksoy 1.234,56 TL") == "ValueError"
 
 
 def test_no_reassurance_beyond_what_is_tested() -> None:

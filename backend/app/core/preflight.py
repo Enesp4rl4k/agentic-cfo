@@ -13,7 +13,8 @@ is the wider list an operator needs before a company's data is on the box:
   required e-mail verification both need a delivered e-mail; with none, nobody could ever get in. Fatal
   when APP_ENV says production or staging, a warning otherwise (the demo stack runs that way).
 * WARN (always logged): safe but degraded. No mail sender, no LLM key, no error tracking, no proxy
-  setting, no field-encryption key, nobody who can operate the platform.
+  setting, no field-encryption key, nobody who can operate the platform, retention still in dry-run in production
+  (`retention_dry_run`: a warning on purpose, see `_retention_findings`).
 
 "Production" is `USE_SQLITE=false`, or `APP_ENV` set to `production` or `staging`. Outside it a fatal
 finding is logged as a warning, so a laptop is never blocked.
@@ -356,6 +357,22 @@ def _parser_memory_findings(settings: Settings, process: str | None) -> list[Fin
     return []
 
 
+def _retention_findings(settings: Settings, env: Mapping[str, str]) -> list[Finding]:
+    """Production with RETENTION_DRY_RUN=true: the DRY_RUN_DEFAULT retention periods are NOT in effect (the job only
+    counts them). A WARNING, never fatal: dry-run is the right state for a first deploy, until the operator has read
+    the first report; a fatal finding would either stop that deploy or push the operator to switch deletion on blind.
+    The always-enforced purges (checkpoints, erasure leftovers) delete regardless (registry_stores.PURGES)."""
+    if not is_production(settings, env) or not settings.retention_dry_run:
+        return []
+    return [_warn(
+        "retention_dry_run",
+        "RETENTION_DRY_RUN=true: the retention job only COUNTS outbox bodies, notifications, alert history, expired "
+        "tokens and invitations, audit-log addresses and (if set) raw uploads; those periods are not in effect. "
+        "Checkpoints and erasure leftovers are deleted anyway. Read the first report (log lines `retention report:`, "
+        "table retention_runs) and set RETENTION_DRY_RUN=false (docs/ops/first-deploy-checklist.md).",
+    )]
+
+
 def _clock_findings(settings: Settings, env: Mapping[str, str]) -> list[Finding]:
     """APP_CLOCK_START (app/core/clock.py) moves "today" for the browser journey. Where companies' data is, a
     simulated date would date radars, briefings, retention and erasure deadlines wrongly: refused."""
@@ -386,6 +403,7 @@ def check_settings(settings: Settings, environ: Mapping[str, str] | None = None,
         *_llm_egress_findings(settings, env),
         *_parser_memory_findings(settings, process),
         *_clock_findings(settings, env),
+        *_retention_findings(settings, env),
     ]
     if settings.use_sqlite and app_env(env) in _PRODUCTION_ENVS:
         findings.append(_fatal("sqlite_in_production", f"APP_ENV={app_env(env)} with USE_SQLITE=true: a development database must not hold company data."))

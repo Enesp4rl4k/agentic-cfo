@@ -59,6 +59,19 @@ async def _run_cost_usd(db: AsyncSession, job_id: str | None) -> float | None:
     return round(float(total or 0.0), 6)
 
 
+async def _erased(db: AsyncSession, org_id: str | None) -> bool:
+    """The erasure tombstone before the closing write (app/services/privacy/tombstone.py): when the run's company is
+    being erased or was erased, the pending changes are dropped and nothing is written (its row is gone or scrubbed)."""
+    from app.services.privacy.tombstone import OrgErasedError, refuse_if_erased
+
+    try:
+        await refuse_if_erased(db, org_id)
+    except OrgErasedError:
+        await db.rollback()
+        return True
+    return False
+
+
 @asynccontextmanager
 async def agent_run(
     db: AsyncSession,
@@ -91,6 +104,8 @@ async def agent_run(
     try:
         yield handle
     except Exception as exc:
+        if await _erased(db, org_id):
+            raise
         row.status = "failed"
         row.error = str(exc)[:2000]
         row.latency_ms = round((time.monotonic() - t0) * 1000, 1)
@@ -99,6 +114,8 @@ async def agent_run(
         await db.commit()
         raise
     else:
+        if await _erased(db, org_id):
+            return
         if row.status not in TERMINAL:
             row.status = "completed"
         row.latency_ms = round((time.monotonic() - t0) * 1000, 1)

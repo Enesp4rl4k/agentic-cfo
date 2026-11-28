@@ -284,16 +284,23 @@ async def test_legacy_unnamespaced_rows_go_with_the_erasure_and_with_retention(m
         assert await _threads_naming(db, job) == set(), "a legacy row of the erased organisation's job survived"
         assert await _threads_naming(db, stranger) == {f"{stranger}-ceo-cfo"}, "erasure reached another job"
 
-    # Retention: the orphan goes at once, whatever its age and even with checkpoint_days = 0; namespaced rows stay.
+    # Retention: the orphan goes at once, whatever its age, even with checkpoint_days = 0 and even in a DRY RUN (an
+    # always-enforced purge: nothing reads it, registry_stores.PURGES); namespaced rows of a live company stay.
+    from tests.test_retention_postgres import put
+
+    async with maker() as db:  # a live company: a thread of an organisation with no row is an orphan too
+        await put(db, "organizations", id=org, name="Legacy Test", slug=f"legacy-{org[:8]}", is_active=True)
+        await db.commit()
     kept = cp.checkpoint_config(job, org_id=org, run_id="fresh")
     await app.ainvoke({"secret": "fresh"}, config=kept)
+    from app.services.checkpoint_data import purge_unscoped_checkpoints
     from app.services.privacy.retention import purge_platform
 
     async with maker() as db:
+        assert await purge_unscoped_checkpoints(db, dry_run=True) >= 1 and await _threads_naming(db, stranger)  # the
+        # function alone still honours a dry run (a preview); the retention job never asks it for one
         policy = {"token_days": 0, "audit_ip_days": 0, "checkpoint_days": 0}
-        dry = await purge_platform(db, policy, dry_run=True, now=datetime.now(UTC))
-        assert dry["checkpoints_unscoped"] >= 1 and await _threads_naming(db, stranger)  # counted, not deleted
-        out = await purge_platform(db, policy, dry_run=False, now=datetime.now(UTC))
+        out = await purge_platform(db, policy, dry_run=True, now=datetime.now(UTC))
         await db.commit()
     assert out["checkpoints_unscoped"] >= 1
     async with maker() as db:
@@ -304,6 +311,7 @@ async def test_legacy_unnamespaced_rows_go_with_the_erasure_and_with_retention(m
         assert unscoped == 0
         assert await _rows(db, "checkpoints", org) > 0, "retention removed a fresh namespaced thread"
         await ephemeral._checkpoints_delete(db, org)
+        await db.execute(text("DELETE FROM organizations WHERE id = :o"), {"o": org})
         await db.commit()
 
 

@@ -130,3 +130,21 @@ def is_incomplete(counts: dict[str, Any]) -> bool:
     """True when a best-effort step failed and the plan should run again."""
     eph = counts.get("_ephemeral") or {}
     return bool(eph.get("redis_failed") or eph.get("agent_memory_failed"))
+
+
+def not_scrubbed(table: Any, values: dict[str, Any]) -> Any:
+    """For `org_erasure._erase`: rows not yet holding the erased values: a second run (the final sweep re-runs this plan) changes only rows
+    written after the first. A JSON column cannot be compared portably, so a table with one is scrubbed whole."""
+    from sqlalchemy import JSON, or_, true
+    from sqlalchemy.sql.elements import Null
+
+    parts: list[Any] = []
+    for name, value in values.items():
+        col = table.c[name]
+        if value is None or isinstance(value, Null):
+            parts.append(col.is_not(None))
+        elif isinstance(col.type, JSON):
+            return true()
+        else:
+            parts.append(col != value)
+    return or_(*parts) if parts else true()

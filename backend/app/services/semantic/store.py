@@ -100,7 +100,9 @@ async def get_semantic_snapshot(
     if not row:
         return None
     snap = row_to_snapshot(row)
-    if redis is not None:
+    from app.services.privacy.tombstone import redis_write_allowed
+
+    if redis is not None and await redis_write_allowed(org_id):
         try:
             await redis.setex(_redis_key(org_id, period_key), REDIS_TTL, _dumps(snap.to_dict()))
         except Exception:
@@ -210,8 +212,10 @@ async def save_semantic_snapshot(
             row.updated_at = datetime.now(UTC)
         await db.commit()
 
+    from app.services.privacy.tombstone import redis_write_allowed
+
     redis = await _get_redis()
-    if redis is not None:
+    if redis is not None and await redis_write_allowed(snapshot.org_id):
         try:
             await redis.setex(
                 _redis_key(snapshot.org_id, period_key),

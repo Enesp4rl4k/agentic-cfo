@@ -156,6 +156,15 @@ async def index_job_text(
     embedded = await _embed_texts(chunks, org_id=org_id)
     embeddings = embedded.vectors if embedded else None
 
+    # The erasure tombstone, in the transaction of the writes below (app/services/privacy/tombstone.py): a company
+    # being erased or erased gets no chunk; an erasure starting now waits for the caller's commit, then deletes them.
+    from app.services.privacy.tombstone import OrgErasedError, refuse_if_erased
+
+    try:
+        await refuse_if_erased(db, org_id)
+    except OrgErasedError:
+        return 0
+
     # Idempotency: delete previous index for this job — same transaction as
     # the inserts below, so old-gone and new-in are published together.
     await db.execute(

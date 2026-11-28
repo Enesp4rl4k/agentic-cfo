@@ -120,7 +120,8 @@ async def test_a_cleanup_failure_after_the_commit_is_retried_and_the_request_is_
     assert ("job_failed", f"erasure:{rid}:cleanup_failed") in alerts
     async with client._maker() as db:
         assert (await erasure_flow.execute_due(db))["executed"] == 1  # the retry runs the stored plan only
-    assert not path.exists() and len(calls) == 2 and await _records(client) == 1  # no second proof record
+    # the failed try, the retry of the stored plan, the final sweep's cleanup; no second proof record
+    assert not path.exists() and len(calls) == 3 and await _records(client) == 1
     async with client._maker() as db:
         req = await db.get(OrgErasureRequest, rid)
         assert req.status == "executed" and req.cleanup_plan is None and req.post_commit_counts["_files"]["deleted"] >= 1

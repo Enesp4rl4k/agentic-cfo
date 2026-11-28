@@ -45,6 +45,11 @@ from app.core.preflight import enforce_or_exit
 
 enforce_or_exit(settings, process="api")
 
+# The erasure tombstone on every database write of company data (app/services/privacy/write_guard.py).
+from app.services.privacy import write_guard as _write_guard
+
+_write_guard.install()
+
 
 # ── Lifespan ──────────────────────────────────────────────────────────────────
 

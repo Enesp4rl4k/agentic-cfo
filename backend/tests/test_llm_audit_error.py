@@ -24,9 +24,11 @@ SECRET_TEXT = f"model said: {CANARY.person} owes 1.234.567,89 TL to {CANARY.coun
     ("TimeoutError", "TimeoutError"),
     ("APIStatusError:http_429", "APIStatusError:http_429"),
     ("egress_refused:no_organisation_context", "egress_refused:no_organisation_context"),
-    (f"ValidationError: {SECRET_TEXT}", "ValidationError:detail_dropped"),
-    (SECRET_TEXT, "model:detail_dropped"),
-    ("çok gizli: Selin", "error:detail_dropped"),
+    (f"ValidationError: {SECRET_TEXT}", "ValidationError"),
+    ("RuntimeError:fallback", "RuntimeError:fallback"), ("TimeoutError:loop_timeout", "TimeoutError:loop_timeout"),
+    ("X:provider_rejected_400", "X:provider_rejected_400"), (f"RuntimeError:{SECRET_TEXT}", "RuntimeError"),
+    (SECRET_TEXT, "error"),
+    ("çok gizli: Selin", "error"),
 ])
 def test_safe_error_keeps_a_type_and_a_code_only(given, stored) -> None:
     assert safe_error(given) == stored
