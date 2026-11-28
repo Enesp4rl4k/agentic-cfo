@@ -227,7 +227,7 @@ class _PostgreSQLBackend:
             logger.warning("AgentMemory PostgreSQL save failed: %s", exc)
 
     # The erasure tombstone (app/services/privacy/tombstone.py) as a condition of the insert itself: nothing is written
-    # for an organisation whose erasure is claimed or done. $11 is the organisation's hash.
+    # for an organisation whose erasure is claimed or done. The last parameter is the organisation's hash.
     _TOMBSTONE = (
         "NOT EXISTS (SELECT 1 FROM org_erasure_records WHERE org_hash = $11 AND mode IN ('anonymise', 'hard_delete')) "
         "AND NOT EXISTS (SELECT 1 FROM org_erasure_requests WHERE org_hash = $11 AND scope = 'org' "
@@ -250,8 +250,7 @@ class _PostgreSQLBackend:
                 INSERT INTO agent_memory_episodes
                     (id, org_id, agent, period, summary, narrative,
                      confidence, job_id, tags, created_at)
-                SELECT $1::text, $2::text, $3::text, $4::text, $5::text, $6::text,
-                       $7::real, $8::text, $9::text, $10::real
+                SELECT $1::text, $2::text, $3::text, $4::text, $5::text, $6::text, $7::real, $8::text, $9::text, $10::real
                 WHERE {self._TOMBSTONE}
                 ON CONFLICT (id) DO UPDATE SET
                     summary   = EXCLUDED.summary,

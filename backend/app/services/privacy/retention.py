@@ -17,7 +17,7 @@ decisions are kept (Turkish commercial and tax law has long statutory periods: l
                        erased or gone, at once, whatever their age; org erasure deletes the org's at once
                        (privacy.ephemeral)
     erasure_leftovers  what a run in flight wrote for an organisation erased in the last ERASURE_SWEEP_DAYS days
-                       (org_erasure.sweep_erased_org)
+                       (privacy.tombstone.sweep_erased_org)
 
 Dry run, and what is enforced anyway: `registry_stores.PURGES` says, for every key above, whether the purge is
 ENFORCED (runs whatever RETENTION_DRY_RUN says: the checkpoints and the erasure leftovers, which nothing reads, so
@@ -259,12 +259,11 @@ def _dry(key: str, dry_run: bool) -> bool:
 
 
 async def sweep_erasure_leftovers(db: AsyncSession, now: datetime) -> int:
-    """ENFORCED: run the final sweep (`org_erasure.sweep_erased_org`) again for every organisation erased (anonymised,
+    """ENFORCED: run the final sweep (`tombstone.sweep_erased_org`) again for every organisation erased (anonymised,
     so its row and id remain) in the last `ERASURE_SWEEP_DAYS` days. Matched by the proof record's hash, never by
     the name `[erased]` a company could type. Returns the rows and threads removed. Commits per organisation."""
     from app.models.erasure_record import OrgErasureRecord
-    from app.services.org_erasure import sweep_erased_org
-    from app.services.privacy.tombstone import ORG_MODES
+    from app.services.privacy.tombstone import ORG_MODES, sweep_erased_org
 
     since = now - timedelta(days=ERASURE_SWEEP_DAYS)
     recent = set((await db.execute(select(OrgErasureRecord.org_hash).where(

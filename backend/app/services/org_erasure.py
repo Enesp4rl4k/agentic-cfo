@@ -408,35 +408,6 @@ async def erase_org(
     return ErasureResult(record=record, counts=shown, cleanup_incomplete=is_incomplete(done))
 
 
-async def sweep_erased_org(db: AsyncSession, org_id: str, job_ids: Sequence[str] = ()) -> dict[str, int]:
-    """The final sweep of an erased organisation: what an analysis run in flight could still write after the erase
-    transaction committed, removed in a transaction of its own under the same per-organisation lock. Commits.
-
-    The write paths that hold a session refuse an erased company under that lock (`privacy.tombstone`), so nothing
-    of theirs can survive. Three writers have their own connections and read the tombstone without the lock: the
-    LangGraph saver, the model-call log and (on another backend than Postgres) the agent memory. This deletes the
-    organisation's checkpoint threads, Postgres agent memory, model-call log rows and run-ledger rows again. Run at the
-    end of an erasure's cleanup (`erasure_flow.run_cleanup_step`) and by every retention run for organisations erased
-    in the last `ERASURE_SWEEP_DAYS` days, whatever RETENTION_DRY_RUN says. Idempotent; counts only."""
-    from app.services.privacy.ephemeral import erase_org_in_transaction
-
-    jobs = list(job_ids)
-    require_ids(org_id, jobs)
-    tables = _tables(Base.metadata)
-    try:
-        await _lock_org(db, org_id)
-        eph = await erase_org_in_transaction(db, org_id, jobs)
-        out = {"checkpoints": int(eph.get("checkpoints_deleted", 0)), "agent_memory": int(eph.get("agent_memory_deleted", 0))}
-        for name in ("llm_call_logs", "agent_runs"):
-            result: Any = await db.execute(delete(tables[name]).where(tables[name].c.org_id == org_id))
-            out[name] = int(result.rowcount or 0)
-        await db.commit()
-    except BaseException:
-        await db.rollback()
-        raise
-    return out
-
-
 async def _erase(
     db: AsyncSession, org_id: str, org_hash: str, mode: str, root: Path
 ) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -602,6 +573,6 @@ async def _write_record(
 __all__ = [
     "ANONYMISE", "BOOKKEEPING_TABLES", "ERASED", "HARD_DELETE", "MODES", "RETAINED",
     "SOFT_LINKS", "SPECIAL_TABLES", "ErasureResult",
-    "derive_scope", "erase_org", "hash_id", "remove_org_files", "sweep_erased_org", "unclassified_tables",
+    "derive_scope", "erase_org", "hash_id", "remove_org_files", "unclassified_tables",
     "verify_chain",
 ]

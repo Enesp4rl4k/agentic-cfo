@@ -65,8 +65,9 @@ def persist_call_log(
 ) -> None:
     """Best-effort write of one LLMCallLog row. Never raises into the caller.
 
-    `error` is reduced to the exception type and a safe code (`safe_error`): the message is never stored. No row is
-    written for an organisation that is being erased or was erased (the erasure tombstone)."""
+    `error` is reduced to the exception type and a safe code (`safe_error`): the message is never stored. A row written
+    for an organisation after its erasure committed is removed by the erasure's final sweep and by the retention job
+    (`privacy.tombstone.sweep_erased_org`; this platform layer may not import the services layer)."""
     try:
         asyncio.get_running_loop()
     except RuntimeError:
@@ -78,11 +79,7 @@ def persist_call_log(
         try:
             from app import database
             from app.models.llm_call_log import LLMCallLog
-            from app.services.privacy.tombstone import is_erased
-
             async with database.session_factory()() as db:
-                if await is_erased(db, org_id):
-                    return
                 db.add(
                     LLMCallLog(
                         org_id=org_id,

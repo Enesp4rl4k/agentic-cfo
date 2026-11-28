@@ -107,9 +107,9 @@ def _fill(col: Any) -> Any:
     raise AssertionError(f"cannot fill {col.table.name}.{col.name}")
 
 
-async def put(db: AsyncSession, name: str, **fixed: Any) -> str:
+async def put(db: AsyncSession, table_name: str, /, **fixed: Any) -> str:
     """One row: the given values, generated ones for the required columns without a default, NULL for the rest."""
-    table = T[name]
+    table = T[table_name]
     row = dict(fixed)
     for col in table.columns:
         if col.name in row or col.nullable or col.default is not None or col.server_default is not None:

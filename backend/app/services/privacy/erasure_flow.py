@@ -268,7 +268,7 @@ async def run_cleanup_step(db: AsyncSession, rid: str, now: datetime, outcome: d
         # The final sweep: whatever a run in flight wrote through a connection of its own after the erase transaction
         # committed (checkpoints, model-call log, run ledger, agent memory). Its writes are refused from the claim on
         # (privacy.tombstone); this removes what raced the claim. The retention job sweeps again.
-        from app.services.org_erasure import sweep_erased_org
+        from app.services.privacy.tombstone import sweep_erased_org
 
         counts["_final_sweep"] = await sweep_erased_org(db, str(plan.get("org_id")), list(plan.get("job_ids") or []))
     except InvalidTargetError:

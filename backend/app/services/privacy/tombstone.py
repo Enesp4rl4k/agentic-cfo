@@ -22,17 +22,19 @@ saw no tombstone and holds the shared lock until its commit (the erasure waits f
 wrote), or it waits for the erasure and then sees the proof record and refuses. There is no third order. SQLite
 (development) has one writer at a time and no advisory locks: the check alone.
 
-Writers that are not on our session (the LangGraph saver's own pool, the agent memory's asyncpg pool, the model-call
-log's own session) read the tombstone without the lock; what can slip through that window is removed by the final
-sweep at the end of the erasure (`org_erasure.sweep_erased_org`) and again by every retention run
+Writers that are not on our session read the tombstone without the lock (the LangGraph saver's own pool, the CEO
+result in Redis) or not at all (the model-call log: the platform layer may not import this one; the agent memory
+insert carries the predicate and the lock itself); what can slip through is removed by the final
+sweep at the end of the erasure (`sweep_erased_org`) and again by every retention run
 (`retention.sweep_erasure_leftovers`), neither gated by RETENTION_DRY_RUN.
 """
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import exists, func, or_, select
+from sqlalchemy import delete, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
@@ -100,8 +102,8 @@ async def refuse_if_erased(db: AsyncSession, org_id: str | None) -> None:
 
 async def org_erased_now(org_id: str | None) -> bool:
     """`is_erased` in a session of its own, for a best-effort writer that holds none (a CEO result in Redis with its
-    own time-to-live, a model-call log row). A database that cannot answer is logged and read as "not erased": these
-    writes are swept after the erasure anyway (Redis by the cleanup plan, rows by `sweep_erased_org`)."""
+    own time-to-live). A database that cannot answer is logged and read as "not erased": these
+    writes are covered after the erasure anyway (the Redis result by its 24-hour time-to-live)."""
     if not org_id:
         return False
     from app.database import engine, get_session_factory
@@ -143,3 +145,36 @@ def thread_refused(pool: Any, thread_id: str) -> bool:
         return False
     value = row["erased"] if isinstance(row, dict) else row[0]
     return bool(value)
+
+
+async def sweep_erased_org(db: AsyncSession, org_id: str, job_ids: Sequence[str] = ()) -> dict[str, int]:
+    """The final sweep of an erased organisation: what an analysis run in flight could still write after the erase
+    transaction committed, removed in a transaction of its own under the same per-organisation lock. Commits.
+
+    The write paths that hold a session refuse an erased company under that lock (`privacy.tombstone`), so nothing
+    of theirs can survive. Two writers have connections of their own and read the tombstone without the lock (the
+    LangGraph saver; the CEO result in Redis, which expires with its 24-hour time-to-live), and the model-call log, in the platform
+    layer, does not read it at all (the layer may not import this one). This deletes the
+    organisation's checkpoint threads, Postgres agent memory, model-call log rows and run-ledger rows again. Run at the
+    end of an erasure's cleanup (`erasure_flow.run_cleanup_step`) and by every retention run for organisations erased
+    in the last `retention.ERASURE_SWEEP_DAYS` days, whatever RETENTION_DRY_RUN says. Idempotent; counts only."""
+    from app.database import Base
+    from app.services.org_erasure import _lock_org
+    from app.services.privacy.ephemeral import erase_org_in_transaction
+    from app.services.privacy.erasure_cleanup import require_ids
+
+    jobs = list(job_ids)
+    require_ids(org_id, jobs)
+    tables = dict(Base.metadata.tables)
+    try:
+        await _lock_org(db, org_id)
+        eph = await erase_org_in_transaction(db, org_id, jobs)
+        out = {"checkpoints": int(eph.get("checkpoints_deleted", 0)), "agent_memory": int(eph.get("agent_memory_deleted", 0))}
+        for name in ("llm_call_logs", "agent_runs"):
+            result: Any = await db.execute(delete(tables[name]).where(tables[name].c.org_id == org_id))
+            out[name] = int(result.rowcount or 0)
+        await db.commit()
+    except BaseException:
+        await db.rollback()
+        raise
+    return out
