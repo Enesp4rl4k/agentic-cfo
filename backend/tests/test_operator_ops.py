@@ -61,6 +61,11 @@ async def test_operators_get_the_details_and_the_backup_state(client):
     detail = (await client.get(f"{P}/ready", headers=ops_headers)).json()["data"]
     assert detail["detail"] is True and "code" in detail["checks"]["database"] and "backup" in detail
     assert "detail" not in (await client.get(f"{P}/ready", headers=other)).json()["data"]  # a company owner is not an operator
+    # Retention as the operator sees it: dry run by default, what deletes anyway, the step still owed.
+    retention = detail["retention"]
+    assert retention["dry_run"] is True and "checkpoints" in retention["enforced_always"]
+    assert "first-deploy-checklist" in retention["action_needed"] and retention["last_run"] is None
+    assert "retention" not in str((await client.get(f"{P}/ready")).json()["data"])  # anonymous callers learn nothing
 
 
 async def test_a_failed_required_check_is_a_fail_verdict():

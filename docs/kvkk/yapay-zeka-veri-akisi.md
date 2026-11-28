@@ -34,6 +34,7 @@ veritabanımızda saklanabilir (PR #157 ile Postgres). Bu, sağlayıcıya giden 
 düğüm modele yine yalnızca geçitten ulaşır, geçit her giden yükü o anda yeniden maskeler (ya da şirket bilinmiyorsa reddeder);
 durum kaydını bir istemciye veren başka kod yoktur (AST testi: istemciyi yalnızca iki geçit kurar) ve izleme açık olsa bile
 düğüm girdisi/çıktısı izlere gitmez (aşağıda "İzleme").
+Bu kayıtlar gerçek adları (geri çevrilmiş haliyle) taşıdığı için: şirket silinirken silme işleminin kendi işleminde silinir; silme talebi işleme alındığı andan sonra o şirket için yeni kayıt yazılmaz (`privacy/tombstone.py`, yazıcı reddeder ve süren koşu bir sonraki adımda durur); kaçan olursa silmenin son süpürmesi ve her saklama koşusu siler. Saklama süresi (`RETENTION_CHECKPOINT_DAYS`, 3 gün) `RETENTION_DRY_RUN`'dan bağımsız **uygulanır**: bu kayıtları okuyan kod yoktur.
 
 Yeni bir çağrı yeri sürücüsüz ve giriş noktası bildirilmeden eklenemez. İnceleme, onay sonrası devam yolunun (`devam_et`) şirket
 bağlamını kurmadığını buldu; düzeltildi ve matris bu hatayı artık adıyla yakalar.

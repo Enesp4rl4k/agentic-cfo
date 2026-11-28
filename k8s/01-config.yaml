@@ -20,6 +20,8 @@ data:
   AUTO_ENQUEUE_ANALYSIS_ON_UPLOAD: "true"
   RAG_BACKFILL_ENABLED: "true"
   RAG_EMBEDDING_ENABLED: "true"
+  # Retention in dry run until the first report is reviewed (docs/ops/first-deploy-checklist.md section 7).
+  RETENTION_DRY_RUN: "true"
   ARQ_ANALYSIS_QUEUE_NAME: "arq:queue:analysis"
   ARQ_MAINTENANCE_QUEUE_NAME: "arq:queue:maintenance"
   POSTGRES_HOST: "postgres"

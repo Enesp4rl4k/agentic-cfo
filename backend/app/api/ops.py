@@ -215,6 +215,25 @@ async def _llm_egress_state(db: AsyncSession) -> dict[str, Any]:
     return {"refused_since_start": refusals.counts(), "embeddings_awaiting_reindex": pending}
 
 
+async def _retention_state(db: AsyncSession) -> dict[str, Any]:
+    """For operators: whether retention deletes or only counts, which purges delete anyway, and the last run's report
+    (counts per store, no content). RETENTION_DRY_RUN=true in production is also a preflight warning."""
+    from app.models.privacy_records import RetentionRun
+    from app.services.privacy.retention import ENFORCED_ALWAYS, action
+
+    dry = bool(get_settings().retention_dry_run)
+    last = (await db.execute(select(RetentionRun).order_by(RetentionRun.started_at.desc()).limit(1))).scalar_one_or_none()
+    report = None
+    if last is not None:
+        counts = dict(last.counts or {})
+        report = {"started_at": last.started_at.isoformat() if last.started_at else None, "status": last.status,
+                  "dry_run": last.dry_run, "counts": counts,
+                  "actions": {k: action(k, bool(last.dry_run)) for k in counts}}
+    return {"dry_run": dry, "enforced_always": sorted(ENFORCED_ALWAYS), "last_run": report,
+            "action_needed": ("RETENTION_DRY_RUN=true: review the last report, then set it to false "
+                              "(docs/ops/first-deploy-checklist.md)") if dry else None}
+
+
 @router.get("/ready")
 async def ready(
     request: Request,
@@ -248,6 +267,10 @@ async def ready(
             except Exception:
                 data["backup"] = {"error": "unreadable"}
             data["llm_egress"] = await _llm_egress_state(db)
+            try:
+                data["retention"] = await _retention_state(db)
+            except Exception:
+                data["retention"] = {"error": "unreadable"}
     else:
         data = {"status": status, "checks": {name: _verdict(c) for name, c in checks.items()}}
     return JSONResponse(status_code=http, content={"data": data, "error": None})

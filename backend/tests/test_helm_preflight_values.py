@@ -21,3 +21,17 @@ def test_the_values_file_declares_the_links_without_a_default() -> None:
 
     config = yaml.safe_load((CHART / "values.yaml").read_text(encoding="utf-8"))["config"]
     assert config["privacyNoticeUrl"] == "" and config["termsUrl"] == ""  # empty: `required` fails until the operator sets them
+
+
+def test_retention_starts_in_dry_run_and_says_so_everywhere_it_is_deployed() -> None:
+    """The default is stated plainly where an operator sets it; switching it off is a decision (first-deploy checklist)."""
+    import yaml
+
+    repo = CHART.parents[1]
+    cm = (CHART / "templates" / "configmap.yaml").read_text(encoding="utf-8")
+    assert "RETENTION_DRY_RUN: {{ .Values.config.retentionDryRun | quote }}" in cm
+    assert yaml.safe_load((CHART / "values.yaml").read_text(encoding="utf-8"))["config"]["retentionDryRun"] == "true"
+    assert "RETENTION_DRY_RUN: ${RETENTION_DRY_RUN:-true}" in (repo / "docker-compose.prod.yml").read_text(encoding="utf-8")
+    assert 'RETENTION_DRY_RUN: "true"' in (repo / "k8s" / "01-config.yaml").read_text(encoding="utf-8")
+    checklist = (repo / "docs" / "ops" / "first-deploy-checklist.md").read_text(encoding="utf-8")
+    assert "RETENTION_DRY_RUN=false" in checklist and "after reviewing the first dry-run report" in checklist

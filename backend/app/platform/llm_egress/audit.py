@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -23,6 +24,31 @@ ERROR_PREFIX = "egress_refused:"  # == refusals.ERROR_PREFIX (refusals imports t
 logger = logging.getLogger(__name__)
 
 _TASK_MAX = 48
+_ERROR_MAX = 120
+_TYPE_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_.]{0,79}")
+_REASON_RE = re.compile(r"[a-z0-9_]{1,40}")
+_HTTP_RE = re.compile(r"\b(?:error code|status(?: code)?|http)\W{0,3}([1-5][0-9]{2})\b", re.I)
+
+
+def safe_error(error: str | None) -> str | None:
+    """What `llm_call_logs.error` may hold: the exception TYPE and a fixed code, never the message.
+
+    A provider's or a validator's message can quote the prompt or the model's output (a counterparty's name, an
+    IBAN). Callers pass `"{type}: {message}"` (model_gateway) or the type alone (embedding_gateway); either way only
+    the leading type name survives, plus `:http_<status>` when the message carried an HTTP status, and the masked
+    mode's refusals keep their fixed reason (`egress_refused:<reason>`). Anything else becomes `error`."""
+    if not error:
+        return None
+    text = str(error).strip()
+    if text.startswith(ERROR_PREFIX):
+        reason = text[len(ERROR_PREFIX):]
+        return ERROR_PREFIX + reason if _REASON_RE.fullmatch(reason) else ERROR_PREFIX + "other"
+    head, _, message = text.partition(":")
+    kind = head.strip()
+    if not _TYPE_RE.fullmatch(kind):
+        return "error"
+    status = _HTTP_RE.search(message)
+    return (f"{kind}:http_{status.group(1)}" if status else kind)[:_ERROR_MAX]
 
 
 def persist_call_log(
@@ -37,18 +63,22 @@ def persist_call_log(
     tally: CallTally | None = None,
     data_mode: str | None = None,
 ) -> None:
-    """Best-effort write of one LLMCallLog row. Never raises into the caller."""
+    """Best-effort write of one LLMCallLog row. Never raises into the caller.
+
+    `error` is reduced to the exception type and a safe code (`safe_error`): the message is never stored. A row for an
+    organisation being erased is refused by the session guard every ORM write passes (`privacy.write_guard`, installed
+    by the API and the workers; this platform layer does not import it), and the final sweep removes any other."""
     try:
         asyncio.get_running_loop()
     except RuntimeError:
         return
     org_id = org_id or (tally.org_id if tally else None)
+    stored_error = safe_error(error)
 
     async def _write() -> None:
         try:
             from app import database
             from app.models.llm_call_log import LLMCallLog
-
             async with database.session_factory()() as db:
                 db.add(
                     LLMCallLog(
@@ -64,7 +94,7 @@ def persist_call_log(
                         ok=ok,
                         from_cache=res.from_cache if res else False,
                         attempts=res.attempts if res else 1,
-                        error=(error or None),
+                        error=stored_error,
                         data_mode=(tally.mode if tally else None) or data_mode,
                         bytes_out=tally.bytes_out if tally else 0,
                         replaced=tally.as_record() if tally else None,

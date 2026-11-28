@@ -271,7 +271,9 @@ class Settings(BaseSettings):
     data_export_ttl_hours: int = 24
     # Company export: size bound in MB; uploaded files that would exceed it are listed as omitted in the manifest
     data_export_max_mb: int = 500
-    # Retention job: true only reports what it would purge (counts in retention_runs); set false after reading the report
+    # Retention job: true (the default) only COUNTS the dry-run purges (counts in retention_runs and the log); the
+    # always-enforced ones (checkpoints, erasure leftovers) delete anyway. Production warns while true (preflight
+    # `retention_dry_run`): set false after reading the first report (docs/ops/first-deploy-checklist.md)
     retention_dry_run: bool = True
     # Retention: days after which a processed upload's raw file, raw text and text chunks are removed (0 = keep; Turkish accounting-record periods are an open lawyer question)
     retention_upload_days: int = 0

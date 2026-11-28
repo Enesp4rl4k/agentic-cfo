@@ -71,6 +71,10 @@ async def gecici_veritabani(tables: Sequence[Any] | None = None) -> AsyncIterato
     """The app's schema (or just `tables`) on a fresh file; yields its sessionmaker."""
     from app.database import Base
 
+    if tables is not None:  # every write consults the erasure tombstone (app/services/privacy/write_guard.py)
+        from app.models.erasure_record import OrgErasureRecord, OrgErasureRequest
+
+        tables = [*tables, *(t.__table__ for t in (OrgErasureRecord, OrgErasureRequest) if t.__table__ not in tables)]
     engine = gecici_motor()
     try:
         async with engine.begin() as conn:

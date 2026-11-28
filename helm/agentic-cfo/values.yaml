@@ -128,6 +128,10 @@ config:
   autoEnqueueAnalysis: "true"
   ragBackfillEnabled: "true"
   ragEmbeddingEnabled: "true"
+  # Retention starts in DRY RUN ("true"): it only counts what it would delete; checkpoints and erasure leftovers are
+  # deleted anyway. Set "false" after reviewing the first report (docs/ops/first-deploy-checklist.md section 7); until
+  # then the preflight warns `retention_dry_run`.
+  retentionDryRun: "true"
   # REQUIRED, no default: public https links of the privacy notice and the terms of use (the preflight refuses to start
   # without them under APP_ENV=production). Set with --set or your own values file.
   privacyNoticeUrl: ""

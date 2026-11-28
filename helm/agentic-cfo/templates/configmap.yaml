@@ -26,6 +26,8 @@ data:
   AUTO_ENQUEUE_ANALYSIS_ON_UPLOAD: {{ .Values.config.autoEnqueueAnalysis | quote }}
   RAG_BACKFILL_ENABLED: {{ .Values.config.ragBackfillEnabled | quote }}
   RAG_EMBEDDING_ENABLED: {{ .Values.config.ragEmbeddingEnabled | quote }}
+  # Dry run until the operator has read the first retention report (values.yaml config.retentionDryRun).
+  RETENTION_DRY_RUN: {{ .Values.config.retentionDryRun | quote }}
   {{- if .Values.postgres.enabled }}
   POSTGRES_HOST: {{ include "agentic-cfo.fullname" . }}-postgres
   POSTGRES_PORT: "5432"

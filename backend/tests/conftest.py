@@ -110,6 +110,14 @@ def _restore_real_langchain_modules():
             sys.modules[name] = mod
 
 
+# ── 1c. The erasure tombstone on every write, as in the API and the workers ──────
+# app/services/privacy/write_guard.py: installed by app.main and app.worker at import; a test that never imports
+# either must run under the same session hooks.
+from app.services.privacy import write_guard as _write_guard
+
+_write_guard.install()
+
+
 # ── 2. Reset stateful service singletons between tests ───────────────────────
 def _reset_singletons() -> None:
     resets: list[tuple[str, str]] = [

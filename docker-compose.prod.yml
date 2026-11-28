@@ -63,6 +63,10 @@ x-backend-env: &backend-env
   ALLOW_INLINE_JOB_FALLBACK: "false"
   STORAGE_BACKEND: local
   STORAGE_LOCAL_PATH: /app/uploads
+  # Retention starts in DRY RUN: it only counts what it would delete (checkpoints and erasure leftovers are deleted
+  # anyway). Set RETENTION_DRY_RUN=false in .env after reviewing the first report (docs/ops/first-deploy-checklist.md
+  # section 7); until then the preflight warns `retention_dry_run`.
+  RETENTION_DRY_RUN: ${RETENTION_DRY_RUN:-true}
   BACKEND_CORS_ORIGINS: https://${APP_DOMAIN:?set APP_DOMAIN in .env}
   FRONTEND_URL: https://${APP_DOMAIN}
   BRAND_APP_URL: https://${APP_DOMAIN}

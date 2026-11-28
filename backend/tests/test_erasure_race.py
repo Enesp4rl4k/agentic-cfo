@@ -152,6 +152,74 @@ async def test_the_redis_sweep_runs_after_the_commit(client, monkeypatch) -> Non
         assert await org_svc.verify_chain(db) == []
 
 
+async def test_a_run_that_writes_after_the_erase_commit_is_swept_before_the_request_is_executed(client, monkeypatch) -> None:
+    """The final sweep: a run in flight wrote its run-ledger and model-call rows through connections of its own after
+    the erase transaction committed (while the cleanup ran). The request reaches `executed` only after they are gone."""
+    from app.models.agent_run import AgentRun
+    from app.models.llm_call_log import LLMCallLog
+    from app.services.privacy import erasure_cleanup
+
+    hdr, org, _ = await _owner_company(client, "race7@example.com")
+    rid, _ = await _scheduled(client, hdr)
+    await _due(client, rid)
+    real = erasure_cleanup.run_cleanup
+
+    finished: list[int] = []
+
+    async def cleanup_while_a_run_finishes(plan, root=None):
+        from app.services.privacy import write_guard
+
+        if finished:  # the final sweep's own cleanup: the run is over
+            return await real(plan, root)
+        finished.append(1)
+        async with client._maker() as late:
+            with write_guard.exempt(late):  # a writer that got past the guard (its own connection, no session hooks)
+                late.add(AgentRun(org_id=org, pipeline="cfo", status="completed", attempt=1))
+                late.add(LLMCallLog(org_id=org, task_type="late", model="m"))
+                await late.commit()
+        return await real(plan, root)
+
+    monkeypatch.setattr(erasure_cleanup, "run_cleanup", cleanup_while_a_run_finishes)
+    async with client._maker() as db:
+        await erasure_flow.execute_due(db)
+        req = await db.get(OrgErasureRequest, rid)
+        assert req.status == "executed"
+        assert req.post_commit_counts["_final_sweep"]["rows"] >= 2
+    async with client._maker() as db:
+        for model in (AgentRun, LLMCallLog):
+            n = (await db.execute(select(func.count()).select_from(model).where(model.org_id == org))).scalar_one()
+            assert n == 0, model.__tablename__
+
+
+async def test_the_tombstone_refuses_writes_once_the_erasure_is_claimed(client) -> None:
+    """SQLite has no advisory lock; the tombstone itself is the same predicate (the Postgres test covers the lock)."""
+    from app.services.privacy.tombstone import OrgErasedError, is_erased, refuse_if_erased
+
+    hdr, org, _ = await _owner_company(client, "race8@example.com")
+    rid, _ = await _scheduled(client, hdr)
+    await _due(client, rid)
+    async with client._maker() as db:
+        assert await is_erased(db, org) is False
+        assert await erasure_flow._claim(db, rid, datetime.now(UTC)) is True  # `executing`: the tombstone is set
+        with pytest.raises(OrgErasedError):
+            await refuse_if_erased(db, org)
+        assert await is_erased(db, None) is False
+
+
+def test_the_model_call_log_keeps_only_the_exception_type_and_a_safe_code() -> None:
+    """`llm_call_logs.error` must not quote the prompt or the model's output that a provider message can carry."""
+    from app.platform.llm_egress.audit import safe_error
+
+    leak = "ValueError: could not parse reply 'ZZREALNAME A.Ş. IBAN TR12 0006 1005 1978 6457 8413 26'"
+    assert safe_error(leak) == "ValueError"
+    assert safe_error("RateLimitError: Error code: 429 - {'error': 'ZZREALNAME'}") == "RateLimitError:http_429"
+    assert safe_error("openai.APIStatusError: status 503 for ZZREALNAME") == "openai.APIStatusError:http_503"
+    assert safe_error("TimeoutError") == "TimeoutError"
+    assert safe_error("egress_refused:no_organisation_context") == "egress_refused:no_organisation_context"
+    assert safe_error("egress_refused:ZZREALNAME A.Ş.") == "egress_refused:other"
+    assert safe_error("ZZREALNAME said no") == "error" and safe_error(None) is None and safe_error("") is None
+
+
 def test_the_member_pseudonym_is_keyed_stable_and_not_the_plain_hash(monkeypatch) -> None:
     from app.config import get_settings
     from app.services.privacy.member_erasure import pseudonym

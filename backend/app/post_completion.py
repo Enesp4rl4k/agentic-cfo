@@ -287,6 +287,11 @@ async def apply_company_view(
             )
             return False
 
+        # The erasure tombstone, as the first statement of the writes below (privacy.tombstone): a company erased while
+        # the view was being computed gets no context, snapshot, brief or auto-chain (OrgErasedError -> not applied).
+        from app.services.privacy.tombstone import refuse_if_erased
+
+        await refuse_if_erased(db, org_id)
         ctx_obj.update_agent_result("cfo", chain_result)
         ctx_obj.set_active_job("cfo", str(job_id))
         await save_company_context(ctx_obj, db)
@@ -418,7 +423,9 @@ async def _save_to_memory_and_trend(
         )
 
         # Store trend analysis in Redis for the frontend to read
-        if trend_result.trend_alerts or trend_result.recurring_anomalies:
+        from app.services.privacy.tombstone import redis_write_allowed
+
+        if (trend_result.trend_alerts or trend_result.recurring_anomalies) and await redis_write_allowed(org_id):
             import json
 
             from app.worker import get_arq_pool

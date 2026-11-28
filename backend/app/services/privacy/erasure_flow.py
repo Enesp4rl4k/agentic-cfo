@@ -265,6 +265,14 @@ async def run_cleanup_step(db: AsyncSession, rid: str, now: datetime, outcome: d
     record_id = req.record_id
     try:
         counts = await run_cleanup(plan)
+        # The final sweep: the erasure's own plan run again (every org-scoped table, checkpoints, agent memory, files,
+        # Redis), for whatever was written after the erase transaction committed. Writes are refused from the claim on
+        # (privacy.write_guard, privacy.tombstone); this removes what got past. The retention job sweeps again.
+        from app.services.privacy.tombstone import sweep_erased_org
+
+        counts["_final_sweep"] = await sweep_erased_org(db, str(plan.get("org_id")), mode=str(req.mode), plan=plan)
+        if counts["_final_sweep"].get("redis_failed"):
+            counts["_ephemeral"]["redis_failed"] = 1  # the plan runs again next hour
     except InvalidTargetError:
         await db.execute(update(OrgErasureRequest).where(OrgErasureRequest.id == rid, OrgErasureRequest.status == CLEANUP_PENDING)
                          .values(status=BLOCKED, blocked_reason="invalid_target", cleanup_plan=None))
