@@ -75,7 +75,7 @@ logger = logging.getLogger(__name__)
 # So a fallback now says why it happened:
 #   unavailable  the gateway said no on purpose: no key, data mode `off`, masked mode refused (fail closed),
 #                the org's budget. The template is used; when `off` / refused applied, the answer starts with
-#                the product's "Yapay zekâ adımı atlandı" note (`narrative_guard.AI_STEP_SKIPPED`).
+#                the product's "Yapay zekâ adımı atlandı" note (`llm_egress.session.AI_STEP_SKIPPED`).
 #   failure      anything else (a TypeError, a provider error after the gateway's retries, ...). The template
 #                is still used so the user gets an answer, but it is NOT treated as "LLM unavailable": it is
 #                logged at ERROR with the exception type, counted (`fallback_counts()`), written as an
@@ -275,8 +275,7 @@ class ReasoningLoop:
         min_confidence : float
             If think-phase confidence < this, add a disclaimer to the answer.
         """
-        from app.agents.narrative_guard import AI_STEP_SKIPPED
-        from app.platform.llm_egress.session import skipped_steps
+        from app.platform.llm_egress.session import AI_STEP_SKIPPED, skipped_steps
 
         start_ms = int(time.time() * 1000)
         state = _RunState()
