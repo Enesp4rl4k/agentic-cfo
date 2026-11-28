@@ -36,7 +36,7 @@ Aşağıdakiler **seçeneklerdir**; hangisinin yeterli olduğu hukukçunun ve sa
 - **(b) Maskeleme artık vardır.** `LLM_DATA_MODE=masked`: IBAN (mod 97), TCKN, VKN, kart (Luhn), telefon, e-posta, plaka **açık kanıtla** (etiket ya da
   şaşmaz biçim) ve defterin kendi tablolarından bilinen adlar (şirket, karşı taraf, tedarikçi, üye, mali müşavir; ekli, satır bölünmüş, yalnızca ad ya da
   soyad yazımları dahil) yer tutucuyla gider, yanıtta baytı baytına geri çevrilir. Tutar olduğunu gösteren bir işareti olan sayılar (ayraç,
-  ondalık, eksi, para birimi, yüzde, tutar sözcüğü ya da tutar adlı bir JSON alanı) ve tarihler **değişmez** (200.000 satırlık bulanık testte, beşte
+  ondalık, para birimi, yüzde, tutar sözcüğü, tutar adlı bir JSON alanı ya da tablo sütununda eksi) ve tarihler **değişmez** (200.000 satırlık bulanık testte, beşte
   biri JSON biçiminde, sıfır değişiklik); hiçbir işareti olmayan 11 haneli bir sayı TCKN sağlamasını tutarsa maskelenebilir. **Bedeli:** adın anlamına
   dayanan çıkarımlarda kalite biraz değişebilir. **Sınırı:** serbest metinde kalıpların ve defterin bilmediği kişisel veri gidebilir: özellikle **okunan
   belgede ilk kez geçen, henüz defterde olmayan adlar olduğu gibi gider**; defterde olan adların da sentetik metinde %8,7'si kaçar; etiketsiz

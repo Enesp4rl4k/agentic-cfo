@@ -41,7 +41,9 @@ _COMPACT_DATE = re.compile(r"(?<![\w.,])\d{8}(?![\w]|[.,]\d)")
 _CURRENCY = r"(?:tl|try|ytl|usd|eur|gbp|chf|jpy|rub|kuruş|kurus|krş|krs|lira|dolar|euro|avro|sterlin)"
 # a currency right before the number, a sign allowed between them ("EUR+71862066848", "TL−4.105,00")
 _SYMBOL_BEFORE = re.compile(r"(?:[₺$€£%]|\b" + _CURRENCY + r")\s{0,2}[+\-−]?\s{0,2}$", re.IGNORECASE)
-_SYMBOL_AFTER = re.compile(r"^\s{0,2}(?:[₺$€£%]|" + _CURRENCY + r"\b)", re.IGNORECASE)
+# ...and right after it, unless the symbol is glued to the NEXT number ("4111 1111 TL-974", "1111 %34", "₺+737"):
+# then it is that figure's prefix, not this one's unit.
+_SYMBOL_AFTER = re.compile(r"^\s{0,2}(?:[₺$€£%]|" + _CURRENCY + r"\b)(?![+\-−]?\d)", re.IGNORECASE)
 _AMOUNT_WORD = re.compile(
     r"(?:tutar[ıi]?|toplam[ıi]?|bakiye(?:si)?|net|brüt|brut|ciro(?:su)?|gelir(?:i)?|gider(?:i)?|kâr|kar|zarar|"
     r"kalan|borç|borc|alacak|ödeme|odeme|tahsilat|havale|eft|fast|kdv|stopaj|matrah|fiyat|bedel|ücret|ucret|"
@@ -102,8 +104,8 @@ def protected_spans(text: str) -> list[tuple[int, int, bool]]:
         spans.append((m.start(), m.end(), strong))
     spans += [(m.start(), m.end(), True) for m in _COMPACT_DATE.finditer(text) if _real_compact_date(m.group(0))]
     for m in _INTEGER.finditer(text):
-        # a minus sign is an amount's own evidence ("-10000000146"); a plus is not ("+905321234567" is a phone)
-        if m.group(0)[0] in "-−" or _cued(text[max(0, m.start() - 80):m.start()], text[m.end():m.end() + 12]):
+        before, after = text[max(0, m.start() - 80):m.start()], text[m.end():m.end() + 12]
+        if _cued(before, after) or (m.group(0)[0] in "-−" and _negative_amount_column(before)):
             spans.append((m.start(), m.end(), True))
     for m in _DOCUMENT_VALUE.finditer(text):
         if re.search(r"\d", m.group("value")):
@@ -149,9 +151,38 @@ def amount_key_before(before: str) -> bool:
     return bool(words) and not (set(words) & IDENTITY_KEY_WORDS) and bool(set(words) & AMOUNT_KEY_WORDS)
 
 
+# A minus sign is an amount's evidence only in an accounting column: the value opens a table / CSV cell ("| -10000000146
+# |", "; -10000000146"). Anywhere else a sign alone proves nothing, and an identity label always wins: "TC -10000000146",
+# "Kimlik No:-10000000146", `{"tckn": "-10000000146"}`, "Tel:-0532 123 45 67" stay identifiers (the final review of
+# PR #165 found that an unconditional minus rule had stopped masking them).
+_CELL_START = re.compile(r"(?:^|[|;\t])[ \t]*$")
+
+
+def _negative_amount_column(before: str) -> bool:
+    line = before.rsplit("\n", 1)[-1]
+    return bool(_CELL_START.search(line)) and not identity_label_before(before)
+
+
+def identity_label_before(before: str) -> bool:
+    """An identifier's label (TC, Kimlik, VKN, Tel, Kart, IBAN, ...) or an identity JSON key ends `before`."""
+    from app.platform.llm_egress import (
+        detectors,  # detectors imports this module: resolved at call time
+    )
+
+    at = len(before)  # the labels are matched as "right before a value at this position"
+    if any(detectors._labelled(rx, before, at) for _, rx in detectors._DIGIT_LABELS) or \
+            detectors._labelled(detectors._IBAN_LABEL, before, at):
+        return True
+    key = _KEY_BEFORE.search(before)
+    return bool(key and set(_key_words(key.group("key"))) & IDENTITY_KEY_WORDS)
+
+
 def _cued(before: str, after: str) -> bool:
-    return bool(_SYMBOL_BEFORE.search(before) or _SYMBOL_AFTER.search(after) or _AMOUNT_WORD.search(before)
-                or amount_key_before(before))
+    if _SYMBOL_BEFORE.search(before) or _AMOUNT_WORD.search(before) or amount_key_before(before):
+        return True
+    # A currency AFTER the number is a cue unless an identity label stands right before it: in "TCKN 10000000146
+    # USD−109.650" the currency belongs to the next figure, and the label wins (the same rule as the minus sign).
+    return bool(_SYMBOL_AFTER.search(after)) and not identity_label_before(before)
 
 
 def overlaps(spans: list[tuple[int, int, bool]], start: int, end: int, *, labelled: bool = False) -> bool:

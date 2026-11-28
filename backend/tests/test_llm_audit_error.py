@@ -68,3 +68,16 @@ async def test_a_failed_call_stores_no_message(monkeypatch, exc, stored) -> None
     failed = [r for r in rows if not r["ok"]]
     assert [r["error"] for r in failed] == [stored]
     assert all(CANARY.person not in str(r.get("error")) for r in rows)
+
+
+async def test_the_router_reply_names_the_error_type_never_its_message(monkeypatch) -> None:
+    """`LLMTaskRouter.complete` puts its error into the REPLY text: only the type (no production caller, but the
+    matrix and tests drive it)."""
+    from app.services.llm_router import LLMTaskRouter
+
+    async def boom(self, **kwargs):
+        raise ValueError(SECRET_TEXT)
+
+    monkeypatch.setattr(LLMTaskRouter, "_call_llm", boom)
+    res = await LLMTaskRouter().complete("deep_analysis", "özet")
+    assert res.content == "[LLM hatası: ValueError]" and CANARY.person not in res.content

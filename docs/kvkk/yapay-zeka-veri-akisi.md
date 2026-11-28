@@ -22,8 +22,9 @@ denetler; yorum ve açıklama metni sayılmaz:
   belgelenmiş istisna: `services/llm_router.py`, `_raw_chat`'i yalnızca `LLMTaskRouter._call_llm` içinde içe aktarır (`_raw_chat`
   maskeleme oturumunu kendisi açar). Son bağımsız incelemenin denediği atlatma (bir ajana `model_gateway._build_client(...).ainvoke(...)`
   ve `embedding_gateway._client_embed(...)` eklemek) önceki testlerden geçiyordu; şimdi bu ve 20 benzer değişiklik geçici dosyalarla
-  denenir ve her biri testi düşürür. Kapsamı: `backend/app/` ve `backend/scripts/`. Görmediği tek yol, adın çalışma anında parça parça
-  üretildiği ve geçit modülüne takma ad dışında bir yoldan ulaşıldığı yapay durumlardır (ör. bir sözlükte saklanmış modül nesnesi).
+  denenir ve her biri testi düşürür. Kapsamı: `backend/app/` ve `backend/scripts/`. Statik bir denetim olarak kasıtlı gizlemeyi göremez: `exec`/`eval` dizesi, adı
+  çalışma anında hesaplanan `importlib`, `sys.modules` üzerinde dolaşma, modül nesnesini başka bir modülün özniteliğinden alma. Bunlara
+  karşı arka kalkan, her çağrı yerinin sahte sağlayıcıyla çalıştırıldığı matristir.
 
 | Geçit | Neyi taşır | Kod |
 |---|---|---|
@@ -73,7 +74,7 @@ sonucu "Yapay zekâ adımı atlandı" der (karar: kullanıcı boşluğu sessizce
 
 | Veri türü | `off` | `masked` | `raw` |
 |---|---|---|---|
-| Tutar, tarih, para birimi | gitmez | **olduğu gibi gider**. Değiştirilmeme kuralının kapsamı aşağıda ("Önce sayılar korunur"): tutar olduğunu gösteren bir işareti olan her sayı (ayraç, ondalık, eksi işareti, para birimi, yüzde, tutar sözcüğü ya da tutar adlı bir JSON/sözlük alanı) ve her tarih; 200.000 satırlık bulanık testte (beşte biri JSON biçiminde) sıfır değişiklik. Hiçbir işareti olmayan 11 haneli bir tam sayı TCKN sağlamasını tutuyorsa kimlik sayılıp maskelenebilir (aşağıda "Etiketsiz TCKN") | olduğu gibi |
+| Tutar, tarih, para birimi | gitmez | **olduğu gibi gider**. Değiştirilmeme kuralının kapsamı aşağıda ("Önce sayılar korunur"): tutar olduğunu gösteren bir işareti olan her sayı (ayraç, ondalık, para birimi, yüzde, tutar sözcüğü, tutar adlı bir JSON/sözlük alanı ya da tablo/CSV sütununda eksi işareti) ve her tarih; 200.000 satırlık bulanık testte (beşte biri JSON biçiminde) sıfır değişiklik. Hiçbir işareti olmayan 11 haneli bir tam sayı TCKN sağlamasını tutuyorsa kimlik sayılıp maskelenebilir (aşağıda "Etiketsiz TCKN") | olduğu gibi |
 | Karşı taraf, tedarikçi, müşteri adı (defterde olan) | gitmez | yer tutucu (`[[CP_7KQ_3]]`) | olduğu gibi |
 | Okunan belgede **ilk kez geçen** ad (henüz defterde yok) | gitmez | **olduğu gibi gider** | olduğu gibi |
 | Şirketin kendi adı ve unvanı | gitmez | yer tutucu (`[[CO_7KQ_1]]`) | olduğu gibi |
@@ -89,14 +90,19 @@ sonucu "Yapay zekâ adımı atlandı" der (karar: kullanıcı boşluğu sessizce
 ## Neyi, nasıl buluyor
 
 * **Önce sayılar korunur** (`figures.py`). Kimlik kalıpları çalışmadan önce metindeki her tutar (tr-TR `1.234.567,89`, en-US
-  `1,234,567.89`, `41176993.01`, eksi işaretli tam sayı `-10000000146`, para birimi, yüzde, tutar sözcüğü yanındaki tam sayı, **tutar
+  `1,234,567.89`, `41176993.01`, tablo ya da CSV hücresini açan eksi işaretli tam sayı (`| -10000000146 |`), para birimi, yüzde, tutar sözcüğü yanındaki tam sayı, **tutar
   adlı bir JSON / sözlük / `anahtar=değer` alanının değeri**), tarih (ayraçlı, ISO, gerçek bir güne denk gelen `20240315` / `15032024`),
   saat, THP hesap kodu (`120.01.001`) ve belge numarası (Fatura/Belge/Fiş No, Dekont, Ref, ETTN) **veri** olarak işaretlenir; hiçbir
   kimlik kalıbı bu karakterlere dokunamaz, etiketli olsa da. Tutar alanı sayılan anahtarlar, arka ucun modele gönderdiği alan adlarından
   derlenmiştir: `amount`, `amount_cents`, `tutar`, `toplam`, `toplam_borc`, `borç`, `alacak`, `bakiye`, `balance_cents`, `total`, `revenue`,
   `net_income`, `gelir_kurus`, `gider_kurus`, `fiyat`, `price`, `cost`, `kdv`, `vat`... (anahtar sözcüklerine bölünür: `amountCents`,
   `toplam_borc`); bir sözcüğü kimlik adıysa (`card`, `iban`, `tckn`, `no`, `number`, `id`...) tutar sayılmaz (`credit_card_number` bir
-  karttır). **Güvencenin tam sınırı:** tutar olduğunu gösteren bu işaretlerden biri ya da tarih biçimi olan sayı hiçbir zaman
+  karttır). Eksi işareti tek başına tutar kanıtı değildir: yalnız bir tablo/CSV hücresinin başında sayılır ve önünde kimlik
+  etiketi ya da kimlik adlı bir anahtar varsa hiç sayılmaz (`TC -10000000146`, `Kimlik No:-10000000146`, `{"tckn": "-10000000146"}`,
+  `Tel:-0532 123 45 67`, `Vergi No:-…` maskelenir: etiket kazanır; etiketle değer arasında `: = - –` ayırıcılarından üçe kadarı olabilir). Aynı kural
+  para birimi için de geçerlidir: kimlik etiketinin hemen arkasındaki sayıdan **sonra** gelen para birimi (`TCKN 10000000146 USD−109,65`)
+  o sayıyı tutar yapmaz; bir sonraki sayıya yapışık para birimi (`TL-974`, `%34`) de önceki sayının birimi sayılmaz.
+  **Güvencenin tam sınırı:** tutar olduğunu gösteren bu işaretlerden biri ya da tarih biçimi olan sayı hiçbir zaman
   değiştirilmez. Bunların hiçbiri olmayan bir rakam dizisi (ör. `Açıklama: "10000000146"`, tutar adı taşımayan bir alan) yalnızca şu
   biçimlerde kimlik sayılabilir: ülke harfli IBAN, basılı kart gruplaması, `+90`/boşluklu telefon, iki TCKN kontrol basamağını tutan tek
   parça 11 hane ve defterin bildiği vergi numarası. 11 haneli bir tutar bu işaretlerin hiçbiri olmadan yazılırsa yüzde bir olasılıkla
@@ -151,9 +157,10 @@ sonucu "Yapay zekâ adımı atlandı" der (karar: kullanıcı boşluğu sessizce
   ayrıştırılmış metin değerleri geri çevrilir (tırnak ya da ters bölü içeren bir ad JSON'u bozamaz). Bu çağrıda verilmemiş (uydurulmuş,
   başka çağrıdan, bozulmuş) bir yer tutucu: anlatıda `[bilinmeyen taraf]` (`[bilinmeyen değer]`) olarak görünür; deftere gidecek veride
   (belge okuma, `data_ingestion`) o alan **boş** sayılır, satır "okunamadı" olarak incelemeye düşer; yer tutucu metni asla deftere yazılmaz.
-  Model köşeli parantezleri atarsa (`PER_7KQ_1`, `[PER_7KQ_1`) bu da yer tutucu sayılır: bu çağrınınsa geri çevrilir, değilse köşeli
-  parantezli bilinmeyen yer tutucuyla aynı biçimde işaretlenir (deftere gidecek alanda boş, anlatıda `[bilinmeyen ...]`). Biçimi
-  `TÜR_XXX_n` (alt çizgiyle) olmayan düz metin (`TEL-123-4567`, `ACCT_NUMBER`) dokunulmadan kalır.
+  Model köşeli parantezleri atarsa (`PER_7KQ_1`, `[PER_7KQ_1`) ve belirteç **bu çağrının ekini** (nonce) taşıyorsa bu da yer
+  tutucu sayılır: verilmişse geri çevrilir, verilmemişse köşeli parantezli bilinmeyen yer tutucuyla aynı biçimde işaretlenir
+  (deftere gidecek alanda boş, anlatıda `[bilinmeyen ...]`). Başka bir ek taşıyan parantezsiz, yer tutucuya benzeyen metin
+  (`CO_A12_3`, `ACCT_TRY_100`, `PLATE_34A_1234` gibi gerçek kodlar) bizim değildir, hiçbir şey taşımaz ve **olduğu gibi kalır**.
 
 ### Gömme: neden kararlı takma adlar
 

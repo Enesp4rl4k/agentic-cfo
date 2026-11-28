@@ -325,6 +325,11 @@ class Settings(BaseSettings):
     # May an organisation's owner choose a MORE permissive mode than LLM_DATA_MODE? false: LLM_DATA_MODE is the
     # operator's ceiling and an owner can only tighten it (masked -> off); true: the owner's choice stands.
     llm_org_may_relax: bool = False
+    # The chat's Think -> Plan -> Act -> Synthesize loop (`use_reasoning=true`, app/services/reasoning_loop.py). Off
+    # by default: when off, `use_reasoning` is ignored and the reply says so. At most 6 model calls per question (think,
+    # plan, up to 3 act steps, synthesize), all inside REASONING_LOOP_TIMEOUT_SECONDS; past it the labelled template.
+    reasoning_loop_enabled: bool = False
+    reasoning_loop_timeout_seconds: float = 60.0
 
     # Platform operators: comma-separated user e-mails allowed to mint pilot
     # invites and read every company's pilot feedback (platform-wide data, not

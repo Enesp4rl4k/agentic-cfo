@@ -102,7 +102,9 @@ def vkn_ok(d: str) -> bool:
 
 # ── labels: the word right before a value (prose, a table header, or a JSON / dict key) ─────────────────
 
-_GAP = r"""(?:['"’]?\s*(?:[:=#\-]|no\b|nr\b|numaras[ıi]\b|numara\b)?\s*['"’]?\s*[:=#\-]?\s*['"’]?\s*)"""
+# Between a label and its value: quotes, "no" / "numarası", and up to three separators of `: = # - –` ("Kimlik No:-",
+# "Vergi No: –"), so a dash before the value never hides it.
+_GAP = r"""(?:['"’]?\s*(?:[:=#\-–]|no\b|nr\b|numaras[ıi]\b|numara\b)?\s*['"’]?\s*(?:[:=#\-–]\s*){0,3}['"’]?\s*)"""
 
 
 def _label(words: str) -> re.Pattern[str]:
@@ -152,12 +154,17 @@ def _compact(raw: str) -> str:
 
 def _iban_spans(text: str, protected: list) -> list[Span]:
     out: list[Span] = []
-    for m in _IBAN_CAND.finditer(text):
+    pos = 0
+    # A candidate may run on into the next word ("<IBAN> IBAN TR33..."): take the valid IBAN at its start and search
+    # again right after it, so a second IBAN swallowed by the first candidate is still found.
+    while (m := _IBAN_CAND.search(text, pos)) is not None:
+        pos = m.start() + 1
         positions = [i for i in range(m.start(), m.end()) if not (text[i].isspace() or text[i] in "- ")]
         chars = "".join(text[i] for i in positions).upper()
         length = _IBAN_LENGTHS.get(chars[:2])
         if length and len(chars) >= length and iban_ok(chars[:length]):
             out.append(Span(positions[0], positions[length - 1] + 1, IBAN, chars[:length]))
+            pos = positions[length - 1] + 1
     for m in _DIGITS_CAND.finditer(text):  # digits only: the label IBAN is the evidence
         digits = _compact(m.group(0))
         if not _labelled(_IBAN_LABEL, text, m.start()) or overlaps(protected, m.start(), m.end(), labelled=True):

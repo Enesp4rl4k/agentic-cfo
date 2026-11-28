@@ -88,7 +88,7 @@ def test_the_amount_guarantee_is_stated_with_its_exact_limit() -> None:
     assert "**Güvencenin tam sınırı:**" in doc and "tutar adlı bir JSON / sözlük / `anahtar=değer` alanının değeri" in doc
     # the cue cases: never changed
     for text in ('{"amount": "10000000146"}', '{"tutar": 10000000146}', "toplam_borc=10000000146", "Net 10000000146 TL",
-                 "Düzeltme -10000000146", '{"amountCents": "10000000146"}'):
+                 "| -10000000146 | 05.03.2024 |", '{"amountCents": "10000000146"}'):
         assert Pseudonymizer().mask(text) == text, text
     # the documented exception: no cue at all, TCKN checksum holds -> may be masked (restored exactly)
     p = Pseudonymizer()
@@ -126,3 +126,21 @@ def test_no_reassurance_beyond_what_is_tested() -> None:
                  "Ham kip (`raw`) her şeyi gönderir", "gerçek müşteri metninde ölçülmemiştir"):
         assert must in section, must
     assert not re.search(r"(?i)\b(tamamen güvenli|hiçbir kişisel veri gitmez|garanti eder)\b", section)
+
+
+def test_the_label_wins_over_a_minus_sign_as_documented() -> None:
+    doc = _doc()
+    assert "Eksi işareti tek başına tutar kanıtı değildir" in doc and "etiket kazanır" in doc
+    for text, value in (("TC -10000000146", "10000000146"), ("Kimlik No:-10000000146", "10000000146"),
+                        ('{"tckn": "-10000000146"}', "10000000146"), ("Tel:-0532 123 45 67", "5321234567"),
+                        ("Vergi No:-7291045386", "7291045386")):
+        assert value not in re.sub(r"\D", "", Pseudonymizer().mask(text)), text
+    assert Pseudonymizer().mask("| -10000000146 | 05.03.2024 |") == "| -10000000146 | 05.03.2024 |"
+
+
+def test_bracketless_codes_of_another_nonce_stay_as_documented() -> None:
+    assert "bu çağrının ekini" in _doc() and "**olduğu gibi kalır**" in _doc()
+    p = Pseudonymizer()
+    for code in ("CO_A12_3", "ACCT_TRY_100", "PLATE_34A_1234"):
+        assert p.restore(code) == code and p.restore_strict(code) == code
+

@@ -446,9 +446,10 @@ async def complete(
                     span.set_attribute("llm.ok", False)
                 except Exception:
                     pass
-                if rejected:
-                    raise LLMUnavailable(f"LLM provider rejected model {cfg.model_id}: {exc}") from exc
-                raise RuntimeError(f"LLM call failed after {attempts} attempts: {exc}") from exc
+                failed: Exception = (LLMUnavailable(f"LLM provider rejected model {cfg.model_id}: {exc}") if rejected
+                                     else RuntimeError(f"LLM call failed after {attempts} attempts: {exc}"))
+                failed.llm_audited = True  # type: ignore[attr-defined]  # its row is written: callers write none
+                raise failed from exc
 
     latency_ms = round((time.time() - start) * 1000, 1)
     cost = cost_usd(cfg, in_tok, out_tok)

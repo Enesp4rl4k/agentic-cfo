@@ -41,20 +41,18 @@ UNKNOWN_VALUE = "[bilinmeyen değer]"
 _NONCE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/O, 1/I
 _LABEL_ALT = "|".join(sorted(ALL_LABELS, key=len, reverse=True))
 # What the model may give back for one of our placeholders, brackets or case mangled included, and with its
-# brackets DROPPED ("PER_7KQ_1", "[PER_7KQ_1"): a bracketless one is a placeholder too (restored when it is this
-# call's, unknown otherwise), so it can never be written into a field as if it were a vendor or a description.
+# brackets DROPPED ("PER_7KQ_1", "[PER_7KQ_1") when it carries THIS call's nonce: restored when issued, unknown
+# otherwise, so it can never be written into a field as if it were a vendor or a description. A bracketless token
+# with any other nonce is ordinary text and stays as written: a real code such as `CO_A12_3`, `ACCT_TRY_100` or
+# `PLATE_34A_1234` is not ours and carries nothing of ours (PR #165 review, follow-up 1).
 _SHAPED = re.compile(
     r"\[{1,2}\s*(" + _LABEL_ALT + r")\s*[_\-]\s*([A-Za-z0-9]{3})\s*[_\-]\s*(\d{1,4})([a-z]?)\s*\]{1,2}"
     r"|(?<![\w\[])\[{0,2}(" + _LABEL_ALT + r")_([A-Za-z0-9]{3})_(\d{1,4})([a-z]?)(?![\w])\]{0,2}",
     re.IGNORECASE,
 )
-# Anything that still looks like a placeholder after restoring (stable tokens and foreign nonces included),
-# bracketed or not (bracketless: the sequential shape, or a stable token's 8 hex digits).
-RESIDUE = re.compile(
-    r"\[{1,2}\s*(?:" + _LABEL_ALT + r")\s*[_\-]\s*[A-Za-z0-9]{3,8}(?:\s*[_\-]\s*\d{1,4}[a-z]?)?\s*\]{1,2}"
-    r"|(?<![\w\[])\[{0,2}(?:" + _LABEL_ALT + r")_(?:[A-Za-z0-9]{3}_\d{1,4}[a-z]?|[0-9a-fA-F]{8})(?![\w])",
-    re.IGNORECASE,
-)
+# Anything BRACKETED that still looks like a placeholder after restoring (stable tokens and foreign nonces included).
+RESIDUE = re.compile(r"\[{1,2}\s*(?:" + _LABEL_ALT + r")\s*[_\-]\s*[A-Za-z0-9]{3,8}(?:\s*[_\-]\s*\d{1,4}[a-z]?)?\s*\]{1,2}",
+                     re.IGNORECASE)
 
 
 def _parts(m: re.Match[str]) -> tuple[str, str, str, str]:
@@ -167,6 +165,10 @@ class Pseudonymizer:
         out.append(text[last:])
         return "".join(out)
 
+    def _foreign_bare(self, m: re.Match[str]) -> bool:
+        """A bracketless placeholder-shaped token without this call's nonce: ordinary text, left as written."""
+        return m.group(1) is None and m.group(6).upper() != self.nonce
+
     def _lookup(self, m: re.Match[str]) -> str | None:
         label, nonce, number, variant = _parts(m)
         label, nonce, variant = label.upper(), nonce.upper(), variant.lower()
@@ -178,6 +180,8 @@ class Pseudonymizer:
             return text
 
         def sub(m: re.Match[str]) -> str:
+            if self._foreign_bare(m):
+                return m.group(0)
             hit = self._lookup(m)
             if hit is not None:
                 return hit
@@ -194,6 +198,8 @@ class Pseudonymizer:
 
         def sub(m: re.Match[str]) -> str:
             nonlocal unknown
+            if self._foreign_bare(m):
+                return m.group(0)
             hit = self._lookup(m)
             if hit is None:
                 unknown = True

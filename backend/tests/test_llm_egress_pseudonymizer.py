@@ -206,22 +206,51 @@ def test_restore_strict_returns_none_for_anything_unresolved() -> None:
     assert p.restore_strict("düz metin") == "düz metin"
 
 
+# PR #165 review, blocker B1: an unconditional "a minus sign is an amount" rule stopped masking these (master masked
+# them). A label, or an identity JSON key, wins over the sign; a dash between label and value never hides the value.
+MINUS_AFTER_A_LABEL = (
+    ("T.C. Kimlik No: -10000000146", "10000000146"), ("TC -10000000146", "10000000146"),
+    ("tckn=-10000000146", "10000000146"), ('{"tckn": "-10000000146"}', "10000000146"),
+    ('{"tc_kimlik_no": -10000000146}', "10000000146"), ("Kimlik No:-10000000146", "10000000146"),
+    ("Tel:-0532 123 45 67", "5321234567"),
+    # follow-up 4 (leaked on master too): a dash between a VKN label and its value
+    ("Vergi No:-7291045386", "7291045386"), ("VKN – 7291045386", "7291045386"), ("Vergi No: --7291045386", "7291045386"),
+)
+
+
+@pytest.mark.parametrize(("text", "value"), MINUS_AFTER_A_LABEL)
+def test_a_minus_sign_never_unmasks_a_labelled_identifier(text: str, value: str) -> None:
+    masked = Pseudonymizer().mask(text)
+    assert value not in re.sub(r"\D", "", masked), masked
+
+
+def test_a_minus_sign_is_an_amount_only_in_an_accounting_column() -> None:
+    for text in ("| -10000000146 | 05.03.2024 |", "05.03.2024;-10000000146;TL", "\t-10000000146\t", "Net -10000000146 TL"):
+        assert Pseudonymizer().mask(text) == text, text
+    # no context at all: master's behaviour (an 11-digit TCKN-checksum token is masked, the sign stays)
+    assert Pseudonymizer().mask("Düzeltme -10000000146").startswith("Düzeltme -[[TCKN_")
+
+
 def test_a_placeholder_with_its_brackets_dropped_is_still_a_placeholder() -> None:
     """Final review: `PER_XXX_1` (brackets dropped by the model) carrying THIS call's nonce was neither restored nor
-    flagged, so strict mode could write it into the books as a vendor. Now it is ours (restored), and an unknown
-    bracketless one is flagged exactly like the bracketed unknown case."""
+    flagged, so strict mode could write it into the books as a vendor. Now it is ours: restored when issued, unknown
+    (flagged like the bracketed case) when not. A bracketless token with any OTHER nonce is ordinary text: real codes
+    such as `CO_A12_3` or `ACCT_TRY_100` stay as written (PR #165 review, follow-up 1)."""
     p = Pseudonymizer(names())
     token = TOKEN.search(p.mask("Tarvelo Lojistik")).group(0)
     bare = token.strip("[]")
     for spelling in (bare, bare.lower(), f"[{bare}", f"{bare}]", f"[[{bare}"):
         assert p.restore(f"Ödeme {spelling} yapıldı") == "Ödeme Tarvelo Lojistik yapıldı", spelling
         assert p.restore_strict(spelling) == "Tarvelo Lojistik", spelling
-    unknowns = {f"CP_{p.nonce}_9": UNKNOWN_NAME, "PER_ZZZ_1": UNKNOWN_NAME, "per_zzz_1": UNKNOWN_NAME,
-                "TCKN_ZZZ_3": UNKNOWN_VALUE, "CP_a1b2c3d4": UNKNOWN_VALUE}  # the last: a stable (embedding) token
+    unknowns = {f"CP_{p.nonce}_9": UNKNOWN_NAME, f"per_{p.nonce.lower()}_4": UNKNOWN_NAME, f"TCKN_{p.nonce}_3": UNKNOWN_VALUE}
     for unknown, shown in unknowns.items():
         assert p.restore_strict(f"Tedarikçi {unknown}") is None, unknown          # held, never written as data
         assert p.restore(unknown) == shown, unknown
-    for prose in ("ACCT_NUMBER alanı", "Ref TEL-123-4567", "CO_OP_1 kodu", "snake_case_name", "PERSONEL_ABC_1"):
+    real_codes = ("CO_A12_3", "ACCT_TRY_100", "CARD_VIP_1", "PLATE_34A_1234", "MAIL_OUT_1", "co_abc_1", "CO_deadbeef",
+                  "CP_a1b2c3d4", "PER_ZZZ_1")
+    for prose in (*real_codes, "ACCT_NUMBER alanı", "Ref TEL-123-4567", "CO_OP_1 kodu", "snake_case_name", "PERSONEL_ABC_1"):
+        if prose.upper().split("_")[1:2] == [p.nonce]:  # one in 32,768 runs the random nonce is a code's middle part
+            continue
         assert p.restore(prose) == prose and p.restore_strict(prose) == prose, prose  # not placeholder-shaped
 
 

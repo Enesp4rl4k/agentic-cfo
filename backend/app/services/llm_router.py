@@ -191,10 +191,11 @@ class LLMTaskRouter:
             )
 
         except Exception as exc:
-            logger.error("LLM task router hatasi: task=%s model=%s err=%s", task, config.model_id, exc)
-            # Graceful degradation: basit fallback
+            # Only the exception TYPE: its message can quote the model's output or our input, and this text is the
+            # reply. (No production code calls `complete`: only `select_model`, from llm_structured.)
+            logger.error("LLM task router hatasi: task=%s model=%s err=%s", task, config.model_id, type(exc).__name__)
             return LLMResponse(
-                content    = f"[LLM hatası: {exc}]",
+                content    = f"[LLM hatası: {type(exc).__name__}]",
                 model_used = config.model_id,
                 task_type  = task,
             )

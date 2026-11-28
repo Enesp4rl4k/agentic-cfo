@@ -585,6 +585,17 @@ def _build_agent_system_prompt(
     return "\n".join(lines)
 
 
+def reasoning_choice(asked: bool) -> tuple[bool, str | None]:
+    """(run the reasoning loop?, the note for the reply): the loop runs only when asked AND REASONING_LOOP_ENABLED."""
+    if not asked:
+        return False, None
+    if get_settings().reasoning_loop_enabled:
+        return True, None
+    from app.services.reasoning_loop import LOOP_DISABLED_NOTE
+
+    return False, LOOP_DISABLED_NOTE
+
+
 @router.post("/chat/agent", response_model=None)
 async def chat_with_agent(
     body: AgentChatRequest,
@@ -734,8 +745,11 @@ async def chat_with_agent(
 
     # Choose execution path: reasoning loop vs direct LLM
     reasoning_trace: dict | None = None
+    # The reasoning loop is off unless the operator turns it on (REASONING_LOOP_ENABLED): then `use_reasoning` is
+    # ignored and the reply says so in `reasoning_note`.
+    used_reasoning, reasoning_note = reasoning_choice(body.use_reasoning)
 
-    if body.use_reasoning:
+    if used_reasoning:
         from app.services.reasoning_loop import get_reasoning_loop
         loop = get_reasoning_loop()
         result = await loop.run(
@@ -763,7 +777,7 @@ async def chat_with_agent(
             session_id=session_id,
             user_message=body.question,
             assistant_message=answer,
-            metadata={"agent_filter": body.agent_filter, "used_reasoning": body.use_reasoning},
+            metadata={"agent_filter": body.agent_filter, "used_reasoning": used_reasoning},
         )
     except Exception:
         pass  # Never fail a response due to memory persistence
@@ -775,7 +789,8 @@ async def chat_with_agent(
             "session_id": session_id,               # return so client can reuse
             "context_agents": context_agents,
             "company_name": ctx.company_name,
-            "used_reasoning": body.use_reasoning,
+            "used_reasoning": used_reasoning,
+            "reasoning_note": reasoning_note,       # set when use_reasoning was asked but the loop is off
             "reasoning_trace": reasoning_trace,     # None unless use_reasoning=True
             "evidence_found": evidence_found,
             "evidence_job_scope": job_scope,

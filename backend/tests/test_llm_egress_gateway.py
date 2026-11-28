@@ -378,18 +378,22 @@ async def test_masked_json_reply_is_parsed_before_restoring_and_unknown_fields_a
 
 
 async def test_strict_json_restores_a_bracketless_placeholder_and_holds_an_unknown_one(world, monkeypatch) -> None:
-    """The model drops the brackets: this call's `CP_XXX_1` is restored; an unknown one never becomes a vendor."""
+    """The model drops the brackets: this call's `CP_XXX_1` is restored; one with this call's nonce that was never
+    issued never becomes a vendor; a code that only looks like a placeholder (another nonce) stays as written."""
     world.enter()
 
     def reply(texts):
         cp = next(t for t in _placeholders(texts) if t.startswith("[[CP_")).strip("[]")
+        ours_unknown = cp.rsplit("_", 1)[0] + "_99"  # this call's nonce, a number never issued
         return json.dumps([{"vendor": cp, "amount": 1500.0, "description": f"öde {cp.lower()}"},
-                           {"vendor": "CP_ZZZ_9", "amount": 2.5, "description": "x"}])
+                           {"vendor": ours_unknown, "amount": 2.5, "description": "x"},
+                           {"vendor": "CO_A12_3", "amount": 3.0, "description": "kod ACCT_TRY_100"}])
 
     world.rec.reply = reply
     rows = await mg.complete_json(task="simple_extraction", prompt=f"{CANARY.counterparty} 1.500,00 TL", strict=True)
     assert rows[0]["vendor"] == CANARY.counterparty and rows[0]["description"] == f"öde {CANARY.counterparty}"
     assert rows[1]["vendor"] is None and rows[1]["__unresolved__"] == ["vendor"]
+    assert rows[2]["vendor"] == "CO_A12_3" and rows[2]["description"] == "kod ACCT_TRY_100"  # not ours: stays
 
 
 async def test_the_masked_system_prompt_explains_the_placeholders_and_raw_does_not(world, monkeypatch) -> None:

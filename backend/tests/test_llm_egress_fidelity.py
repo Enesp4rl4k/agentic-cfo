@@ -25,6 +25,7 @@ import pytest
 from app.platform.llm_egress import detectors as d
 from app.platform.llm_egress.names import NameDictionary
 from app.platform.llm_egress.pseudonymizer import Pseudonymizer
+from tests.llm_egress_identity_cases import identity_cases, leaked
 
 SEED = 20261127
 NUMBER_LINES = 200_000
@@ -42,7 +43,7 @@ REVIEW_CASES = (
     # the final review: an 11-digit amount in JSON was masked as a TCKN (a JSON key was not an amount cue)
     '{"amount": "10000000146"}', '{"tutar": 10000000146}', "{'toplam_borc': 10000000146}", "gider_kurus=10000000146",
     '{"amount_cents": -10000000146, "tarih": "05.03.2024"}', '{"balanceCents": "10000000146"}',
-    "Düzeltme kaydı -10000000146", "| -10000000146 | 05.03.2024 |",  # a minus sign is an amount's own evidence
+    "| -10000000146 | 05.03.2024 |", "05.03.2024; -10000000146; TL",  # a minus sign in an accounting column
 )
 
 _LABELLISH = (
@@ -276,17 +277,38 @@ def test_60000_mixed_lines_keep_every_figure_and_restore_byte_for_byte() -> None
     nd.add("CP", "Karvesta Yapı Malzemeleri A.Ş.")
     nd.add("CP", "Güneş Ticaret A.Ş.")
     nd.add("PER", "Selin Aksoy", person=True)
+    labelled = identity_cases()
     bad: list[str] = []
+    escaped: list[str] = []
     for _ in range(MIXED_LINES):
         figures = [_amount(rng), _date(rng), rng.choice(("Ref", "Dekont")) + " " + _reference(rng)]
-        parts = [rng.choice(names), *figures, _identifier(rng), rng.choice(_LABELLISH)]
+        ident, core = rng.choice(labelled)  # a labelled identifier in any type x label x separator x sign x shape
+        parts = [rng.choice(names), *figures, _identifier(rng), ident + ";", rng.choice(_LABELLISH)]
         rng.shuffle(parts)
         line = " ".join(parts)
         p = Pseudonymizer(nd)
         masked = p.mask(line)
         if p.restore(masked) != line or any(f not in masked for f in figures):
             bad.append(line)
+        if leaked(masked, core):
+            escaped.append(line)
     assert bad == [], f"{len(bad)} of {MIXED_LINES} mixed lines lost a figure or did not restore exactly: {bad[:3]}"
+    assert escaped == [], f"{len(escaped)} labelled identifiers left unmasked, e.g. {escaped[:3]}"
+
+
+def test_every_labelled_identifier_in_the_matrix_is_masked() -> None:
+    """The whole product, not a sample: type x label x separator (`: = - –` and combinations) x sign x line / JSON."""
+    escaped = [text for text, core in identity_cases() if leaked(Pseudonymizer().mask(text), core)]
+    assert escaped == [], f"{len(escaped)} labelled identifiers leave unmasked: {escaped[:10]}"
+
+
+def test_nothing_that_master_masked_leaves_on_this_branch() -> None:
+    """Regression against master `3b3c83f` (the set is data in tests/llm_egress_master_masked.py)."""
+    from tests.llm_egress_master_masked import MASTER_MASKED
+
+    assert len(MASTER_MASKED) > 600
+    regressions = [text for text, core in MASTER_MASKED if leaked(Pseudonymizer().mask(text), core)]
+    assert regressions == [], f"masked on master, unmasked here: {regressions[:10]}"
 
 
 def test_identifiers_with_evidence_are_still_found() -> None:

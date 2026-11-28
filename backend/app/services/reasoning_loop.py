@@ -53,6 +53,7 @@ Usage
 """
 from __future__ import annotations
 
+import asyncio
 import contextvars
 import json
 import logging
@@ -79,8 +80,21 @@ logger = logging.getLogger(__name__)
 #   failure      anything else (a TypeError, a provider error after the gateway's retries, ...). The template
 #                is still used so the user gets an answer, but it is NOT treated as "LLM unavailable": it is
 #                logged at ERROR with the exception type, counted (`fallback_counts()`), written as an
-#                `llm_call_logs` row (`task_type = reasoning_loop.<phase>`, `error = <Type>:fallback`), and
+#                `llm_call_logs` row (`task_type = reasoning_loop.<phase>`, `error = <Type>:fallback`) unless the
+#                gateway already wrote that failure's row (one row per failure), and
 #                listed in the result's trace. A permanently failing path is visible, not silent.
+#
+# Product limits (PR #165 review, follow-up 2): the loop is OFF unless REASONING_LOOP_ENABLED=true (the chat then
+# ignores `use_reasoning` and says so); at most MAX_LLM_CALLS model calls per question (think, plan, MAX_ACT_STEPS
+# act steps, synthesize); the whole loop runs inside REASONING_LOOP_TIMEOUT_SECONDS. Past the limit the answer is the
+# labelled template (LOOP_TIMEOUT_NOTE) and an `llm_call_logs` row says so (`reasoning_loop.loop`,
+# `TimeoutError:loop_timeout`).
+MAX_ACT_STEPS = 3
+MAX_LLM_CALLS = 1 + 1 + MAX_ACT_STEPS + 1
+LOOP_TIMEOUT_NOTE = ("Yapay zekâ adımı süre sınırını aştı: şablon metin. / "
+                     "AI step exceeded its time limit: template text.")
+LOOP_DISABLED_NOTE = ("Çok adımlı akıl yürütme bu sunucuda kapalı (REASONING_LOOP_ENABLED=false); doğrudan yanıt "
+                      "verildi. / Multi-step reasoning is off on this server; answered directly.")
 FALLBACKS: Counter = Counter()  # (phase, "unavailable" | "failure", exception type) -> count, this process
 
 
@@ -122,11 +136,12 @@ def _fallback(phase: str, exc: BaseException) -> str:
                      "the reasoning loop is not running at all.", phase, name)
         if state is not None:
             state.failures.append(f"{phase}:{name}")
-        from app.platform.llm_egress.audit import error_code, persist_call_log
-        from app.platform.llm_egress.policy import active_org
+        if not getattr(exc, "llm_audited", False):  # the gateway already wrote this failure's row: one row per failure
+            from app.platform.llm_egress.audit import error_code, persist_call_log
+            from app.platform.llm_egress.policy import active_org
 
-        persist_call_log(org_id=active_org(None), job_id=None, task=f"reasoning_loop.{phase}", model="-", res=None,
-                         ok=False, error=error_code(exc, "fallback"))
+            persist_call_log(org_id=active_org(None), job_id=None, task=f"reasoning_loop.{phase}", model="-",
+                             res=None, ok=False, error=error_code(exc, "fallback"))
     FALLBACKS[(phase, kind, name)] += 1
     return kind
 
@@ -275,19 +290,34 @@ class ReasoningLoop:
         min_confidence : float
             If think-phase confidence < this, add a disclaimer to the answer.
         """
+        from app.config import get_settings
         from app.platform.llm_egress.session import AI_STEP_SKIPPED, skipped_steps
 
         start_ms = int(time.time() * 1000)
+        settings = get_settings()
+        if not settings.reasoning_loop_enabled:  # the caller should not have come here: no model call, say why
+            think = ThinkResult(_fallback_observations(_extract_relevant_data(context, domain), question), [], {}, domain)
+            return ReasoningResult(question, LOOP_DISABLED_NOTE, think, PlanResult([], "kapalı"), [], 0, domain,
+                                   llm={"calls": 0, "unavailable": [], "failures": [], "disabled": True})
         state = _RunState()
         run_token = _RUN.set(state)
         skip_token = skipped_steps.set([])  # the gateway appends "off" / "refused" when it did not send
+        timed_out = False
         try:
-            think, plan, actions, answer = await self._phases(question, context, domain, max_act_steps)
-            skipped = list(skipped_steps.get() or [])
+            think, plan, actions, answer = await asyncio.wait_for(
+                self._phases(question, context, domain, min(max_act_steps, MAX_ACT_STEPS)),
+                timeout=float(settings.reasoning_loop_timeout_seconds),
+            )
+        except TimeoutError:
+            timed_out = True
+            think, plan, actions, answer = self._timed_out(question, context, domain)
         finally:
+            skipped = list(skipped_steps.get() or [])
             skipped_steps.reset(skip_token)
             _RUN.reset(run_token)
-        if skipped and not state.used_llm:  # the template answered because the data mode said so: say it
+        if timed_out:
+            answer = f"{LOOP_TIMEOUT_NOTE}\n{answer}"
+        elif skipped and not state.used_llm:  # the template answered because the data mode said so: say it
             note = AI_STEP_SKIPPED["refused" if "refused" in skipped else "off"]
             answer = f"{note}\n{answer}"
 
@@ -312,8 +342,26 @@ class ReasoningLoop:
             total_duration_ms=total_ms,
             domain=domain,
             confidence=confidence,
-            llm={"calls": state.used_llm, "unavailable": state.unavailable, "failures": state.failures},
+            llm={"calls": state.used_llm, "unavailable": state.unavailable, "failures": state.failures,
+                 "timed_out": timed_out},
         )
+
+    def _timed_out(
+        self, question: str, context: dict[str, Any], domain: str,
+    ) -> tuple[ThinkResult, PlanResult, list[ActionResult], str]:
+        """The whole loop ran past its time limit: the deterministic template, and one audit row saying so."""
+        from app.platform.llm_egress.audit import persist_call_log
+        from app.platform.llm_egress.policy import active_org
+
+        logger.warning("ReasoningLoop: the loop exceeded its time limit; template used")
+        FALLBACKS[("loop", "timeout", "TimeoutError")] += 1
+        persist_call_log(org_id=active_org(None), job_id=None, task="reasoning_loop.loop", model="-", res=None,
+                         ok=False, error="TimeoutError:loop_timeout")
+        data = _extract_relevant_data(context, domain)
+        think = ThinkResult(_fallback_observations(data, question), [], data, domain)
+        plan = PlanResult(_fallback_plan(question, think), "Doğrudan analiz")
+        answer = "\n".join(f"- {o}" for o in think.observations) or "Analiz süre sınırında tamamlanamadı."
+        return think, plan, [], answer
 
     async def _phases(
         self, question: str, context: dict[str, Any], domain: str, max_act_steps: int,
