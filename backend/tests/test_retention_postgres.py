@@ -115,10 +115,11 @@ async def put(db: AsyncSession, table_name: str, /, **fixed: Any) -> str:
         if col.name in row or col.nullable or col.default is not None or col.server_default is not None:
             continue
         row[col.name] = _fill(col)
-    pk = next(iter(table.primary_key.columns)).name
-    row.setdefault(pk, str(uuid.uuid4()))
+    pk = next(iter(table.primary_key.columns))
+    if pk.name not in row:  # the model's own default when it has one (some ids are 32-character hex)
+        row[pk.name] = pk.default.arg(None) if pk.default is not None and callable(pk.default.arg) else str(uuid.uuid4())
     await db.execute(insert(table).values(**row))
-    return str(row[pk])
+    return str(row[pk.name])
 
 
 async def company(db: AsyncSession, now: datetime) -> str:
